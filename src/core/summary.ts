@@ -6,6 +6,13 @@ import {
   rebuildStoredCharactersFromSummaries,
   type CharacterOperation,
 } from '@/core/characters';
+import {
+  TimeUpdateResponse,
+  applyTimeUpdate,
+  getStoredTime,
+  rebuildStoredTimeFromSummaries,
+  type StoryTimeUpdate,
+} from '@/core/time';
 import { useSettingsStore } from '@/store/settings';
 
 const STORAGE_ROOT = 'cosmos_memory';
@@ -17,6 +24,7 @@ export type MessageSummary = {
   message_id: number;
   summary: string;
   character_operations?: CharacterOperation[];
+  time_update?: StoryTimeUpdate | null;
   updated_at: string;
 };
 
@@ -97,9 +105,11 @@ export function getStoredMessageSummaries(): MessageSummary[] {
     })
     .map(summary => {
       const operations = CharacterOperationsResponse.safeParse(summary.character_operations);
+      const time_update = TimeUpdateResponse.nullable().optional().safeParse(summary.time_update);
       return {
         ...summary,
         character_operations: operations.success ? operations.data : [],
+        time_update: time_update.success ? time_update.data : null,
       };
     })
     .sort((left, right) => left.message_id - right.message_id);
@@ -134,6 +144,7 @@ export function pruneMessageSummariesAfterMessage(message_id: number): MessageSu
       removed_message_ids: removed_summaries.map(summary => summary.message_id),
     });
     rebuildStoredCharactersFromSummaries(getStoredMessageSummaries());
+    rebuildStoredTimeFromSummaries(getStoredMessageSummaries());
   }
 
   return removed_summaries.sort((left, right) => left.message_id - right.message_id);
@@ -158,21 +169,28 @@ async function summarizeReceivedMessageCore(message_id: number): Promise<Message
     custom_api_url: settings.ai.use_tavern_api ? undefined : settings.ai.custom_api_url,
     selected_model: settings.ai.use_tavern_api ? undefined : settings.ai.selected_model,
     characters_enabled: settings.characters.enabled,
+    time_enabled: settings.time.enabled,
   });
   const result = await summarizeMessage(settings.ai, source, {
     characters_enabled: settings.characters.enabled,
     stored_characters: settings.characters.enabled ? getStoredCharacters() : [],
+    time_enabled: settings.time.enabled,
+    current_time: settings.time.enabled ? getStoredTime() : '',
   });
   const summary: MessageSummary = {
     message_id,
     summary: result.summary,
     character_operations: settings.characters.enabled ? result.characters : [],
+    time_update: settings.time.enabled ? result.time_update ?? null : null,
     updated_at: new Date().toISOString(),
   };
 
   saveMessageSummary(summary);
   if (settings.characters.enabled && summary.character_operations && summary.character_operations.length > 0) {
     applyCharacterOperations(summary.character_operations);
+  }
+  if (settings.time.enabled) {
+    applyTimeUpdate(summary.time_update);
   }
   return summary;
 }

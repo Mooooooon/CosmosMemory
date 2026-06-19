@@ -25,12 +25,20 @@ export const CharacterSettings = z
   })
   .prefault({});
 
+export type TimeSettings = z.infer<typeof TimeSettings>;
+export const TimeSettings = z
+  .object({
+    enabled: z.boolean().default(false),
+  })
+  .prefault({});
+
 export type Settings = z.infer<typeof Settings>;
 export const Settings = z
   .object({
     ai: AiSettings,
     compression: CompressionSettings,
     characters: CharacterSettings,
+    time: TimeSettings,
   })
   .prefault({});
 

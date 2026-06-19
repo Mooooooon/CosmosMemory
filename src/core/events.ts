@@ -5,6 +5,7 @@ import {
   summarizeMissingAssistantMessages,
   summarizeReceivedMessage,
 } from '@/core/summary';
+import { applyTimePromptInjection } from '@/core/time';
 import { useSettingsStore } from '@/store/settings';
 import { event_types, eventSource } from '@sillytavern/script';
 
@@ -42,6 +43,7 @@ function handleMessageReceived(message_id: number, type: string) {
         message_id: summary.message_id,
         summary_length: summary.summary.length,
         character_operation_count: summary.character_operations?.length ?? 0,
+        time_updated: Boolean(summary.time_update?.current_time),
       });
     })
     .catch(error => {
@@ -89,8 +91,10 @@ async function handleGenerationAfterCommands(
   }
 
   try {
+    const { settings } = useSettingsStore();
     await applySummaryCompressionForNextGeneration();
-    await applyCharacterPromptInjection(useSettingsStore().settings.characters.enabled);
+    applyTimePromptInjection(settings.time.enabled);
+    applyCharacterPromptInjection(settings.characters.enabled);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('[CosmosMemory] 生成前应用记忆注入失败', error);

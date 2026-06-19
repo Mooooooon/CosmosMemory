@@ -99,6 +99,24 @@
         </div>
 
         <div class="cosmos-memory-section-title flex-container">
+          <strong class="flex1" data-i18n="时间">{{ t`时间` }}</strong>
+        </div>
+
+        <div class="cosmos-memory-row flex-container">
+          <input id="cosmos_memory_time_enabled" v-model="settings.time.enabled" type="checkbox" />
+          <label for="cosmos_memory_time_enabled">{{ t`时间信息` }}</label>
+        </div>
+
+        <div class="cosmos-memory-hint">
+          {{ t`开启后会在总结时维护当前故事时间，并注入到人物信息上方。` }}
+        </div>
+
+        <div class="cosmos-memory-row flex-container">
+          <span>{{ t`当前时间` }}：{{ stored_time || t`尚未记录` }}</span>
+          <input class="menu_button" type="button" :value="t`刷新`" @click="handle_refresh_time" />
+        </div>
+
+        <div class="cosmos-memory-section-title flex-container">
           <strong class="flex1" data-i18n="人物">{{ t`人物` }}</strong>
         </div>
 
@@ -205,6 +223,7 @@ import {
   type StoredCharacter,
 } from '@/core/characters';
 import { getStoredMessageSummaries, type MessageSummary } from '@/core/summary';
+import { getStoredTime } from '@/core/time';
 import { useSettingsStore } from '@/store/settings';
 import { storeToRefs } from 'pinia';
 
@@ -221,6 +240,7 @@ const is_regenerating_characters = ref(false);
 const test_result = ref<TestResult | null>(null);
 const stored_summaries = ref<MessageSummary[]>([]);
 const stored_characters = ref<StoredCharacter[]>([]);
+const stored_time = ref('');
 const summary_dialog = ref<HTMLDialogElement | null>(null);
 const character_dialog = ref<HTMLDialogElement | null>(null);
 
@@ -300,6 +320,7 @@ async function handle_send_test_message() {
 
 function handle_show_summaries() {
   stored_summaries.value = getStoredMessageSummaries();
+  refresh_stored_time();
   summary_dialog.value?.showModal();
 }
 
@@ -314,6 +335,19 @@ function handle_show_characters() {
 
 function handle_close_characters() {
   character_dialog.value?.close();
+}
+
+function handle_refresh_time() {
+  refresh_stored_time();
+}
+
+function refresh_stored_time() {
+  try {
+    stored_time.value = getStoredTime();
+  } catch (error) {
+    console.warn('[CosmosMemory] 读取当前故事时间失败', error);
+    stored_time.value = '';
+  }
 }
 
 async function handle_regenerate_characters() {
