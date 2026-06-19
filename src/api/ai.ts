@@ -6,11 +6,7 @@ import {
   type CharacterOperation,
   type StoredCharacter,
 } from '@/core/characters';
-import {
-  TimeUpdateResponse,
-  formatTimeForSummaryRequest,
-  type StoryTimeUpdate,
-} from '@/core/time';
+import { TimeUpdateResponse, formatTimeForSummaryRequest, type StoryTimeUpdate } from '@/core/time';
 import { parsePrettified } from '@/util/zod';
 
 const TEST_MESSAGE = '!ping';
@@ -160,7 +156,7 @@ function parseSummaryJson(raw: string, options: SummaryGenerationOptions = {}): 
   return {
     summary: result.summary,
     characters: options.characters_enabled ? result.characters : [],
-    time_update: options.time_enabled ? result.time_update ?? null : null,
+    time_update: options.time_enabled ? (result.time_update ?? null) : null,
   };
 }
 
@@ -442,7 +438,10 @@ export async function summarizeMessage(
   }
 }
 
-async function extractCharactersWithStructuredOutput(settings: AiSettings, content: string): Promise<StoredCharacter[]> {
+async function extractCharactersWithStructuredOutput(
+  settings: AiSettings,
+  content: string,
+): Promise<StoredCharacter[]> {
   const result = await window.TavernHelper.generateRaw({
     should_silence: true,
     custom_api: buildCustomApi(settings),
@@ -489,7 +488,10 @@ async function extractCharactersWithJsonPrompt(settings: AiSettings, content: st
   return parseFullCharacterExtractionJson(result);
 }
 
-export async function extractCharactersFromChatContent(settings: AiSettings, content: string): Promise<StoredCharacter[]> {
+export async function extractCharactersFromChatContent(
+  settings: AiSettings,
+  content: string,
+): Promise<StoredCharacter[]> {
   try {
     return await extractCharactersWithStructuredOutput(settings, content);
   } catch (error) {

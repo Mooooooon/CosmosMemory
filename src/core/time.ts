@@ -79,9 +79,11 @@ export function formatTimeForSummaryRequest(current_time: string): string {
     return formatTimeForPrompt(normalized_time);
   }
 
-  return ['[CosmosMemory 时间]', '当前故事时间：未记录，请根据本楼层剧情生成符合背景的当前时间。', '[/CosmosMemory 时间]'].join(
-    '\n',
-  );
+  return [
+    '[CosmosMemory 时间]',
+    '当前故事时间：未记录，请根据本楼层剧情生成符合背景的当前时间。',
+    '[/CosmosMemory 时间]',
+  ].join('\n');
 }
 
 function clearChatTimePrompt() {

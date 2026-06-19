@@ -96,10 +96,12 @@ function isStoredCharacter(value: unknown): value is StoredCharacter {
 function getStoredCharacterRecord(): Record<string, StoredCharacter> {
   const variables = window.TavernHelper.getVariables({ type: 'chat' });
   const characters = _.get(variables, CHARACTER_STORAGE_PATH, {}) as Record<string, unknown>;
-  return Object.fromEntries(Object.entries(characters).filter((entry): entry is [string, StoredCharacter] => {
-    const [key, character] = entry;
-    return Boolean(key) && isStoredCharacter(character);
-  }));
+  return Object.fromEntries(
+    Object.entries(characters).filter((entry): entry is [string, StoredCharacter] => {
+      const [key, character] = entry;
+      return Boolean(key) && isStoredCharacter(character);
+    }),
+  );
 }
 
 export function getStoredCharacters(): StoredCharacter[] {
@@ -214,7 +216,9 @@ export function replaceStoredCharacters(characters: StoredCharacter[]): StoredCh
 }
 
 export function formatCharactersForPrompt(characters: StoredCharacter[] = getStoredCharacters()): string {
-  const primary_characters = characters.filter((character): character is PrimaryCharacter => character.type === 'primary');
+  const primary_characters = characters.filter(
+    (character): character is PrimaryCharacter => character.type === 'primary',
+  );
   const secondary_characters = characters.filter(
     (character): character is SecondaryCharacter => character.type === 'secondary',
   );

@@ -181,7 +181,7 @@ async function summarizeReceivedMessageCore(message_id: number): Promise<Message
     message_id,
     summary: result.summary,
     character_operations: settings.characters.enabled ? result.characters : [],
-    time_update: settings.time.enabled ? result.time_update ?? null : null,
+    time_update: settings.time.enabled ? (result.time_update ?? null) : null,
     updated_at: new Date().toISOString(),
   };
 
