@@ -62,7 +62,11 @@
           />
         </div>
 
-        <div v-if="test_result" class="cosmos-memory-test-result" :class="`cosmos-memory-test-result--${test_result.type}`">
+        <div
+          v-if="test_result"
+          class="cosmos-memory-test-result"
+          :class="`cosmos-memory-test-result--${test_result.type}`"
+        >
           {{ test_result.message }}
         </div>
 
