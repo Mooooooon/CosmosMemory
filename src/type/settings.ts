@@ -11,10 +11,18 @@ export const AiSettings = z
   })
   .prefault({});
 
+export type CompressionSettings = z.infer<typeof CompressionSettings>;
+export const CompressionSettings = z
+  .object({
+    retained_original_assistant_messages: z.number().int().min(0).default(5),
+  })
+  .prefault({});
+
 export type Settings = z.infer<typeof Settings>;
 export const Settings = z
   .object({
     ai: AiSettings,
+    compression: CompressionSettings,
   })
   .prefault({});
 

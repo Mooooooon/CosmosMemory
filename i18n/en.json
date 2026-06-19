@@ -7,6 +7,8 @@
   "获取模型列表": "Fetch model list",
   "模型": "Model",
   "请选择模型": "Select a model",
+  "保留原文的数量": "Original replies to keep",
+  "当 AI 回复数量超过该值时，旧回复会被隐藏，并在生成时用已保存的摘要替代。": "When AI replies exceed this value, older replies will be hidden and replaced by saved summaries during generation.",
   "测试中...": "Testing...",
   "发送测试消息": "Send test message",
   "模型列表获取成功。": "Model list fetched.",

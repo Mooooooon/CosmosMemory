@@ -1,3 +1,4 @@
+import { applySummaryCompressionForNextGeneration } from '@/core/compression';
 import { summarizeMissingAssistantMessages, summarizeReceivedMessage } from '@/core/summary';
 import { event_types, eventSource } from '@sillytavern/script';
 
@@ -10,6 +11,8 @@ const SUMMARIZABLE_MESSAGE_TYPES = new Set([
   'continue',
   'first_message',
 ]);
+
+const SKIPPED_COMPRESSION_GENERATION_TYPES = new Set(['quiet']);
 
 let is_summary_listener_registered = false;
 
@@ -59,14 +62,36 @@ async function handleMessageSent(message_id: number) {
   }
 }
 
+async function handleGenerationAfterCommands(
+  type: string,
+  option: {
+    quiet_prompt?: string;
+  },
+  dry_run: boolean,
+) {
+  if (dry_run || SKIPPED_COMPRESSION_GENERATION_TYPES.has(type) || option.quiet_prompt) {
+    return;
+  }
+
+  try {
+    await applySummaryCompressionForNextGeneration();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[CosmosMemory] 生成前应用摘要压缩失败', error);
+    toastr.error(message, 'Cosmos Memory 生成前压缩失败');
+    throw error;
+  }
+}
+
 export function registerSummaryEvents() {
   if (is_summary_listener_registered) {
     console.info('[CosmosMemory] 剧情总结监听已注册，跳过重复注册');
     return;
   }
 
-  console.info('[CosmosMemory] 注册 MESSAGE_RECEIVED / MESSAGE_SENT 剧情总结监听');
+  console.info('[CosmosMemory] 注册 MESSAGE_RECEIVED / MESSAGE_SENT / GENERATION_AFTER_COMMANDS 剧情总结监听');
   eventSource.on(event_types.MESSAGE_RECEIVED, handleMessageReceived);
   eventSource.on(event_types.MESSAGE_SENT, handleMessageSent);
+  eventSource.on(event_types.GENERATION_AFTER_COMMANDS, handleGenerationAfterCommands);
   is_summary_listener_registered = true;
 }

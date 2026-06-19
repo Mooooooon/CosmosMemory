@@ -52,6 +52,22 @@
           </label>
         </template>
 
+        <label class="cosmos-memory-field">
+          <span>{{ t`保留原文的数量` }}</span>
+          <input
+            v-model.number="settings.compression.retained_original_assistant_messages"
+            class="text_pole"
+            type="number"
+            min="0"
+            step="1"
+            @change="normalize_retained_original_count"
+          />
+        </label>
+
+        <div class="cosmos-memory-hint">
+          {{ t`当 AI 回复数量超过该值时，旧回复会被隐藏，并在生成时用已保存的摘要替代。` }}
+        </div>
+
         <div class="cosmos-memory-row flex-container">
           <input
             class="menu_button"
@@ -198,6 +214,11 @@ function format_time(value: string) {
   }
 
   return date.toLocaleString();
+}
+
+function normalize_retained_original_count() {
+  const count = settings.value.compression.retained_original_assistant_messages;
+  settings.value.compression.retained_original_assistant_messages = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 5;
 }
 </script>
 
