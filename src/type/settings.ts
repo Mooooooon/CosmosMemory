@@ -32,6 +32,13 @@ export const TimeSettings = z
   })
   .prefault({});
 
+export type ItemSettings = z.infer<typeof ItemSettings>;
+export const ItemSettings = z
+  .object({
+    enabled: z.boolean().default(false),
+  })
+  .prefault({});
+
 export type Settings = z.infer<typeof Settings>;
 export const Settings = z
   .object({
@@ -39,6 +46,7 @@ export const Settings = z
     compression: CompressionSettings,
     characters: CharacterSettings,
     time: TimeSettings,
+    items: ItemSettings,
   })
   .prefault({});
 

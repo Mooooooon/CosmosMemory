@@ -1,5 +1,6 @@
 import { applyCharacterPromptInjection } from '@/core/characters';
 import { applySummaryCompressionForNextGeneration } from '@/core/compression';
+import { applyItemPromptInjection } from '@/core/items';
 import {
   pruneMessageSummariesAfterMessage,
   summarizeMissingAssistantMessages,
@@ -43,6 +44,7 @@ function handleMessageReceived(message_id: number, type: string) {
         message_id: summary.message_id,
         summary_length: summary.summary.length,
         character_operation_count: summary.character_operations?.length ?? 0,
+        item_operation_count: summary.item_operations?.length ?? 0,
         time_updated: Boolean(summary.time_update?.current_time),
       });
     })
@@ -94,6 +96,7 @@ async function handleGenerationAfterCommands(
     const { settings } = useSettingsStore();
     await applySummaryCompressionForNextGeneration();
     applyTimePromptInjection(settings.time.enabled);
+    applyItemPromptInjection(settings.items.enabled);
     applyCharacterPromptInjection(settings.characters.enabled);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

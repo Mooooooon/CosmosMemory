@@ -6,6 +6,12 @@ import {
   type CharacterOperation,
   type StoredCharacter,
 } from '@/core/characters';
+import {
+  ItemOperationsResponse,
+  formatItemsForPrompt,
+  type ItemOperation,
+  type StoredItem,
+} from '@/core/items';
 import { TimeUpdateResponse, formatTimeForSummaryRequest, type StoryTimeUpdate } from '@/core/time';
 import { parsePrettified } from '@/util/zod';
 
@@ -20,14 +26,10 @@ const SummaryResponse = z.object({
   summary: z.string().trim().min(1),
 });
 
-const SummaryWithCharactersResponse = z.object({
-  summary: z.string().trim().min(1),
-  characters: CharacterOperationsResponse,
-});
-
 const SummaryWithMemoryResponse = z.object({
   summary: z.string().trim().min(1),
   characters: CharacterOperationsResponse.optional().default([]),
+  item_operations: ItemOperationsResponse.optional().default([]),
   time_update: TimeUpdateResponse.nullable().optional(),
 });
 
@@ -38,12 +40,15 @@ const CharacterExtractionResponse = z.object({
 export type SummaryGenerationResult = {
   summary: string;
   characters: CharacterOperation[];
+  item_operations: ItemOperation[];
   time_update?: StoryTimeUpdate | null;
 };
 
 export type SummaryGenerationOptions = {
   characters_enabled?: boolean;
   stored_characters?: StoredCharacter[];
+  items_enabled?: boolean;
+  stored_items?: StoredItem[];
   time_enabled?: boolean;
   current_time?: string;
 };
@@ -56,6 +61,9 @@ const SUMMARY_JSON_INSTRUCTION =
 
 const CHARACTER_EXTRACTION_INSTRUCTION =
   '同时提取本楼层明确新增、更新或删除的人物信息，返回 characters 数组。主要角色是剧情中有明确戏份的角色，需要保存姓名、背景介绍、外貌描写、性格描写；次要角色是会多次出现但不重要的 NPC，例如酒馆老板、公会看板娘，只需要保存姓名或身份和简介。一次性路人、杂兵、临时敌人不要记录。只返回本楼层带来的变化，不要重复返回没有变化的已有人物。';
+
+const ITEM_EXTRACTION_INSTRUCTION =
+  '同时提取本楼层明确新增、更新或删除的重要物品信息，返回 item_operations 数组。只记录会影响剧情的重要道具，例如武器、装备、礼物、信物、钥匙、契约、任务物品等；不要记录普通食物、零钱、临时杂物、随手可得且不影响剧情的物品。物品被使用、损坏、交出、消耗或状态改变时要及时用 set 更新简介；物品彻底失去剧情意义或不再持有时可用 delete 删除。只返回本楼层带来的变化，不要重复返回没有变化的已有物品。';
 
 const TIME_EXTRACTION_INSTRUCTION =
   '同时维护当前故事时间，返回 time_update。若已有当前时间为空，请根据本楼层剧情内容生成一个符合故事背景的当前时间；若已有当前时间不为空，请根据本楼层剧情明确或可合理推断的耗时更新当前时间。若本楼层没有时间流逝或无法判断耗时，则保持当前时间不变。不要使用现实时间，除非剧情本身就是现实背景。';
@@ -137,18 +145,11 @@ function parseSummaryJson(raw: string, options: SummaryGenerationOptions = {}): 
   const json_text = fenced ?? text.match(/\{[\s\S]*\}/)?.[0] ?? text;
   const parsed = JSON.parse(json_text);
 
-  if (!options.characters_enabled && !options.time_enabled) {
+  if (!hasMemoryExtraction(options)) {
     return {
       summary: parsePrettified(SummaryResponse, parsed).summary,
       characters: [],
-    };
-  }
-
-  if (options.characters_enabled && !options.time_enabled) {
-    const result = parsePrettified(SummaryWithCharactersResponse, parsed);
-    return {
-      summary: result.summary,
-      characters: result.characters,
+      item_operations: [],
     };
   }
 
@@ -156,17 +157,23 @@ function parseSummaryJson(raw: string, options: SummaryGenerationOptions = {}): 
   return {
     summary: result.summary,
     characters: options.characters_enabled ? result.characters : [],
+    item_operations: options.items_enabled ? result.item_operations : [],
     time_update: options.time_enabled ? (result.time_update ?? null) : null,
   };
 }
 
+function hasMemoryExtraction(options: SummaryGenerationOptions): boolean {
+  return options.characters_enabled === true || options.items_enabled === true || options.time_enabled === true;
+}
+
 function buildSummaryContent(content: string, options: SummaryGenerationOptions): string {
-  if (!options.characters_enabled && !options.time_enabled) {
+  if (!hasMemoryExtraction(options)) {
     return content;
   }
 
   const memory_sections = [
     options.time_enabled ? formatTimeForSummaryRequest(options.current_time ?? '') : '',
+    options.items_enabled ? formatItemsForPrompt(options.stored_items ?? []) : '',
     options.characters_enabled ? formatCharactersForPrompt(options.stored_characters ?? []) : '',
   ].filter(Boolean);
 
@@ -184,6 +191,10 @@ function buildSummarySystemPrompt(options: SummaryGenerationOptions): string {
     instructions.push(TIME_EXTRACTION_INSTRUCTION);
   }
 
+  if (options.items_enabled) {
+    instructions.push(ITEM_EXTRACTION_INSTRUCTION);
+  }
+
   if (options.characters_enabled) {
     instructions.push(CHARACTER_EXTRACTION_INSTRUCTION);
   }
@@ -192,13 +203,18 @@ function buildSummarySystemPrompt(options: SummaryGenerationOptions): string {
 }
 
 function buildSummaryJsonInstruction(options: SummaryGenerationOptions): string {
-  if (!options.characters_enabled && !options.time_enabled) {
+  if (!hasMemoryExtraction(options)) {
     return SUMMARY_JSON_INSTRUCTION;
   }
 
   const fields = ['"summary":"连贯的剧情摘要"'];
   if (options.time_enabled) {
     fields.push(TIME_JSON_FIELD_INSTRUCTION);
+  }
+  if (options.items_enabled) {
+    fields.push(
+      '"item_operations":[{"type":"add|set|delete","name":"物品名","brief":"物品简介或当前状态，没有则为空字符串"}]',
+    );
   }
   if (options.characters_enabled) {
     fields.push(
@@ -240,6 +256,34 @@ function buildStructuredSummarySchema(options: SummaryGenerationOptions): JsonSc
       additionalProperties: false,
     };
     required.push('time_update');
+  }
+
+  if (options.items_enabled) {
+    properties.item_operations = {
+      type: 'array',
+      description: '本楼层带来的重要物品信息变更；没有变化时返回空数组',
+      items: {
+        type: 'object',
+        properties: {
+          type: {
+            type: 'string',
+            enum: ['add', 'set', 'delete'],
+            description: '物品操作类型',
+          },
+          name: {
+            type: 'string',
+            description: '物品名',
+          },
+          brief: {
+            type: 'string',
+            description: '物品简介或当前状态；不适用或无变化时返回空字符串',
+          },
+        },
+        required: ['type', 'name', 'brief'],
+        additionalProperties: false,
+      },
+    };
+    required.push('item_operations');
   }
 
   if (options.characters_enabled) {
@@ -288,11 +332,8 @@ function buildStructuredSummarySchema(options: SummaryGenerationOptions): JsonSc
   }
 
   return {
-    name:
-      options.characters_enabled || options.time_enabled
-        ? 'cosmos_memory_message_summary_with_memory'
-        : 'cosmos_memory_message_summary',
-    description: options.characters_enabled || options.time_enabled ? '单条剧情回复摘要和记忆变更' : '单条剧情回复摘要',
+    name: hasMemoryExtraction(options) ? 'cosmos_memory_message_summary_with_memory' : 'cosmos_memory_message_summary',
+    description: hasMemoryExtraction(options) ? '单条剧情回复摘要和记忆变更' : '单条剧情回复摘要',
     strict: true,
     value: {
       type: 'object',
@@ -371,6 +412,7 @@ async function summarizeMessageWithStructuredOutput(
     custom_source,
     mode: custom_source === DEEPSEEK_API_SOURCE ? 'deepseek_json_object_via_st' : 'json_schema',
     characters_enabled: options.characters_enabled === true,
+    items_enabled: options.items_enabled === true,
     time_enabled: options.time_enabled === true,
   });
 

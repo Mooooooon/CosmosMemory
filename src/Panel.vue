@@ -117,6 +117,23 @@
         </div>
 
         <div class="cosmos-memory-section-title flex-container">
+          <strong class="flex1" data-i18n="物品">{{ t`物品` }}</strong>
+        </div>
+
+        <div class="cosmos-memory-row flex-container">
+          <input id="cosmos_memory_items_enabled" v-model="settings.items.enabled" type="checkbox" />
+          <label for="cosmos_memory_items_enabled">{{ t`物品信息` }}</label>
+        </div>
+
+        <div class="cosmos-memory-hint">
+          {{ t`开启后会在总结时记录影响剧情的重要道具，并注入到人物信息上方。` }}
+        </div>
+
+        <div class="cosmos-memory-row flex-container">
+          <input class="menu_button" type="button" :value="t`查看物品信息`" @click="handle_show_items" />
+        </div>
+
+        <div class="cosmos-memory-section-title flex-container">
           <strong class="flex1" data-i18n="人物">{{ t`人物` }}</strong>
         </div>
 
@@ -161,6 +178,26 @@
             <span>{{ format_time(summary.updated_at) }}</span>
           </div>
           <p>{{ summary.summary }}</p>
+        </article>
+      </div>
+    </dialog>
+
+    <dialog ref="item_dialog" class="cosmos-memory-dialog">
+      <div class="cosmos-memory-dialog-header">
+        <b>{{ t`当前聊天物品信息` }}</b>
+        <button class="menu_button" type="button" @click="handle_close_items">{{ t`关闭` }}</button>
+      </div>
+
+      <div v-if="stored_items.length === 0" class="cosmos-memory-empty">
+        {{ t`当前聊天记录还没有物品信息。` }}
+      </div>
+
+      <div v-else class="cosmos-memory-summary-list">
+        <article v-for="item in stored_items" :key="item.name" class="cosmos-memory-summary-item">
+          <div class="cosmos-memory-summary-meta">
+            <b>{{ item.name }}</b>
+          </div>
+          <p>{{ item.brief }}</p>
         </article>
       </div>
     </dialog>
@@ -222,6 +259,7 @@ import {
   type SecondaryCharacter,
   type StoredCharacter,
 } from '@/core/characters';
+import { getStoredItems, type StoredItem } from '@/core/items';
 import { getStoredMessageSummaries, type MessageSummary } from '@/core/summary';
 import { getStoredTime } from '@/core/time';
 import { useSettingsStore } from '@/store/settings';
@@ -240,9 +278,11 @@ const is_regenerating_characters = ref(false);
 const test_result = ref<TestResult | null>(null);
 const stored_summaries = ref<MessageSummary[]>([]);
 const stored_characters = ref<StoredCharacter[]>([]);
+const stored_items = ref<StoredItem[]>([]);
 const stored_time = ref('');
 const summary_dialog = ref<HTMLDialogElement | null>(null);
 const character_dialog = ref<HTMLDialogElement | null>(null);
+const item_dialog = ref<HTMLDialogElement | null>(null);
 
 const model_options = computed(() => {
   return [...new Set([settings.value.ai.selected_model, ...settings.value.ai.available_models])]
@@ -335,6 +375,15 @@ function handle_show_characters() {
 
 function handle_close_characters() {
   character_dialog.value?.close();
+}
+
+function handle_show_items() {
+  stored_items.value = getStoredItems();
+  item_dialog.value?.showModal();
+}
+
+function handle_close_items() {
+  item_dialog.value?.close();
 }
 
 function handle_refresh_time() {
