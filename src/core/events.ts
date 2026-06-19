@@ -1,9 +1,11 @@
+import { applyCharacterPromptInjection } from '@/core/characters';
 import { applySummaryCompressionForNextGeneration } from '@/core/compression';
 import {
   pruneMessageSummariesAfterMessage,
   summarizeMissingAssistantMessages,
   summarizeReceivedMessage,
 } from '@/core/summary';
+import { useSettingsStore } from '@/store/settings';
 import { event_types, eventSource } from '@sillytavern/script';
 
 const SUMMARIZABLE_MESSAGE_TYPES = new Set([
@@ -39,6 +41,7 @@ function handleMessageReceived(message_id: number, type: string) {
       console.info('[CosmosMemory] 楼层总结完成', {
         message_id: summary.message_id,
         summary_length: summary.summary.length,
+        character_operation_count: summary.character_operations?.length ?? 0,
       });
     })
     .catch(error => {
@@ -87,10 +90,11 @@ async function handleGenerationAfterCommands(
 
   try {
     await applySummaryCompressionForNextGeneration();
+    await applyCharacterPromptInjection(useSettingsStore().settings.characters.enabled);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error('[CosmosMemory] 生成前应用摘要压缩失败', error);
-    toastr.error(message, 'Cosmos Memory 生成前压缩失败');
+    console.error('[CosmosMemory] 生成前应用记忆注入失败', error);
+    toastr.error(message, 'Cosmos Memory 生成前记忆注入失败');
     throw error;
   }
 }

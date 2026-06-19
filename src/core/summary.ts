@@ -1,4 +1,11 @@
 import { summarizeMessage } from '@/api/ai';
+import {
+  CharacterOperationsResponse,
+  applyCharacterOperations,
+  getStoredCharacters,
+  rebuildStoredCharactersFromSummaries,
+  type CharacterOperation,
+} from '@/core/characters';
 import { useSettingsStore } from '@/store/settings';
 
 const STORAGE_ROOT = 'cosmos_memory';
@@ -9,6 +16,7 @@ const summarizing_messages = new Map<number, Promise<MessageSummary | null>>();
 export type MessageSummary = {
   message_id: number;
   summary: string;
+  character_operations?: CharacterOperation[];
   updated_at: string;
 };
 
@@ -87,6 +95,13 @@ export function getStoredMessageSummaries(): MessageSummary[] {
         typeof summary.summary === 'string'
       );
     })
+    .map(summary => {
+      const operations = CharacterOperationsResponse.safeParse(summary.character_operations);
+      return {
+        ...summary,
+        character_operations: operations.success ? operations.data : [],
+      };
+    })
     .sort((left, right) => left.message_id - right.message_id);
 }
 
@@ -118,6 +133,7 @@ export function pruneMessageSummariesAfterMessage(message_id: number): MessageSu
       current_message_id: message_id,
       removed_message_ids: removed_summaries.map(summary => summary.message_id),
     });
+    rebuildStoredCharactersFromSummaries(getStoredMessageSummaries());
   }
 
   return removed_summaries.sort((left, right) => left.message_id - right.message_id);
@@ -141,14 +157,23 @@ async function summarizeReceivedMessageCore(message_id: number): Promise<Message
     use_tavern_api: settings.ai.use_tavern_api,
     custom_api_url: settings.ai.use_tavern_api ? undefined : settings.ai.custom_api_url,
     selected_model: settings.ai.use_tavern_api ? undefined : settings.ai.selected_model,
+    characters_enabled: settings.characters.enabled,
+  });
+  const result = await summarizeMessage(settings.ai, source, {
+    characters_enabled: settings.characters.enabled,
+    stored_characters: settings.characters.enabled ? getStoredCharacters() : [],
   });
   const summary: MessageSummary = {
     message_id,
-    summary: await summarizeMessage(settings.ai, source),
+    summary: result.summary,
+    character_operations: settings.characters.enabled ? result.characters : [],
     updated_at: new Date().toISOString(),
   };
 
   saveMessageSummary(summary);
+  if (settings.characters.enabled && summary.character_operations && summary.character_operations.length > 0) {
+    applyCharacterOperations(summary.character_operations);
+  }
   return summary;
 }
 

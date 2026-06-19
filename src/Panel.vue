@@ -6,6 +6,10 @@
         <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
       </div>
       <div class="inline-drawer-content">
+        <div class="cosmos-memory-section-title flex-container">
+          <strong class="flex1" data-i18n="API设置">{{ t`API设置` }}</strong>
+        </div>
+
         <div class="cosmos-memory-row flex-container">
           <input id="cosmos_memory_use_tavern_api" v-model="settings.ai.use_tavern_api" type="checkbox" />
           <label for="cosmos_memory_use_tavern_api">{{ t`是否使用酒馆API` }}</label>
@@ -52,22 +56,6 @@
           </label>
         </template>
 
-        <label class="cosmos-memory-field">
-          <span>{{ t`保留原文的数量` }}</span>
-          <input
-            v-model.number="settings.compression.retained_original_assistant_messages"
-            class="text_pole"
-            type="number"
-            min="0"
-            step="1"
-            @change="normalize_retained_original_count"
-          />
-        </label>
-
-        <div class="cosmos-memory-hint">
-          {{ t`当 AI 回复数量超过该值时，旧回复会被隐藏，并在生成时用已保存的摘要替代。` }}
-        </div>
-
         <div class="cosmos-memory-row flex-container">
           <input
             class="menu_button"
@@ -86,8 +74,52 @@
           {{ test_result.message }}
         </div>
 
+        <div class="cosmos-memory-section-title flex-container">
+          <strong class="flex1" data-i18n="总结">{{ t`总结` }}</strong>
+        </div>
+
+        <label class="cosmos-memory-field">
+          <span>{{ t`保留原文的数量` }}</span>
+          <input
+            v-model.number="settings.compression.retained_original_assistant_messages"
+            class="text_pole"
+            type="number"
+            min="0"
+            step="1"
+            @change="normalize_retained_original_count"
+          />
+        </label>
+
+        <div class="cosmos-memory-hint">
+          {{ t`当 AI 回复数量超过该值时，旧回复会被隐藏，并在生成时用已保存的摘要替代。` }}
+        </div>
+
         <div class="cosmos-memory-row flex-container">
           <input class="menu_button" type="button" :value="t`查看已有总结`" @click="handle_show_summaries" />
+        </div>
+
+        <div class="cosmos-memory-section-title flex-container">
+          <strong class="flex1" data-i18n="人物">{{ t`人物` }}</strong>
+        </div>
+
+        <div class="cosmos-memory-row flex-container">
+          <input id="cosmos_memory_characters_enabled" v-model="settings.characters.enabled" type="checkbox" />
+          <label for="cosmos_memory_characters_enabled">{{ t`人物信息` }}</label>
+        </div>
+
+        <div class="cosmos-memory-hint">
+          {{ t`开启后会在总结时提取主要角色和会重复出现的次要角色，并注入到后续提示词中。` }}
+        </div>
+
+        <div class="cosmos-memory-row flex-container">
+          <input class="menu_button" type="button" :value="t`查看人物信息`" @click="handle_show_characters" />
+          <input
+            class="menu_button"
+            type="button"
+            :value="is_regenerating_characters ? t`重新生成中...` : t`重新生成`"
+            :disabled="is_regenerate_characters_disabled"
+            @click="handle_regenerate_characters"
+          />
         </div>
 
         <hr class="sysHR" />
@@ -114,11 +146,64 @@
         </article>
       </div>
     </dialog>
+
+    <dialog ref="character_dialog" class="cosmos-memory-dialog">
+      <div class="cosmos-memory-dialog-header">
+        <b>{{ t`当前聊天人物信息` }}</b>
+        <button class="menu_button" type="button" @click="handle_close_characters">{{ t`关闭` }}</button>
+      </div>
+
+      <div v-if="stored_characters.length === 0" class="cosmos-memory-empty">
+        {{ t`当前聊天记录还没有人物信息。` }}
+      </div>
+
+      <div v-else class="cosmos-memory-summary-list">
+        <section v-if="primary_characters.length > 0">
+          <h4>{{ t`主要角色` }}</h4>
+          <article v-for="character in primary_characters" :key="character.name" class="cosmos-memory-summary-item">
+            <div class="cosmos-memory-summary-meta">
+              <b>{{ character.name }}</b>
+            </div>
+            <dl class="cosmos-memory-character-fields">
+              <template v-if="character.background">
+                <dt>{{ t`背景介绍` }}</dt>
+                <dd>{{ character.background }}</dd>
+              </template>
+              <template v-if="character.appearance">
+                <dt>{{ t`外貌描写` }}</dt>
+                <dd>{{ character.appearance }}</dd>
+              </template>
+              <template v-if="character.personality">
+                <dt>{{ t`性格描写` }}</dt>
+                <dd>{{ character.personality }}</dd>
+              </template>
+            </dl>
+          </article>
+        </section>
+
+        <section v-if="secondary_characters.length > 0">
+          <h4>{{ t`次要角色` }}</h4>
+          <article v-for="character in secondary_characters" :key="character.name" class="cosmos-memory-summary-item">
+            <div class="cosmos-memory-summary-meta">
+              <b>{{ character.name }}</b>
+            </div>
+            <p>{{ character.brief }}</p>
+          </article>
+        </section>
+      </div>
+    </dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { fetchCustomModelNames, sendPing } from '@/api/ai';
+import { regenerateCharactersFromChat } from '@/core/character-regeneration';
+import {
+  getStoredCharacters,
+  type PrimaryCharacter,
+  type SecondaryCharacter,
+  type StoredCharacter,
+} from '@/core/characters';
 import { getStoredMessageSummaries, type MessageSummary } from '@/core/summary';
 import { useSettingsStore } from '@/store/settings';
 import { storeToRefs } from 'pinia';
@@ -132,9 +217,12 @@ const { settings } = storeToRefs(useSettingsStore());
 
 const is_fetching_models = ref(false);
 const is_testing = ref(false);
+const is_regenerating_characters = ref(false);
 const test_result = ref<TestResult | null>(null);
 const stored_summaries = ref<MessageSummary[]>([]);
+const stored_characters = ref<StoredCharacter[]>([]);
 const summary_dialog = ref<HTMLDialogElement | null>(null);
+const character_dialog = ref<HTMLDialogElement | null>(null);
 
 const model_options = computed(() => {
   return [...new Set([settings.value.ai.selected_model, ...settings.value.ai.available_models])]
@@ -147,11 +235,27 @@ const is_test_disabled = computed(() => {
     return true;
   }
 
+  return is_ai_request_disabled.value;
+});
+
+const is_ai_request_disabled = computed(() => {
   if (settings.value.ai.use_tavern_api) {
     return false;
   }
 
   return !settings.value.ai.custom_api_url.trim() || !settings.value.ai.selected_model.trim();
+});
+
+const is_regenerate_characters_disabled = computed(() => {
+  return is_regenerating_characters.value || is_ai_request_disabled.value;
+});
+
+const primary_characters = computed(() => {
+  return stored_characters.value.filter((character): character is PrimaryCharacter => character.type === 'primary');
+});
+
+const secondary_characters = computed(() => {
+  return stored_characters.value.filter((character): character is SecondaryCharacter => character.type === 'secondary');
 });
 
 async function handle_fetch_models() {
@@ -203,6 +307,29 @@ function handle_close_summaries() {
   summary_dialog.value?.close();
 }
 
+function handle_show_characters() {
+  stored_characters.value = getStoredCharacters();
+  character_dialog.value?.showModal();
+}
+
+function handle_close_characters() {
+  character_dialog.value?.close();
+}
+
+async function handle_regenerate_characters() {
+  is_regenerating_characters.value = true;
+
+  try {
+    stored_characters.value = await regenerateCharactersFromChat(settings.value.ai);
+    toastr.success(t`人物信息重新生成成功。`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    toastr.error(message, 'Cosmos Memory');
+  } finally {
+    is_regenerating_characters.value = false;
+  }
+}
+
 function format_time(value: string) {
   if (!value) {
     return '';
@@ -241,6 +368,12 @@ function normalize_retained_original_count() {
 .cosmos-memory-field > span,
 .cosmos-memory-hint {
   opacity: 0.85;
+}
+
+.cosmos-memory-section-title {
+  border-bottom: 1px solid var(--SmartThemeBorderColor);
+  margin: 12px 0 8px;
+  padding-bottom: 4px;
 }
 
 .cosmos-memory-test-result {
@@ -310,5 +443,19 @@ function normalize_retained_original_count() {
 .cosmos-memory-summary-meta span {
   font-size: 0.9em;
   opacity: 0.75;
+}
+
+.cosmos-memory-character-fields {
+  margin: 8px 0 0;
+}
+
+.cosmos-memory-character-fields dt {
+  font-weight: 700;
+  margin-top: 8px;
+}
+
+.cosmos-memory-character-fields dd {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
 }
 </style>

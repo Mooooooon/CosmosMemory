@@ -18,11 +18,19 @@ export const CompressionSettings = z
   })
   .prefault({});
 
+export type CharacterSettings = z.infer<typeof CharacterSettings>;
+export const CharacterSettings = z
+  .object({
+    enabled: z.boolean().default(false),
+  })
+  .prefault({});
+
 export type Settings = z.infer<typeof Settings>;
 export const Settings = z
   .object({
     ai: AiSettings,
     compression: CompressionSettings,
+    characters: CharacterSettings,
   })
   .prefault({});
 
