@@ -1,4 +1,4 @@
-import { summarizeReceivedMessage } from '@/core/summary';
+import { summarizeMissingAssistantMessages, summarizeReceivedMessage } from '@/core/summary';
 import { event_types, eventSource } from '@sillytavern/script';
 
 const SUMMARIZABLE_MESSAGE_TYPES = new Set([
@@ -11,8 +11,6 @@ const SUMMARIZABLE_MESSAGE_TYPES = new Set([
   'first_message',
 ]);
 
-const summarizing_message_ids = new Set<number>();
-
 let is_summary_listener_registered = false;
 
 function handleMessageReceived(message_id: number, type: string) {
@@ -23,12 +21,6 @@ function handleMessageReceived(message_id: number, type: string) {
     return;
   }
 
-  if (summarizing_message_ids.has(message_id)) {
-    console.info('[CosmosMemory] 跳过正在总结中的楼层', { message_id });
-    return;
-  }
-
-  summarizing_message_ids.add(message_id);
   console.info('[CosmosMemory] 开始处理楼层总结', { message_id, type });
   void summarizeReceivedMessage(message_id)
     .then(summary => {
@@ -46,10 +38,25 @@ function handleMessageReceived(message_id: number, type: string) {
       const message = error instanceof Error ? error.message : String(error);
       console.error('[CosmosMemory] 剧情总结失败', error);
       toastr.error(message, 'Cosmos Memory 剧情总结失败');
-    })
-    .finally(() => {
-      summarizing_message_ids.delete(message_id);
     });
+}
+
+async function handleMessageSent(message_id: number) {
+  try {
+    console.info('[CosmosMemory] 收到 MESSAGE_SENT 事件，发送前检查缺失总结', { message_id });
+    const summaries = await summarizeMissingAssistantMessages();
+    if (summaries.length > 0) {
+      console.info('[CosmosMemory] 发送前已补全缺失总结', {
+        trigger_message_id: message_id,
+        summarized_message_ids: summaries.map(summary => summary.message_id),
+      });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[CosmosMemory] 发送前补全剧情总结失败', error);
+    toastr.error(message, 'Cosmos Memory 发送前补全总结失败');
+    throw error;
+  }
 }
 
 export function registerSummaryEvents() {
@@ -58,7 +65,8 @@ export function registerSummaryEvents() {
     return;
   }
 
-  console.info('[CosmosMemory] 注册 MESSAGE_RECEIVED 剧情总结监听');
+  console.info('[CosmosMemory] 注册 MESSAGE_RECEIVED / MESSAGE_SENT 剧情总结监听');
   eventSource.on(event_types.MESSAGE_RECEIVED, handleMessageReceived);
+  eventSource.on(event_types.MESSAGE_SENT, handleMessageSent);
   is_summary_listener_registered = true;
 }

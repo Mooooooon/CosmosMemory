@@ -13,10 +13,10 @@ const SummaryResponse = z.object({
 });
 
 const SUMMARY_SYSTEM_PROMPT =
-  '你是剧情摘要器。请只总结用户提供的单条 AI 回复内容，保留剧情事实、角色行动、角色状态、关系变化、地点、时间、物品和伏笔。不要续写剧情，不要加入原文没有的信息。';
+  '你是剧情摘要器。请把用户提供的内容压缩成一段连贯的故事摘要，只保留已发生的剧情事实、角色行动、状态与关系变化。输出必须是流畅的叙述段落，不要使用分类标签或清单格式，不要续写剧情，不要加入原文没有的信息。';
 
 const SUMMARY_JSON_INSTRUCTION =
-  '请总结以下剧情内容，并且只返回 JSON。JSON 格式必须是 {"summary":"压缩后的剧情摘要"}，不要使用 Markdown 代码块，不要返回额外解释。';
+  '请总结以下剧情内容，只返回 JSON。格式：{"summary":"连贯的剧情摘要"}。不要使用 Markdown 代码块，不要返回额外解释。';
 
 function inferCustomApiSource(settings: AiSettings): string {
   const target = `${settings.custom_api_url} ${settings.selected_model}`.toLowerCase();

@@ -4,6 +4,8 @@ import { useSettingsStore } from '@/store/settings';
 const STORAGE_ROOT = 'cosmos_memory';
 const SUMMARY_STORAGE_PATH = `${STORAGE_ROOT}.summaries`;
 
+const summarizing_messages = new Map<number, Promise<MessageSummary | null>>();
+
 export type MessageSummary = {
   message_id: number;
   summary: string;
@@ -58,6 +60,20 @@ function saveMessageSummary(summary: MessageSummary) {
   });
 }
 
+function getStoredSummaryIds(): Set<number> {
+  return new Set(getStoredMessageSummaries().map(summary => summary.message_id));
+}
+
+function getMissingAssistantMessageIds(): number[] {
+  const stored_summary_ids = getStoredSummaryIds();
+  return window.TavernHelper.getChatMessages('0-{{lastMessageId}}', {
+    role: 'assistant',
+    include_swipes: false,
+  })
+    .filter(message => !stored_summary_ids.has(message.message_id))
+    .map(message => message.message_id);
+}
+
 export function getStoredMessageSummaries(): MessageSummary[] {
   const variables = window.TavernHelper.getVariables({ type: 'chat' });
   const summaries = _.get(variables, SUMMARY_STORAGE_PATH, {}) as Record<string, MessageSummary>;
@@ -74,7 +90,7 @@ export function getStoredMessageSummaries(): MessageSummary[] {
     .sort((left, right) => left.message_id - right.message_id);
 }
 
-export async function summarizeReceivedMessage(message_id: number): Promise<MessageSummary | null> {
+async function summarizeReceivedMessageCore(message_id: number): Promise<MessageSummary | null> {
   const message = getAssistantMessage(message_id);
   if (!message) {
     return null;
@@ -101,4 +117,48 @@ export async function summarizeReceivedMessage(message_id: number): Promise<Mess
 
   saveMessageSummary(summary);
   return summary;
+}
+
+export function summarizeReceivedMessage(message_id: number): Promise<MessageSummary | null> {
+  const existing_task = summarizing_messages.get(message_id);
+  if (existing_task) {
+    console.info('[CosmosMemory] 复用正在进行的楼层总结任务', { message_id });
+    return existing_task;
+  }
+
+  const task = summarizeReceivedMessageCore(message_id).finally(() => {
+    summarizing_messages.delete(message_id);
+  });
+
+  summarizing_messages.set(message_id, task);
+  return task;
+}
+
+export async function summarizeMissingAssistantMessages(): Promise<MessageSummary[]> {
+  const message_ids = getMissingAssistantMessageIds();
+  if (message_ids.length === 0) {
+    console.info('[CosmosMemory] 发送前检查完成，没有缺失总结的 assistant 楼层');
+    return [];
+  }
+
+  console.info('[CosmosMemory] 发送前发现缺失总结的 assistant 楼层，开始依次补全', {
+    message_ids,
+    count: message_ids.length,
+  });
+
+  const summaries: MessageSummary[] = [];
+  for (const message_id of message_ids) {
+    console.info('[CosmosMemory] 发送前补全楼层总结', { message_id });
+    const summary = await summarizeReceivedMessage(message_id);
+    if (summary) {
+      summaries.push(summary);
+    }
+  }
+
+  console.info('[CosmosMemory] 发送前缺失总结补全完成', {
+    requested_count: message_ids.length,
+    summarized_count: summaries.length,
+  });
+
+  return summaries;
 }
