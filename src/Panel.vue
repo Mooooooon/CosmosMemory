@@ -218,7 +218,9 @@ function format_time(value: string) {
 
 function normalize_retained_original_count() {
   const count = settings.value.compression.retained_original_assistant_messages;
-  settings.value.compression.retained_original_assistant_messages = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 5;
+  settings.value.compression.retained_original_assistant_messages = Number.isFinite(count)
+    ? Math.max(0, Math.floor(count))
+    : 5;
 }
 </script>
 
