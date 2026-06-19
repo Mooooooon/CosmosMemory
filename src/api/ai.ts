@@ -6,12 +6,7 @@ import {
   type CharacterOperation,
   type StoredCharacter,
 } from '@/core/characters';
-import {
-  ItemOperationsResponse,
-  formatItemsForPrompt,
-  type ItemOperation,
-  type StoredItem,
-} from '@/core/items';
+import { ItemOperationsResponse, formatItemsForPrompt, type ItemOperation, type StoredItem } from '@/core/items';
 import { TimeUpdateResponse, formatTimeForSummaryRequest, type StoryTimeUpdate } from '@/core/time';
 import { parsePrettified } from '@/util/zod';
 
