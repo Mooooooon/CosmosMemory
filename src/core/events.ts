@@ -1,5 +1,9 @@
 import { applySummaryCompressionForNextGeneration } from '@/core/compression';
-import { summarizeMissingAssistantMessages, summarizeReceivedMessage } from '@/core/summary';
+import {
+  pruneMessageSummariesAfterMessage,
+  summarizeMissingAssistantMessages,
+  summarizeReceivedMessage,
+} from '@/core/summary';
 import { event_types, eventSource } from '@sillytavern/script';
 
 const SUMMARIZABLE_MESSAGE_TYPES = new Set([
@@ -46,7 +50,15 @@ function handleMessageReceived(message_id: number, type: string) {
 
 async function handleMessageSent(message_id: number) {
   try {
-    console.info('[CosmosMemory] 收到 MESSAGE_SENT 事件，发送前检查缺失总结', { message_id });
+    console.info('[CosmosMemory] 收到 MESSAGE_SENT 事件，发送前清理悬空总结并检查缺失总结', { message_id });
+    const removed_summaries = pruneMessageSummariesAfterMessage(message_id);
+    if (removed_summaries.length > 0) {
+      console.info('[CosmosMemory] 发送前已清理悬空总结', {
+        trigger_message_id: message_id,
+        removed_message_ids: removed_summaries.map(summary => summary.message_id),
+      });
+    }
+
     const summaries = await summarizeMissingAssistantMessages();
     if (summaries.length > 0) {
       console.info('[CosmosMemory] 发送前已补全缺失总结', {

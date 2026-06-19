@@ -90,6 +90,39 @@ export function getStoredMessageSummaries(): MessageSummary[] {
     .sort((left, right) => left.message_id - right.message_id);
 }
 
+export function pruneMessageSummariesAfterMessage(message_id: number): MessageSummary[] {
+  const removed_summaries: MessageSummary[] = [];
+
+  window.TavernHelper.updateVariablesWith(
+    variables => {
+      const summaries = _.get(variables, SUMMARY_STORAGE_PATH, {}) as Record<string, MessageSummary>;
+      for (const [key, summary] of Object.entries(summaries)) {
+        if (
+          typeof summary === 'object' &&
+          summary !== null &&
+          typeof summary.message_id === 'number' &&
+          summary.message_id > message_id
+        ) {
+          removed_summaries.push(summary);
+          _.unset(variables, `${SUMMARY_STORAGE_PATH}.${key}`);
+        }
+      }
+
+      return variables;
+    },
+    { type: 'chat' },
+  );
+
+  if (removed_summaries.length > 0) {
+    console.info('[CosmosMemory] 已清理高于当前发送楼层的悬空总结', {
+      current_message_id: message_id,
+      removed_message_ids: removed_summaries.map(summary => summary.message_id),
+    });
+  }
+
+  return removed_summaries.sort((left, right) => left.message_id - right.message_id);
+}
+
 async function summarizeReceivedMessageCore(message_id: number): Promise<MessageSummary | null> {
   const message = getAssistantMessage(message_id);
   if (!message) {
