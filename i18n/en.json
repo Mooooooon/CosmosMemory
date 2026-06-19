@@ -1,5 +1,21 @@
 {
-  "插件示例": "Plugin Example",
-  "示例按钮": "Example Button",
-  "示例开关": "Example Switch"
+  "是否使用酒馆API": "Use SillyTavern API",
+  "将使用 SillyTavern 当前启用的 API 设置。": "The currently active SillyTavern API settings will be used.",
+  "自定义端点": "Custom endpoint",
+  "密钥": "API key",
+  "获取中...": "Fetching...",
+  "获取模型列表": "Fetch model list",
+  "模型": "Model",
+  "请选择模型": "Select a model",
+  "测试中...": "Testing...",
+  "发送测试消息": "Send test message",
+  "模型列表获取成功。": "Model list fetched.",
+  "AI 返回了空内容。": "AI returned empty content.",
+  "测试消息发送成功。": "Test message sent.",
+  "请先填写自定义端点。": "Please enter a custom endpoint first.",
+  "查看已有总结": "View summaries",
+  "当前聊天总结": "Current chat summaries",
+  "关闭": "Close",
+  "当前聊天记录还没有总结。": "No summaries exist for the current chat yet.",
+  "楼层": "Message"
 }

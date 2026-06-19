@@ -15,7 +15,10 @@ declare global {
       LiteralType,
       BaseType
     >;
-    export type PartialDeep<T, Options extends TypeFestPartialDeepOptions = {}> = TypeFestPartialDeep<T, Options>;
+    export type PartialDeep<T, Options extends TypeFestPartialDeepOptions = TypeFestPartialDeepOptions> = TypeFestPartialDeep<
+      T,
+      Options
+    >;
     export type SetRequired<BaseType, Keys extends keyof BaseType> = TypeFestSetRequired<BaseType, Keys>;
   }
 }

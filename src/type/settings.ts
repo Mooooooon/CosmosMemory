@@ -1,8 +1,21 @@
-export type Settings = z.infer<typeof Settings>;
-export const Settings = z
+export const DEFAULT_CUSTOM_API_URL = 'https://api.deepseek.com/v1';
+
+export type AiSettings = z.infer<typeof AiSettings>;
+export const AiSettings = z
   .object({
-    button_selected: z.boolean().default(false),
+    use_tavern_api: z.boolean().default(true),
+    custom_api_url: z.string().default(DEFAULT_CUSTOM_API_URL),
+    custom_api_key: z.string().default(''),
+    selected_model: z.string().default(''),
+    available_models: z.array(z.string()).default([]),
   })
   .prefault({});
 
-export const setting_field = 'tavern_extension_example';
+export type Settings = z.infer<typeof Settings>;
+export const Settings = z
+  .object({
+    ai: AiSettings,
+  })
+  .prefault({});
+
+export const setting_field = 'cosmos_memory';
