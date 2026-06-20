@@ -88,7 +88,12 @@
           <hr class="sysHR" />
 
           <div class="cosmos-memory-row flex-container">
-            <input id="cosmos_memory_status_bar_enabled" v-model="settings.status_bar.enabled" type="checkbox" @change="handle_status_bar_toggle" />
+            <input
+              id="cosmos_memory_status_bar_enabled"
+              v-model="settings.status_bar.enabled"
+              type="checkbox"
+              @change="handle_status_bar_toggle"
+            />
             <label for="cosmos_memory_status_bar_enabled">{{ t`启用状态栏` }}</label>
           </div>
 
