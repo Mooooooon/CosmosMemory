@@ -1,109 +1,128 @@
-# Tavern Extension Template
+# CosmosMemory
 
-SillyTavern 插件模板, 但我更建议你编写[酒馆助手脚本](http://github.com/StageDog/tavern_helper_template)而非酒馆插件. 因为:
+[中文说明](#中文说明) | [English Description](#english-description)
 
-- 酒馆助手为消息楼层、消息显示、酒馆生成请求、酒馆变量 (+ 自制的楼层级别变量)、世界书、预设、酒馆正则等均进行了封装, 虽然其他插件也能使用这些[酒馆助手接口](
-https://n0vi028.github.io/JS-Slash-Runner-Doc/guide/基本用法/开发其他插件时使用.html), 但在酒馆助手脚本内编写更方便
-- 玩家安装脚本仅需几 kb 空间, 但安装插件需要克隆整个仓库
-- 你可以利用 jsdelivr 简单做到脚本的自动更新, 不会像插件一样因为酒馆对 git 的处理问题更新失败
-- 脚本支持实时修改, 修改脚本后无须手动刷新酒馆网页即可测试更新结果
+---
 
-## 使用方法
+## 中文说明
 
-### 部署
+`CosmosMemory` 是一个为 **SillyTavern (酒馆)** 角色扮演量身定制的第三方上下文压缩与结构化记忆管理插件。
 
-请点击网页右上角的绿色 `Use this template` 按钮来创建一个基于这个模板的新仓库.
+通过自动分析聊天剧情、智能提炼关键要素（如：当前状态、出场人物、地点变迁、重要物品），插件能够在隐藏/折叠旧消息的同时，以高度结构化的提示词（Prompts）形式动态注入这些记忆。这在最大程度节省上下文 Token 开销的同时，让 AI 始终记住故事的关键走向与背景设定，非常适合超长扮演或跑团使用。
 
-在创建仓库后, 将本仓库克隆到本地 `SillyTavern/public/scripts/extensions/third-party` 中, 这样你的酒馆就安装好了这个插件, 并且你能在仓库里开始编写代码.
+### 核心功能
 
-然后, 你需要更改 `manifest.json` 和 `package.json` 中的 `<占位符>` 为你想要的名字.
+1. **智能上下文压缩与总结 (Summary & Compression)**
+   - 支持自定义设置保留最近的 `N` 条 AI 原始回复。
+   - 当回复数量超出阈值时，插件会自动调用 AI 提取旧消息中的剧情事实和关键事件，并转为长效的剧情摘要注入到生成提示词中，同时隐藏原有的旧消息，在极大节省 Token 开销的同时防止遗忘。
+2. **多维结构化记忆模块 (Structured Memory Modules)**
+   - **当前状态 (Current Info)**：动态跟踪当前的虚拟时间、当前发生地以及场上角色状态（如服装、身体/精神状况等），并精准注入到人物信息之上。
+   - **人物档案 (Characters)**：自动提取出场的主要角色（记录背景、外貌、性格）和常驻次要角色，支持根据完整聊天记录一键重新生成所有角色档案。
+   - **地理坐标 (Locations)**：构建层次分明的世界观地理层级（国家 ➔ 城市 ➔ 场景 ➔ 房间），自动关联和更新各级地点描述，并在对应地点活跃时动态注入。
+   - **剧情物品 (Items)**：监控并记录剧情关键物品或道具（如武器、药水、线索道具），维护其描述并在生成时注入。
+3. **沉浸式聊天状态栏 (Tabbed Chat Status Bar)**
+   - 在最新一条 AI 回复的末尾直接渲染交互式状态栏，提供“当前信息”、“人物信息”、“物品信息”、“地点信息”四个标签页，随时一键切换查看，无需频繁翻阅或点开侧边栏设置。
+4. **分类设置面板 (Tabbed Settings Layout)**
+   - 侧边栏配置面板进行了深度的标签式优化，将 API 设置、总结配置、当前信息、人物、地点、物品六个板块分门别类，操作更加优雅直观。
+5. **记忆自动回溯与修复 (Memory Check & Repair)**
+   - 自动在发送新消息前对整条聊天树进行回溯校验，自动清除失效的悬空总结，并补齐因网络等原因缺失的楼层总结。亦可在侧边栏手动执行全面校验。
+6. **双语支持与自定义 API**
+   - 拥有完整的中英双语本地化支持（i18n）。
+   - 默认直接复用酒馆当前启用的 API，也支持配置自定义独立的 OpenAI 兼容端点（如 DeepSeek 等），支持模型列表拉取与连接测试。
 
-为了让 `.github/workflows/` 中的工作流能正常运行, 你需要在仓库 `Settings -> Actions -> General` 中将 `Workflow permissions` 设置为 `Read and write permissions`, 并勾选 `Allow GitHub Actions to create and approve pull requests`
+### 工作原理
 
-### 软件要求
+`CosmosMemory` 深度集成于 SillyTavern 的核心事件生命周期中：
+- **收到新消息 (`MESSAGE_RECEIVED`)**：在 AI 生成回复后，触发总结逻辑，提取其中的剧情事实、状态变更，并更新到对应的结构化记忆模块中。
+- **发送新消息 (`MESSAGE_SENT`)**：在用户发送消息前，对上下文及总结的连续性执行回溯检查，及时纠错或补齐。
+- **生成新文本前 (`GENERATION_AFTER_COMMANDS`)**：计算需要隐藏的旧消息数量并予以折叠，将当前启用的各个记忆模块（时间、地点、人物、物品、历史剧情摘要）拼接为系统提示词，通过酒馆助手接口稳定注入到上下文的指定位置。
 
-你需要先安装有 node 22+ 和 pnpm, 可以参考[实时编写前端界面或脚本的 Cursor 环境配置](https://stagedog.github.io/青空莉/工具经验/实时编写前端界面或脚本/环境准备/). 如果已经安装有 node 22+, 则 pnpm 可以按以下步骤安装:
+---
 
-```bash
-npm install -g pnpm
-```
+## English Description
 
-然后, 用 pnpm 安装本项目的所有依赖:
+`CosmosMemory` is a third-party extension designed specifically for **SillyTavern**, offering context window compression and structured memory management.
 
-```bash
-pnpm install
-```
+By analyzing the narrative context of the chat, the extension extracts key story facts, characters' states, location trajectories, and critical items. When older chat messages are hidden to save token budget, CosmosMemory injects these structured memories back into subsequent prompts, ensuring that the AI retains crucial lore and story progression indefinitely. It is an ideal companion for long-term campaigns and roleplaying.
 
-### 访问酒馆接口
+### Core Features
 
-相比起酒馆文档里给出的 `getContext()` 中寥寥无几的接口, 我更建议你直接能访问酒馆所有代码文件导出的接口. 为此, 模板提供了 `@sillytavern` 这一特殊导入方式, 你可以借此导入酒馆代码文件:
+1. **Narrative Summarization & Context Compression**
+   - Allows setting a user-specified number of raw assistant replies (`N`) to keep visible.
+   - When AI replies exceed the limit, older messages are compressed into concise narrative summaries and hidden from the context. These summaries are dynamically injected during the next generation to save valuable context tokens.
+2. **Structured Memory Modules**
+   - **Current Info**: Automatically tracks the in-universe time, location, and the current clothing/state of active characters, injecting this metadata above character profiles.
+   - **Characters**: Extracts and updates descriptions (background, appearance, personality) of major characters, and keeps brief bios for secondary characters. Features one-click manual regeneration of character lists from scratch.
+   - **Locations**: Builds a hierarchical geography tree (Country ➔ City ➔ Scene ➔ Room), dynamically updating descriptions and injecting them when active.
+   - **Items**: Identifies and logs important narrative-affecting props, gear, or weapons, retaining their details permanently.
+3. **In-Chat Status Bar**
+   - Appends a clean, tabbed status panel at the bottom of the latest AI response in the chat timeline. Users can toggle between "Current Info", "Characters", "Items", and "Locations" tabs directly, seeing the game state in real-time.
+4. **Tabbed Settings Sidebar**
+   - Features a clean, optimized tabbed layout inside the SillyTavern extension settings panel, splitting configs into API Settings, Summaries, Current Info, Characters, Locations, and Items.
+5. **Memory Backtrack & Validation**
+   - Performs a retroactive scan of the chat tree before sending any new message, removing dangling summaries and backfilling missing ones automatically. Manual check is also available in the sidebar.
+6. **Localization & Custom API Support**
+   - Full i18n support for both Simplified Chinese and English.
+   - Seamlessly uses the active SillyTavern API configuration, or connects to a custom OpenAI-compatible endpoint (e.g., DeepSeek) with model fetching and connectivity tests.
 
-```typescript
-import { uuidv4 } from '@sillytavern/scripts/utils';  // 导入 `SillyTavern/public/scripts/utils.js` 中的 uuidv4 函数
-```
+### How It Works
 
-### 访问酒馆助手接口
+`CosmosMemory` integrates into SillyTavern's core event lifecycle:
+- **Message Received (`MESSAGE_RECEIVED`)**: Summarizes the incoming message and updates active character states, locations, and items.
+- **Message Sent (`MESSAGE_SENT`)**: Triggers an automated memory check on the chat tree to repair inconsistent or missing summaries before a new prompt is sent.
+- **Before AI Generation (`GENERATION_AFTER_COMMANDS`)**: Compresses older message layers, updates prompt injections based on active memory modules, and instructs SillyTavern to hide older messages.
 
-此外你可以通过 `TavernHelper` 访问酒馆助手的所有接口. 请参考[酒馆助手文档](https://n0vi028.github.io/JS-Slash-Runner-Doc/guide/基本用法/开发其他插件时使用.html)进行配置.
+---
 
-### i18n
+## 安装与开发 / Installation & Development
 
-要让插件支持英语, 你应该在界面上用 `` t`要显示的文本` `` 来显示文本, 然后在 `i18n/en.json` 中添加对应的映射.
+### 安装 / Installation
 
-如果要支持更多语言, 则你需要在 `manifest.json` 中添加对应的语言文件映射. 具体请参考[酒馆官方文档](https://docs.sillytavern.app/for-contributors/writing-extensions/#internationalization).
+1. 克隆本仓库到酒馆的第三方扩展目录中：
+   Clone this repository into SillyTavern's third-party extensions directory:
+   ```bash
+   cd SillyTavern/public/scripts/extensions/third-party
+   git clone https://github.com/Mooooooon/CosmosMemory.git
+   ```
+2. 安装依赖并启动编译：
+   Install dependencies and build:
+   ```bash
+   cd CosmosMemory
+   pnpm install
+   pnpm build
+   ```
+3. 刷新或重启 SillyTavern，并在侧边栏的扩展菜单中启用 `CosmosMemory`。
+   Refresh or restart SillyTavern, and open the `CosmosMemory` drawer under the extension menu.
 
-### 第三方库
+### 开发命令 / Developer Commands
 
-#### vue、pinia、zod 等
+在 `CosmosMemory` 目录下可以运行以下命令：
+Run these commands in the `CosmosMemory` root directory:
 
-模板默认提供的是使用 vue、pinia、zod 的示例. 尤其是 `store/settings.ts` 中对 pinia 的使用大幅简化了插件配置的存取: **其他地方代码只需要任意使用 `useSettingsStore` 返回的设置, 而设置将及时保存到酒馆存档内**.
+- **安装依赖 / Install Dependencies**:
+  ```bash
+  pnpm install
+  ```
+- **单次构建 / Production Build**:
+  ```bash
+  pnpm build
+  ```
+- **持续监听并构建 (开发模式) / Development Watch Build**:
+  ```bash
+  pnpm watch
+  ```
+- **代码格式化 / Prettier Formatting**:
+  ```bash
+  pnpm format
+  ```
+- **代码静态检查 / ESLint Checking & Fixing**:
+  ```bash
+  pnpm lint
+  pnpm lint:fix
+  ```
 
-此外, 这里有一些 [vue、pinia、zod](https://stagedog.github.io/青空莉/工具经验/实时编写前端界面或脚本/进阶技巧/) 的使用技巧.
+---
 
-#### tailwindcss
-
-本项目虽然支持了 tailwindcss, 但模板中并没有使用. 因为它的一些样式会导致酒馆网页的样式错乱. 如果你需要使用 tailwindcss, 请自行在 `src/global.css` 中添加 `@import 'tailwindcss';` 并修正其导致的样式错误.
-
-此外, 你可以调整 `eslint.config.mjs` 中对 tailwindcss 的配置; 尤其是 eslint-plugin-better-tailwindcss 与 prettier 之间的[冲突问题](https://stagedog.github.io/青空莉/工具经验/实时编写前端界面或脚本/进阶技巧/).
-
-### 打包
-
-酒馆只接收单个 `.js` 文件作为插件入口, 模板将其设定为 `dist/index.js`.
-
-你可以在本地通过 `pnpm build` 将代码打包为 `dist/index.js` 文件, 或用 `pnpm watch` 来持续监听代码变动且打包. 无论哪种方式, 插件都必须刷新酒馆网页才能使用最新代码, 因此我更建议你编写无须刷新网页的[酒馆助手脚本](http://github.com/StageDog/tavern_helper_template)而非酒馆插件.
-
-在本地编写完成后, 你无须手动进行打包来保证代码是最最新的. 模板在 `.github/workflows/bundle.yaml` 中设置了自动打包功能, 当代码被上传到仓库后, 会自动打包为最新结果.
-
-### 修改版本号
-
-你无须手动去文件更改版本号. 模板在 `.github/workflows/bundle.yaml` 中设置了自动更改版本号的功能, 如果你提交的 commit 消息中带有 `[release]` 字样, 则版本号会自动递增. 具体地,
-
-- `[release major]`: 1.0.0 -> 2.0.0
-- `[release minor]`: 1.0.0 -> 1.1.0
-- `[release]` 或 `[release patch]`: 1.0.0 -> 1.0.1
-
-### 忽略冲突
-
-基于酒馆 UI 插件的项目结构要求, 本项目直接打包源代码在 `dist/` 文件夹中并随仓库上传, 而这会让开发时经常出现分支冲突.
-
-为了解决这一点, 仓库在 `.gitattribute` 中设置了对于 `dist/` 文件夹中的冲突总是使用当前版本. 这不会有什么问题: 在上传后, ci 会将 `dist/` 文件夹重新打包成最新版本, 因而你上传的 `dist/` 文件夹内容如何无关紧要.
-
-为了启用这个功能, 请执行一次以下命令:
-
-```bash
-git config --global merge.ours.driver true
-```
-
-### 断点调试
-
-目前, windows 上的断点调试存在一定问题: 你如果在 vscode 内对 vue 文件设置断点, 则用 chrome 或 edge 进行断点调试时, 这些断点无法生效.
-
-这疑似是酒馆网页根目录下没有 vite 配置文件造成的, 我还没找到彻底的解决方法, 你可以:
-
-- 安装 Debugger for Firefox 插件和[火狐浏览器](https://www.firefox.com/en-US/channel/desktop/developer/?redirect_source=mozilla-org) (你可以安装[便携版](https://portableapps.com/apps/internet/firefox-developer-portable)然后在 VSCode 设置里指定路径为便携版), 然后使用模板里配置好的 Firefox 调试任务进行调试.
-- 在代码中用 `debugger` 触发断点.
-- 在浏览器中 f12 手动设置断点.
-
-## 许可证
+## 许可证 / License
 
 - [Aladdin](LICENSE)
