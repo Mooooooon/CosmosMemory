@@ -108,11 +108,9 @@ function getStoredSummaryIds(): Set<number> {
 }
 
 function getExistingChatMessages(max_message_id: number): ChatMessage[] {
-  return window.TavernHelper
-    .getChatMessages('0-{{lastMessageId}}', {
-      include_swipes: false,
-    })
-    .filter(message => message.message_id <= max_message_id);
+  return window.TavernHelper.getChatMessages('0-{{lastMessageId}}', {
+    include_swipes: false,
+  }).filter(message => message.message_id <= max_message_id);
 }
 
 function getCurrentLastMessageId(): number {
@@ -166,7 +164,10 @@ function rebuildMemoryFromSummaries(summaries: MessageSummary[]) {
   rebuildStoredCurrentInfoFromSummaries(summaries);
 }
 
-function pruneInvalidMessageSummaries(max_message_id: number, existing_assistant_message_ids: Set<number>): MessageSummary[] {
+function pruneInvalidMessageSummaries(
+  max_message_id: number,
+  existing_assistant_message_ids: Set<number>,
+): MessageSummary[] {
   const removed_summaries: MessageSummary[] = [];
 
   window.TavernHelper.updateVariablesWith(
