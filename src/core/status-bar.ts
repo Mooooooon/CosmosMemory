@@ -165,49 +165,61 @@ function renderTabContent($container: JQuery<HTMLElement>) {
         }
 
         const $tree = $('<div class="cosmos-location-tree">');
-        for (const country of locations) {
-          const $countryNode = $('<div class="cosmos-location-node cosmos-location-country">');
-          $countryNode.append(
-            $('<div class="cosmos-loc-header">').html(`<strong>${t`国家`}：</strong>${country.name}`),
+        for (const world of locations) {
+          const $worldNode = $('<div class="cosmos-location-node cosmos-location-world">');
+          $worldNode.append(
+            $('<div class="cosmos-loc-header">').html(`<strong>${t`世界/大陆`}：</strong>${world.name}`),
           );
-          if (country.brief) {
-            $countryNode.append($('<div class="cosmos-loc-desc">').text(country.brief));
+          if (world.brief) {
+            $worldNode.append($('<div class="cosmos-loc-desc">').text(world.brief));
           }
 
-          const cities = Object.values(country.cities).sort((left, right) => left.name.localeCompare(right.name));
-          for (const city of cities) {
-            const $cityNode = $('<div class="cosmos-location-node cosmos-location-city">');
-            $cityNode.append($('<div class="cosmos-loc-header">').html(`<strong>${t`城市`}：</strong>${city.name}`));
-            if (city.brief) {
-              $cityNode.append($('<div class="cosmos-loc-desc">').text(city.brief));
+          const countries = Object.values(world.countries).sort((left, right) => left.name.localeCompare(right.name));
+          for (const country of countries) {
+            const $countryNode = $('<div class="cosmos-location-node cosmos-location-country">');
+            $countryNode.append(
+              $('<div class="cosmos-loc-header">').html(`<strong>${t`国家/地区`}：</strong>${country.name}`),
+            );
+            if (country.brief) {
+              $countryNode.append($('<div class="cosmos-loc-desc">').text(country.brief));
             }
 
-            const scenes = Object.values(city.scenes).sort((left, right) => left.name.localeCompare(right.name));
-            for (const scene of scenes) {
-              const $sceneNode = $('<div class="cosmos-location-node cosmos-location-scene">');
-              $sceneNode.append(
-                $('<div class="cosmos-loc-header">').html(`<strong>${t`场景`}：</strong>${scene.name}`),
-              );
-              if (scene.brief) {
-                $sceneNode.append($('<div class="cosmos-loc-desc">').text(scene.brief));
+            const cities = Object.values(country.cities).sort((left, right) => left.name.localeCompare(right.name));
+            for (const city of cities) {
+              const $cityNode = $('<div class="cosmos-location-node cosmos-location-city">');
+              $cityNode.append($('<div class="cosmos-loc-header">').html(`<strong>${t`城市/城镇`}：</strong>${city.name}`));
+              if (city.brief) {
+                $cityNode.append($('<div class="cosmos-loc-desc">').text(city.brief));
               }
 
-              const rooms = Object.values(scene.rooms).sort((left, right) => left.name.localeCompare(right.name));
-              for (const room of rooms) {
-                const $roomNode = $('<div class="cosmos-location-node cosmos-location-room">');
-                $roomNode.append(
-                  $('<div class="cosmos-loc-header">').html(`<strong>${t`房间`}：</strong>${room.name}`),
+              const scenes = Object.values(city.scenes).sort((left, right) => left.name.localeCompare(right.name));
+              for (const scene of scenes) {
+                const $sceneNode = $('<div class="cosmos-location-node cosmos-location-scene">');
+                $sceneNode.append(
+                  $('<div class="cosmos-loc-header">').html(`<strong>${t`场景/建筑`}：</strong>${scene.name}`),
                 );
-                if (room.brief) {
-                  $roomNode.append($('<div class="cosmos-loc-desc">').text(room.brief));
+                if (scene.brief) {
+                  $sceneNode.append($('<div class="cosmos-loc-desc">').text(scene.brief));
                 }
-                $sceneNode.append($roomNode);
+
+                const rooms = Object.values(scene.rooms).sort((left, right) => left.name.localeCompare(right.name));
+                for (const room of rooms) {
+                  const $roomNode = $('<div class="cosmos-location-node cosmos-location-room">');
+                  $roomNode.append(
+                    $('<div class="cosmos-loc-header">').html(`<strong>${t`房间/具体地点`}：</strong>${room.name}`),
+                  );
+                  if (room.brief) {
+                    $roomNode.append($('<div class="cosmos-loc-desc">').text(room.brief));
+                  }
+                  $sceneNode.append($roomNode);
+                }
+                $cityNode.append($sceneNode);
               }
-              $cityNode.append($sceneNode);
+              $countryNode.append($cityNode);
             }
-            $countryNode.append($cityNode);
+            $worldNode.append($countryNode);
           }
-          $tree.append($countryNode);
+          $tree.append($worldNode);
         }
         $container.append($tree);
         break;

@@ -17,7 +17,7 @@ import {
   LocationOperationsResponse,
   formatLocationsForPrompt,
   type LocationOperation,
-  type StoredLocationCountry,
+  type StoredLocationWorld,
 } from '@/core/locations';
 import { parsePrettified } from '@/util/zod';
 
@@ -58,7 +58,7 @@ export type SummaryGenerationOptions = {
   items_enabled?: boolean;
   stored_items?: StoredItem[];
   locations_enabled?: boolean;
-  stored_locations?: StoredLocationCountry[];
+  stored_locations?: StoredLocationWorld[];
   current_info_enabled?: boolean;
   current_info?: CurrentInfo;
 };
@@ -102,7 +102,7 @@ const ITEM_EXTRACTION_INSTRUCTION = [
 ].join('\n');
 
 const LOCATION_EXTRACTION_INSTRUCTION = [
-  '同时提取本楼层明确新增、更新或删除的可重复使用地点信息，返回 location_operations 数组。地点结构固定为国家级-城市级-场景级-房间级；顶部可以有多个国家。',
+  '同时提取本楼层明确新增、更新或删除的可重复使用地点信息，返回 location_operations 数组。地点结构固定为世界/大陆级-国家/地区级-城市/城镇级-场景/建筑级-房间/具体地点级；顶部可以有多个世界/大陆。',
   '',
   '应该记录的地点：角色的住所或据点、反复前往的场所（酒馆、公会、学校、教堂、市场）、任务目的地、有重要事件发生过的地点、地下城/迷宫的已探索区域。',
   '',
@@ -114,13 +114,19 @@ const LOCATION_EXTRACTION_INSTRUCTION = [
 const CURRENT_INFO_EXTRACTION_INSTRUCTION = [
   '同时维护当前信息，返回 current_info_update。当前信息包括：时间、地点、角色列表。角色列表必须用角色名作为 key，value 记录角色服装和角色状态；角色状态应包含当前动作、姿势、身体状况（受伤、疲劳等）和情绪状态。',
   '',
-  '若已有当前信息为空，请根据本楼层剧情内容生成符合背景的当前信息；若已有当前信息不为空，请根据本楼层结束后的状态更新。若本楼层没有明确变化，则保持原值。不要使用现实时间，除非剧情本身就是现实背景。',
+  '时间格式要求（必须严格遵守）：',
+  '- 时间必须精确到分钟，禁止使用"剧情开始后不久""不知多久之后""傍晚时分"等模糊描述。',
+  '- 现实背景剧情：使用完整公历格式，例如"2026年6月20日 21:16"或"2026-06-20 21:16"。',
+  '- 架空/奇幻/科幻背景：使用符合世界观的历法格式，必须包含年份、月份、日期和时刻，例如"银历3年 霜月·月望日 申时二刻（约21:16）"或"星盟历452年 第7月 第20日 第三更（约21:00）"。若世界观没有明确历法，可用通用格式如"第X年 X月X日 XX时XX分"，但同样必须具体到分钟量级。',
+  '- elapsed_time（消耗时间）同样须具体，例如"约15分钟""3小时20分""半天（约6小时）"，禁止使用"一会儿""不知多久"。',
+  '',
+  '若已有当前信息为空，请根据本楼层剧情内容生成符合背景的当前信息；若已有当前信息不为空，请根据本楼层结束后的状态更新，并在 elapsed_time 中记录本楼层消耗的时间。若本楼层时间没有明确变化，则保持 current_time 原值，elapsed_time 填"约0分钟"。',
   '',
   '只记录当前场景中实际在场的角色；已经离场的角色应从列表中移除。',
 ].join('\n');
 
 const CURRENT_INFO_JSON_FIELD_INSTRUCTION =
-  '"current_info_update":{"current_time":"本楼层结束后的当前故事时间","location":"本楼层结束后的当前地点","characters":{"角色名":{"clothing":"角色当前服装，没有则为空字符串","status":"角色当前状态，包含动作、姿势等，没有则为空字符串"}},"elapsed_time":"本楼层消耗的剧情时间，没有则为空字符串","reason":"更新当前信息的依据，没有则为空字符串"}';
+  '"current_info_update":{"current_time":"本楼层结束后的当前故事时间，必须精确到分钟；现实背景如\\"2026年6月20日 21:16\\"，架空背景如\\"银历3年 霜月·月望日 申时二刻（约21:16）\\"","location":"本楼层结束后的当前地点","characters":{"角色名":{"clothing":"角色当前服装，没有则为空字符串","status":"角色当前状态，包含动作、姿势等，没有则为空字符串"}},"elapsed_time":"本楼层消耗的剧情时间，必须具体，如\\"约15分钟\\"或\\"3小时20分\\"，没有变化则填\\"约0分钟\\"","reason":"更新当前信息的依据，没有则为空字符串"}';
 
 const FULL_CHARACTER_EXTRACTION_SYSTEM_PROMPT = [
   '你是剧情人物档案整理器。请阅读用户提供的所有 AI 回复原文，整理剧情中需要长期记忆的人物信息。',
@@ -288,7 +294,7 @@ function buildSummaryJsonInstruction(options: SummaryGenerationOptions): string 
   }
   if (options.locations_enabled) {
     fields.push(
-      '"location_operations":[{"type":"add|set|delete","country":"国家名","country_brief":"国家简介，没有则为空字符串","city":"城市名，没有则为空字符串","city_brief":"城市简介，没有则为空字符串","scene":"场景名，没有则为空字符串","scene_brief":"场景简介，没有则为空字符串","room":"房间名，没有则为空字符串","room_brief":"房间简介，没有则为空字符串"}]',
+      '"location_operations":[{"type":"add|set|delete","world":"世界或大陆名","world_brief":"世界/大陆简介，没有则为空字符串","country":"国家或地区名，没有则为空字符串","country_brief":"国家简介，没有则为空字符串","city":"城市或城镇名，没有则为空字符串","city_brief":"城市简介，没有则为空字符串","scene":"场景或建筑名，没有则为空字符串","scene_brief":"场景简介，没有则为空字符串","room":"房间或具体地点名，没有则为空字符串","room_brief":"房间简介，没有则为空字符串"}]',
     );
   }
   if (options.characters_enabled) {
@@ -316,7 +322,8 @@ function buildStructuredSummarySchema(options: SummaryGenerationOptions): JsonSc
       properties: {
         current_time: {
           type: 'string',
-          description: '本楼层结束后的当前故事时间',
+          description:
+            '本楼层结束后的当前故事时间，必须精确到分钟。现实背景使用公历格式，例如"2026年6月20日 21:16"；架空背景使用符合世界观的历法，例如"银历3年 霜月·月望日 申时二刻（约21:16）"。禁止使用"不久""傍晚时分"等模糊描述。',
         },
         location: {
           type: 'string',
@@ -343,7 +350,8 @@ function buildStructuredSummarySchema(options: SummaryGenerationOptions): JsonSc
         },
         elapsed_time: {
           type: 'string',
-          description: '本楼层消耗的剧情时间；没有则为空字符串',
+          description:
+            '本楼层消耗的剧情时间，必须具体，例如"约15分钟""3小时20分""半天（约6小时）"。禁止使用"一会儿""不知多久"等模糊描述。若本楼层没有时间流逝，填"约0分钟"。',
         },
         reason: {
           type: 'string',
@@ -396,41 +404,51 @@ function buildStructuredSummarySchema(options: SummaryGenerationOptions): JsonSc
             enum: ['add', 'set', 'delete'],
             description: '地点操作类型',
           },
+          world: {
+            type: 'string',
+            description: '世界/大陆名；地点记录的顶层名称',
+          },
+          world_brief: {
+            type: 'string',
+            description: '世界/大陆简介；无变化或不适用时返回空字符串',
+          },
           country: {
             type: 'string',
-            description: '国家名；地点记录的顶层名称',
+            description: '国家/地区名；没有则返回空字符串',
           },
           country_brief: {
             type: 'string',
-            description: '国家简介；无变化或不适用时返回空字符串',
+            description: '国家/地区简介；无变化或不适用时返回空字符串',
           },
           city: {
             type: 'string',
-            description: '城市名；没有明确城市时返回空字符串',
+            description: '城市/城镇名；没有明确城市时返回空字符串',
           },
           city_brief: {
             type: 'string',
-            description: '城市简介；无变化或不适用时返回空字符串',
+            description: '城市/城镇简介；无变化或不适用时返回空字符串',
           },
           scene: {
             type: 'string',
-            description: '场景名，例如学校、酒馆、公会、角色的家；没有则返回空字符串',
+            description: '场景/建筑名，例如学校、酒馆、公会、角色的家；没有则返回空字符串',
           },
           scene_brief: {
             type: 'string',
-            description: '场景简介；无变化或不适用时返回空字符串',
+            description: '场景/建筑简介；无变化或不适用时返回空字符串',
           },
           room: {
             type: 'string',
-            description: '房间名；没有明确房间时返回空字符串',
+            description: '房间/具体地点名；没有明确房间时返回空字符串',
           },
           room_brief: {
             type: 'string',
-            description: '房间简介；无变化或不适用时返回空字符串',
+            description: '房间/具体地点简介；无变化或不适用时返回空字符串',
           },
         },
         required: [
           'type',
+          'world',
+          'world_brief',
           'country',
           'country_brief',
           'city',

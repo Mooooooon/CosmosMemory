@@ -170,7 +170,7 @@
           </div>
 
           <div class="cosmos-memory-hint">
-            {{ t`开启后会在总结时记录有重复使用价值的地点，并按国家、城市、场景、房间层级注入。` }}
+            {{ t`开启后会在总结时记录有重复使用价值的地点，并按世界/大陆、国家、城市、场景、房间层级注入。` }}
           </div>
 
           <div class="cosmos-memory-row flex-container">
@@ -274,29 +274,34 @@
 
       <div v-else class="cosmos-memory-summary-list">
         <article
-          v-for="country in stored_locations"
-          :key="country.name"
+          v-for="world in stored_locations"
+          :key="world.name"
           class="cosmos-memory-summary-item cosmos-memory-location-item"
         >
           <div class="cosmos-memory-summary-meta">
-            <b>{{ t`国家` }}：{{ country.name }}</b>
+            <b>{{ t`世界/大陆` }}：{{ world.name }}</b>
           </div>
-          <p v-if="country.brief">{{ country.brief }}</p>
+          <p v-if="world.brief">{{ world.brief }}</p>
 
-          <section v-for="city in sorted_location_cities(country)" :key="city.name">
-            <h4>{{ t`城市` }}：{{ city.name }}</h4>
-            <p v-if="city.brief">{{ city.brief }}</p>
+          <section v-for="country in sorted_location_countries(world)" :key="country.name">
+            <h4>{{ t`国家/地区` }}：{{ country.name }}</h4>
+            <p v-if="country.brief">{{ country.brief }}</p>
 
-            <section v-for="scene in sorted_location_scenes(city)" :key="scene.name">
-              <h5>{{ t`场景` }}：{{ scene.name }}</h5>
-              <p v-if="scene.brief">{{ scene.brief }}</p>
+            <section v-for="city in sorted_location_cities(country)" :key="city.name">
+              <h5>{{ t`城市/城镇` }}：{{ city.name }}</h5>
+              <p v-if="city.brief">{{ city.brief }}</p>
 
-              <dl v-if="sorted_location_rooms(scene).length > 0" class="cosmos-memory-location-rooms">
-                <template v-for="room in sorted_location_rooms(scene)" :key="room.name">
-                  <dt>{{ t`房间` }}：{{ room.name }}</dt>
-                  <dd v-if="room.brief">{{ room.brief }}</dd>
-                </template>
-              </dl>
+              <section v-for="scene in sorted_location_scenes(city)" :key="scene.name">
+                <h6>{{ t`场景/建筑` }}：{{ scene.name }}</h6>
+                <p v-if="scene.brief">{{ scene.brief }}</p>
+
+                <dl v-if="sorted_location_rooms(scene).length > 0" class="cosmos-memory-location-rooms">
+                  <template v-for="room in sorted_location_rooms(scene)" :key="room.name">
+                    <dt>{{ t`房间/具体地点` }}：{{ room.name }}</dt>
+                    <dd v-if="room.brief">{{ room.brief }}</dd>
+                  </template>
+                </dl>
+              </section>
             </section>
           </section>
         </article>
@@ -374,6 +379,7 @@ import {
   type StoredLocationCountry,
   type StoredLocationRoom,
   type StoredLocationScene,
+  type StoredLocationWorld,
 } from '@/core/locations';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
 import { useSettingsStore } from '@/store/settings';
@@ -404,7 +410,7 @@ const test_result = ref<TestResult | null>(null);
 const stored_summaries = ref<MessageSummary[]>([]);
 const stored_characters = ref<StoredCharacter[]>([]);
 const stored_items = ref<StoredItem[]>([]);
-const stored_locations = ref<StoredLocationCountry[]>([]);
+const stored_locations = ref<StoredLocationWorld[]>([]);
 const stored_current_info = ref<CurrentInfo>({
   current_time: '',
   location: '',
@@ -623,6 +629,10 @@ function handle_status_bar_toggle() {
     // 关闭时移除已有状态栏
     $('#chat .cosmos-memory-status-bar', window.parent.document).remove();
   }
+}
+
+function sorted_location_countries(world: StoredLocationWorld): StoredLocationCountry[] {
+  return Object.values(world.countries).sort((left, right) => left.name.localeCompare(right.name));
 }
 
 function sorted_location_cities(country: StoredLocationCountry): StoredLocationCity[] {

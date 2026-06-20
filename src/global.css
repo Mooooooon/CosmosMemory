@@ -154,11 +154,15 @@
   margin-left: 6px;
 }
 
-.cosmos-location-country {
+.cosmos-location-world {
   border-left-color: rgba(255, 255, 255, 0.2);
   margin-left: 0;
   padding-left: 0;
   border-left: none;
+}
+
+.cosmos-location-country {
+  margin-top: 6px;
 }
 
 .cosmos-location-city {

@@ -7,7 +7,9 @@ export type LocationOperationType = 'add' | 'set' | 'delete';
 
 export type LocationOperation = {
   type: LocationOperationType;
-  country: string;
+  world: string;
+  world_brief?: string;
+  country?: string;
   country_brief?: string;
   city?: string;
   city_brief?: string;
@@ -40,13 +42,21 @@ export type StoredLocationCountry = {
   cities: Record<string, StoredLocationCity>;
 };
 
+export type StoredLocationWorld = {
+  name: string;
+  brief: string;
+  countries: Record<string, StoredLocationCountry>;
+};
+
 type SummaryWithLocationOperations = {
   location_operations?: LocationOperation[];
 };
 
 export const LocationOperationResponse = z.object({
   type: z.enum(['add', 'set', 'delete']),
-  country: z.string().trim().min(1),
+  world: z.string().trim().min(1),
+  world_brief: z.string().trim().optional().default(''),
+  country: z.string().trim().optional().default(''),
   country_brief: z.string().trim().optional().default(''),
   city: z.string().trim().optional().default(''),
   city_brief: z.string().trim().optional().default(''),
@@ -106,27 +116,53 @@ function isStoredLocationCountry(value: unknown): value is StoredLocationCountry
   );
 }
 
-function getStoredLocationRecord(): Record<string, StoredLocationCountry> {
+function isStoredLocationWorld(value: unknown): value is StoredLocationWorld {
+  return (
+    _.isPlainObject(value) &&
+    typeof (value as Partial<StoredLocationWorld>).name === 'string' &&
+    typeof (value as Partial<StoredLocationWorld>).brief === 'string' &&
+    _.isPlainObject((value as Partial<StoredLocationWorld>).countries) &&
+    Object.values((value as StoredLocationWorld).countries).every(isStoredLocationCountry)
+  );
+}
+
+function getStoredLocationRecord(): Record<string, StoredLocationWorld> {
   const variables = window.TavernHelper.getVariables({ type: 'chat' });
   const locations = _.get(variables, LOCATION_STORAGE_PATH, {}) as Record<string, unknown>;
   return Object.fromEntries(
-    Object.entries(locations).filter((entry): entry is [string, StoredLocationCountry] => {
+    Object.entries(locations).filter((entry): entry is [string, StoredLocationWorld] => {
       const [key, location] = entry;
-      return Boolean(key) && isStoredLocationCountry(location);
+      return Boolean(key) && isStoredLocationWorld(location);
     }),
   );
 }
 
-export function getStoredLocations(): StoredLocationCountry[] {
+export function getStoredLocations(): StoredLocationWorld[] {
   return Object.values(getStoredLocationRecord()).sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function getOrCreateCountry(
-  locations: Record<string, StoredLocationCountry>,
-  country_name: string,
-): StoredLocationCountry {
+function getOrCreateWorld(
+  locations: Record<string, StoredLocationWorld>,
+  world_name: string,
+): StoredLocationWorld {
+  const world_key = normalizeLocationKey(world_name);
+  const existing = locations[world_key];
+  if (existing) {
+    return existing;
+  }
+
+  const world: StoredLocationWorld = {
+    name: world_name,
+    brief: '',
+    countries: {},
+  };
+  locations[world_key] = world;
+  return world;
+}
+
+function getOrCreateCountry(world: StoredLocationWorld, country_name: string): StoredLocationCountry {
   const country_key = normalizeLocationKey(country_name);
-  const existing = locations[country_key];
+  const existing = world.countries[country_key];
   if (existing) {
     return existing;
   }
@@ -136,7 +172,7 @@ function getOrCreateCountry(
     brief: '',
     cities: {},
   };
-  locations[country_key] = country;
+  world.countries[country_key] = country;
   return country;
 }
 
@@ -173,23 +209,26 @@ function getOrCreateScene(city: StoredLocationCity, scene_name: string): StoredL
 }
 
 function mergeLocationOperation(
-  locations: Record<string, StoredLocationCountry>,
+  locations: Record<string, StoredLocationWorld>,
   operation: LocationOperation,
-): Record<string, StoredLocationCountry> {
+): Record<string, StoredLocationWorld> {
+  const world_name = normalizeText(operation.world);
   const country_name = normalizeText(operation.country);
   const city_name = normalizeText(operation.city);
   const scene_name = normalizeText(operation.scene);
   const room_name = normalizeText(operation.room);
-  const country_key = normalizeLocationKey(country_name);
+  const world_key = normalizeLocationKey(world_name);
 
-  if (!country_key) {
+  if (!world_key) {
     return locations;
   }
 
   if (operation.type === 'delete') {
-    if (room_name && scene_name && city_name) {
+    if (room_name && scene_name && city_name && country_name) {
       _.unset(locations, [
-        country_key,
+        world_key,
+        'countries',
+        normalizeLocationKey(country_name),
         'cities',
         normalizeLocationKey(city_name),
         'scenes',
@@ -199,9 +238,11 @@ function mergeLocationOperation(
       ]);
       return locations;
     }
-    if (scene_name && city_name) {
+    if (scene_name && city_name && country_name) {
       _.unset(locations, [
-        country_key,
+        world_key,
+        'countries',
+        normalizeLocationKey(country_name),
         'cities',
         normalizeLocationKey(city_name),
         'scenes',
@@ -209,16 +250,40 @@ function mergeLocationOperation(
       ]);
       return locations;
     }
-    if (city_name) {
-      _.unset(locations, [country_key, 'cities', normalizeLocationKey(city_name)]);
+    if (city_name && country_name) {
+      _.unset(locations, [
+        world_key,
+        'countries',
+        normalizeLocationKey(country_name),
+        'cities',
+        normalizeLocationKey(city_name),
+      ]);
+      return locations;
+    }
+    if (country_name) {
+      _.unset(locations, [
+        world_key,
+        'countries',
+        normalizeLocationKey(country_name),
+      ]);
       return locations;
     }
 
-    _.unset(locations, country_key);
+    _.unset(locations, world_key);
     return locations;
   }
 
-  const country = getOrCreateCountry(locations, country_name);
+  const world = getOrCreateWorld(locations, world_name);
+  const world_brief = normalizeText(operation.world_brief);
+  if (world_brief) {
+    world.brief = world_brief;
+  }
+
+  if (!country_name) {
+    return locations;
+  }
+
+  const country = getOrCreateCountry(world, country_name);
   const country_brief = normalizeText(operation.country_brief);
   if (country_brief) {
     country.brief = country_brief;
@@ -257,7 +322,7 @@ function mergeLocationOperation(
   return locations;
 }
 
-export function applyLocationOperations(operations: LocationOperation[]): StoredLocationCountry[] {
+export function applyLocationOperations(operations: LocationOperation[]): StoredLocationWorld[] {
   const locations = getStoredLocationRecord();
   for (const operation of operations) {
     mergeLocationOperation(locations, operation);
@@ -269,8 +334,8 @@ export function applyLocationOperations(operations: LocationOperation[]): Stored
 
 export function rebuildStoredLocationsFromSummaries(
   summaries: SummaryWithLocationOperations[],
-): StoredLocationCountry[] {
-  const locations: Record<string, StoredLocationCountry> = {};
+): StoredLocationWorld[] {
+  const locations: Record<string, StoredLocationWorld> = {};
   for (const summary of summaries) {
     for (const operation of summary.location_operations ?? []) {
       mergeLocationOperation(locations, operation);
@@ -281,7 +346,7 @@ export function rebuildStoredLocationsFromSummaries(
   return Object.values(locations).sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function saveLocationRecord(locations: Record<string, StoredLocationCountry>) {
+function saveLocationRecord(locations: Record<string, StoredLocationWorld>) {
   window.TavernHelper.updateVariablesWith(
     variables => {
       _.set(variables, LOCATION_STORAGE_PATH, locations);
@@ -291,38 +356,45 @@ function saveLocationRecord(locations: Record<string, StoredLocationCountry>) {
   );
 }
 
-export function formatLocationsForPrompt(locations: StoredLocationCountry[] = getStoredLocations()): string {
+export function formatLocationsForPrompt(locations: StoredLocationWorld[] = getStoredLocations()): string {
   if (locations.length === 0) {
     return '';
   }
 
   const lines = [
     '[CosmosMemory 地点信息]',
-    '以下是已经记录的可重复使用地点设定。后续剧情涉及同名地点时，优先沿用这些国家、城市、场景和房间信息。',
+    '以下是已经记录的可重复使用地点设定。后续剧情涉及同名地点时，优先沿用这些世界/大陆、国家、城市、场景和房间信息。',
   ];
 
-  for (const country of locations) {
-    lines.push(`- 国家：${country.name}`);
-    if (country.brief) {
-      lines.push(`  简介：${country.brief}`);
+  for (const world of locations) {
+    lines.push(`- 世界/大陆：${world.name}`);
+    if (world.brief) {
+      lines.push(`  简介：${world.brief}`);
     }
 
-    for (const city of Object.values(country.cities).sort((left, right) => left.name.localeCompare(right.name))) {
-      lines.push(`  - 城市：${city.name}`);
-      if (city.brief) {
-        lines.push(`    简介：${city.brief}`);
+    for (const country of Object.values(world.countries).sort((left, right) => left.name.localeCompare(right.name))) {
+      lines.push(`  - 国家/地区：${country.name}`);
+      if (country.brief) {
+        lines.push(`    简介：${country.brief}`);
       }
 
-      for (const scene of Object.values(city.scenes).sort((left, right) => left.name.localeCompare(right.name))) {
-        lines.push(`    - 场景：${scene.name}`);
-        if (scene.brief) {
-          lines.push(`      简介：${scene.brief}`);
+      for (const city of Object.values(country.cities).sort((left, right) => left.name.localeCompare(right.name))) {
+        lines.push(`    - 城市/城镇：${city.name}`);
+        if (city.brief) {
+          lines.push(`      简介：${city.brief}`);
         }
 
-        for (const room of Object.values(scene.rooms).sort((left, right) => left.name.localeCompare(right.name))) {
-          lines.push(`      - 房间：${room.name}`);
-          if (room.brief) {
-            lines.push(`        简介：${room.brief}`);
+        for (const scene of Object.values(city.scenes).sort((left, right) => left.name.localeCompare(right.name))) {
+          lines.push(`      - 场景/建筑：${scene.name}`);
+          if (scene.brief) {
+            lines.push(`        简介：${scene.brief}`);
+          }
+
+          for (const room of Object.values(scene.rooms).sort((left, right) => left.name.localeCompare(right.name))) {
+            lines.push(`        - 房间/具体地点：${room.name}`);
+            if (room.brief) {
+              lines.push(`          简介：${room.brief}`);
+            }
           }
         }
       }
