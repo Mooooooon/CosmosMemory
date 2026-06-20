@@ -469,8 +469,7 @@ function buildStructuredSummarySchema(options: SummaryGenerationOptions): JsonSc
           },
           background: {
             type: 'string',
-            description:
-              '主要角色背景介绍：身份地位、种族、职业、家庭关系、重要经历；不适用或无变化时返回空字符串',
+            description: '主要角色背景介绍：身份地位、种族、职业、家庭关系、重要经历；不适用或无变化时返回空字符串',
           },
           appearance: {
             type: 'string',
@@ -532,8 +531,7 @@ function buildFullCharacterExtractionSchema(): JsonSchema {
               },
               background: {
                 type: 'string',
-                description:
-                  '主要角色背景介绍：身份地位、种族、职业、家庭关系、重要经历；不适用或无资料时返回空字符串',
+                description: '主要角色背景介绍：身份地位、种族、职业、家庭关系、重要经历；不适用或无资料时返回空字符串',
               },
               appearance: {
                 type: 'string',
