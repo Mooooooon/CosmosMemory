@@ -1,6 +1,7 @@
 import { applyCharacterPromptInjection } from '@/core/characters';
 import { applySummaryCompressionForNextGeneration } from '@/core/compression';
 import { applyItemPromptInjection } from '@/core/items';
+import { applyLocationPromptInjection } from '@/core/locations';
 import {
   pruneMessageSummariesAfterMessage,
   summarizeMissingAssistantMessages,
@@ -45,10 +46,11 @@ function handleMessageReceived(message_id: number, type: string) {
         summary_length: summary.summary.length,
         character_operation_count: summary.character_operations?.length ?? 0,
         item_operation_count: summary.item_operations?.length ?? 0,
+        location_operation_count: summary.location_operations?.length ?? 0,
         current_info_updated: Boolean(
           summary.current_info_update?.current_time ||
-            summary.current_info_update?.location ||
-            Object.keys(summary.current_info_update?.characters ?? {}).length > 0,
+          summary.current_info_update?.location ||
+          Object.keys(summary.current_info_update?.characters ?? {}).length > 0,
         ),
       });
     })
@@ -100,6 +102,7 @@ async function handleGenerationAfterCommands(
     const { settings } = useSettingsStore();
     await applySummaryCompressionForNextGeneration();
     applyCurrentInfoPromptInjection(settings.current_info.enabled);
+    applyLocationPromptInjection(settings.locations.enabled);
     applyItemPromptInjection(settings.items.enabled);
     applyCharacterPromptInjection(settings.characters.enabled);
   } catch (error) {

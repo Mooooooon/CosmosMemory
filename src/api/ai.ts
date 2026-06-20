@@ -6,23 +6,19 @@ import {
   type CharacterOperation,
   type StoredCharacter,
 } from '@/core/characters';
-<<<<<<< HEAD
-import {
-  ItemOperationsResponse,
-  formatItemsForPrompt,
-  type ItemOperation,
-  type StoredItem,
-} from '@/core/items';
+import { ItemOperationsResponse, formatItemsForPrompt, type ItemOperation, type StoredItem } from '@/core/items';
 import {
   CurrentInfoUpdateResponse,
   formatCurrentInfoForSummaryRequest,
   type CurrentInfo,
   type CurrentInfoUpdate,
 } from '@/core/current-info';
-=======
-import { ItemOperationsResponse, formatItemsForPrompt, type ItemOperation, type StoredItem } from '@/core/items';
-import { TimeUpdateResponse, formatTimeForSummaryRequest, type StoryTimeUpdate } from '@/core/time';
->>>>>>> 6af34619e83032277ab8967ad9f92ba7845110a9
+import {
+  LocationOperationsResponse,
+  formatLocationsForPrompt,
+  type LocationOperation,
+  type StoredLocationCountry,
+} from '@/core/locations';
 import { parsePrettified } from '@/util/zod';
 
 const TEST_MESSAGE = '!ping';
@@ -40,6 +36,7 @@ const SummaryWithMemoryResponse = z.object({
   summary: z.string().trim().min(1),
   characters: CharacterOperationsResponse.optional().default([]),
   item_operations: ItemOperationsResponse.optional().default([]),
+  location_operations: LocationOperationsResponse.optional().default([]),
   current_info_update: CurrentInfoUpdateResponse.nullable().optional(),
 });
 
@@ -51,6 +48,7 @@ export type SummaryGenerationResult = {
   summary: string;
   characters: CharacterOperation[];
   item_operations: ItemOperation[];
+  location_operations: LocationOperation[];
   current_info_update?: CurrentInfoUpdate | null;
 };
 
@@ -59,6 +57,8 @@ export type SummaryGenerationOptions = {
   stored_characters?: StoredCharacter[];
   items_enabled?: boolean;
   stored_items?: StoredItem[];
+  locations_enabled?: boolean;
+  stored_locations?: StoredLocationCountry[];
   current_info_enabled?: boolean;
   current_info?: CurrentInfo;
 };
@@ -74,6 +74,9 @@ const CHARACTER_EXTRACTION_INSTRUCTION =
 
 const ITEM_EXTRACTION_INSTRUCTION =
   '同时提取本楼层明确新增、更新或删除的重要物品信息，返回 item_operations 数组。只记录会影响剧情的重要道具，例如武器、装备、礼物、信物、钥匙、契约、任务物品等；不要记录普通食物、零钱、临时杂物、随手可得且不影响剧情的物品。物品被使用、损坏、交出、消耗或状态改变时要及时用 set 更新简介；物品彻底失去剧情意义或不再持有时可用 delete 删除。只返回本楼层带来的变化，不要重复返回没有变化的已有物品。';
+
+const LOCATION_EXTRACTION_INSTRUCTION =
+  '同时提取本楼层明确新增、更新或删除的可重复使用地点信息，返回 location_operations 数组。地点结构固定为国家级-城市级-场景级-房间级；顶部可以有多个国家。只记录有重复使用价值的地点，例如角色的家、学校、工作地点、冒险城镇、酒馆、公会、长期据点等；不要记录一次性路过、没有后续价值的临时地点。每级地点除了名称外都可以记录简介字段，用于保存该地点的功能、氛围、归属、重要设施和已发生的关键事实。只返回本楼层带来的变化，不要重复返回没有变化的已有地点。';
 
 const CURRENT_INFO_EXTRACTION_INSTRUCTION =
   '同时维护当前信息，返回 current_info_update。当前信息包括：时间、地点、角色列表。角色列表必须用角色名作为 key，value 记录角色服装和角色状态；角色状态应包含动作、姿势、所在状态等当前场景信息。若已有当前信息为空，请根据本楼层剧情内容生成符合背景的当前信息；若已有当前信息不为空，请根据本楼层结束后的状态更新。若本楼层没有明确变化，则保持原值。不要使用现实时间，除非剧情本身就是现实背景。';
@@ -160,6 +163,7 @@ function parseSummaryJson(raw: string, options: SummaryGenerationOptions = {}): 
       summary: parsePrettified(SummaryResponse, parsed).summary,
       characters: [],
       item_operations: [],
+      location_operations: [],
     };
   }
 
@@ -168,13 +172,17 @@ function parseSummaryJson(raw: string, options: SummaryGenerationOptions = {}): 
     summary: result.summary,
     characters: options.characters_enabled ? result.characters : [],
     item_operations: options.items_enabled ? result.item_operations : [],
+    location_operations: options.locations_enabled ? result.location_operations : [],
     current_info_update: options.current_info_enabled ? (result.current_info_update ?? null) : null,
   };
 }
 
 function hasMemoryExtraction(options: SummaryGenerationOptions): boolean {
   return (
-    options.characters_enabled === true || options.items_enabled === true || options.current_info_enabled === true
+    options.characters_enabled === true ||
+    options.items_enabled === true ||
+    options.locations_enabled === true ||
+    options.current_info_enabled === true
   );
 }
 
@@ -185,6 +193,7 @@ function buildSummaryContent(content: string, options: SummaryGenerationOptions)
 
   const memory_sections = [
     options.current_info_enabled ? formatCurrentInfoForSummaryRequest(options.current_info) : '',
+    options.locations_enabled ? formatLocationsForPrompt(options.stored_locations ?? []) : '',
     options.items_enabled ? formatItemsForPrompt(options.stored_items ?? []) : '',
     options.characters_enabled ? formatCharactersForPrompt(options.stored_characters ?? []) : '',
   ].filter(Boolean);
@@ -207,6 +216,10 @@ function buildSummarySystemPrompt(options: SummaryGenerationOptions): string {
     instructions.push(ITEM_EXTRACTION_INSTRUCTION);
   }
 
+  if (options.locations_enabled) {
+    instructions.push(LOCATION_EXTRACTION_INSTRUCTION);
+  }
+
   if (options.characters_enabled) {
     instructions.push(CHARACTER_EXTRACTION_INSTRUCTION);
   }
@@ -226,6 +239,11 @@ function buildSummaryJsonInstruction(options: SummaryGenerationOptions): string 
   if (options.items_enabled) {
     fields.push(
       '"item_operations":[{"type":"add|set|delete","name":"物品名","brief":"物品简介或当前状态，没有则为空字符串"}]',
+    );
+  }
+  if (options.locations_enabled) {
+    fields.push(
+      '"location_operations":[{"type":"add|set|delete","country":"国家名","country_brief":"国家简介，没有则为空字符串","city":"城市名，没有则为空字符串","city_brief":"城市简介，没有则为空字符串","scene":"场景名，没有则为空字符串","scene_brief":"场景简介，没有则为空字符串","room":"房间名，没有则为空字符串","room_brief":"房间简介，没有则为空字符串"}]',
     );
   }
   if (options.characters_enabled) {
@@ -319,6 +337,68 @@ function buildStructuredSummarySchema(options: SummaryGenerationOptions): JsonSc
       },
     };
     required.push('item_operations');
+  }
+
+  if (options.locations_enabled) {
+    properties.location_operations = {
+      type: 'array',
+      description: '本楼层带来的可重复使用地点信息变更；没有变化时返回空数组',
+      items: {
+        type: 'object',
+        properties: {
+          type: {
+            type: 'string',
+            enum: ['add', 'set', 'delete'],
+            description: '地点操作类型',
+          },
+          country: {
+            type: 'string',
+            description: '国家名；地点记录的顶层名称',
+          },
+          country_brief: {
+            type: 'string',
+            description: '国家简介；无变化或不适用时返回空字符串',
+          },
+          city: {
+            type: 'string',
+            description: '城市名；没有明确城市时返回空字符串',
+          },
+          city_brief: {
+            type: 'string',
+            description: '城市简介；无变化或不适用时返回空字符串',
+          },
+          scene: {
+            type: 'string',
+            description: '场景名，例如学校、酒馆、公会、角色的家；没有则返回空字符串',
+          },
+          scene_brief: {
+            type: 'string',
+            description: '场景简介；无变化或不适用时返回空字符串',
+          },
+          room: {
+            type: 'string',
+            description: '房间名；没有明确房间时返回空字符串',
+          },
+          room_brief: {
+            type: 'string',
+            description: '房间简介；无变化或不适用时返回空字符串',
+          },
+        },
+        required: [
+          'type',
+          'country',
+          'country_brief',
+          'city',
+          'city_brief',
+          'scene',
+          'scene_brief',
+          'room',
+          'room_brief',
+        ],
+        additionalProperties: false,
+      },
+    };
+    required.push('location_operations');
   }
 
   if (options.characters_enabled) {
@@ -448,6 +528,7 @@ async function summarizeMessageWithStructuredOutput(
     mode: custom_source === DEEPSEEK_API_SOURCE ? 'deepseek_json_object_via_st' : 'json_schema',
     characters_enabled: options.characters_enabled === true,
     items_enabled: options.items_enabled === true,
+    locations_enabled: options.locations_enabled === true,
     current_info_enabled: options.current_info_enabled === true,
   });
 

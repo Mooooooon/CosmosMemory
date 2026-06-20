@@ -14,6 +14,13 @@ import {
   type ItemOperation,
 } from '@/core/items';
 import {
+  LocationOperationsResponse,
+  applyLocationOperations,
+  getStoredLocations,
+  rebuildStoredLocationsFromSummaries,
+  type LocationOperation,
+} from '@/core/locations';
+import {
   CurrentInfoUpdateResponse,
   applyCurrentInfoUpdate,
   getStoredCurrentInfo,
@@ -32,6 +39,7 @@ export type MessageSummary = {
   summary: string;
   character_operations?: CharacterOperation[];
   item_operations?: ItemOperation[];
+  location_operations?: LocationOperation[];
   current_info_update?: CurrentInfoUpdate | null;
   updated_at: string;
 };
@@ -114,13 +122,15 @@ export function getStoredMessageSummaries(): MessageSummary[] {
     .map(summary => {
       const character_operations = CharacterOperationsResponse.safeParse(summary.character_operations);
       const item_operations = ItemOperationsResponse.safeParse(summary.item_operations);
-      const current_info_update = CurrentInfoUpdateResponse.nullable().optional().safeParse(
-        summary.current_info_update,
-      );
+      const location_operations = LocationOperationsResponse.safeParse(summary.location_operations);
+      const current_info_update = CurrentInfoUpdateResponse.nullable()
+        .optional()
+        .safeParse(summary.current_info_update);
       return {
         ...summary,
         character_operations: character_operations.success ? character_operations.data : [],
         item_operations: item_operations.success ? item_operations.data : [],
+        location_operations: location_operations.success ? location_operations.data : [],
         current_info_update: current_info_update.success ? current_info_update.data : null,
       };
     })
@@ -157,6 +167,7 @@ export function pruneMessageSummariesAfterMessage(message_id: number): MessageSu
     });
     rebuildStoredCharactersFromSummaries(getStoredMessageSummaries());
     rebuildStoredItemsFromSummaries(getStoredMessageSummaries());
+    rebuildStoredLocationsFromSummaries(getStoredMessageSummaries());
     rebuildStoredCurrentInfoFromSummaries(getStoredMessageSummaries());
   }
 
@@ -183,6 +194,7 @@ async function summarizeReceivedMessageCore(message_id: number): Promise<Message
     selected_model: settings.ai.use_tavern_api ? undefined : settings.ai.selected_model,
     characters_enabled: settings.characters.enabled,
     items_enabled: settings.items.enabled,
+    locations_enabled: settings.locations.enabled,
     current_info_enabled: settings.current_info.enabled,
   });
   const result = await summarizeMessage(settings.ai, source, {
@@ -190,6 +202,8 @@ async function summarizeReceivedMessageCore(message_id: number): Promise<Message
     stored_characters: settings.characters.enabled ? getStoredCharacters() : [],
     items_enabled: settings.items.enabled,
     stored_items: settings.items.enabled ? getStoredItems() : [],
+    locations_enabled: settings.locations.enabled,
+    stored_locations: settings.locations.enabled ? getStoredLocations() : [],
     current_info_enabled: settings.current_info.enabled,
     current_info: settings.current_info.enabled ? getStoredCurrentInfo() : undefined,
   });
@@ -198,6 +212,7 @@ async function summarizeReceivedMessageCore(message_id: number): Promise<Message
     summary: result.summary,
     character_operations: settings.characters.enabled ? result.characters : [],
     item_operations: settings.items.enabled ? result.item_operations : [],
+    location_operations: settings.locations.enabled ? result.location_operations : [],
     current_info_update: settings.current_info.enabled ? (result.current_info_update ?? null) : null,
     updated_at: new Date().toISOString(),
   };
@@ -208,6 +223,9 @@ async function summarizeReceivedMessageCore(message_id: number): Promise<Message
   }
   if (settings.items.enabled && summary.item_operations && summary.item_operations.length > 0) {
     applyItemOperations(summary.item_operations);
+  }
+  if (settings.locations.enabled && summary.location_operations && summary.location_operations.length > 0) {
+    applyLocationOperations(summary.location_operations);
   }
   if (settings.current_info.enabled) {
     applyCurrentInfoUpdate(summary.current_info_update);

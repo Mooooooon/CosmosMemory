@@ -130,6 +130,23 @@
         </div>
 
         <div class="cosmos-memory-section-title flex-container">
+          <strong class="flex1" data-i18n="地点">{{ t`地点` }}</strong>
+        </div>
+
+        <div class="cosmos-memory-row flex-container">
+          <input id="cosmos_memory_locations_enabled" v-model="settings.locations.enabled" type="checkbox" />
+          <label for="cosmos_memory_locations_enabled">{{ t`地点信息` }}</label>
+        </div>
+
+        <div class="cosmos-memory-hint">
+          {{ t`开启后会在总结时记录有重复使用价值的地点，并按国家、城市、场景、房间层级注入。` }}
+        </div>
+
+        <div class="cosmos-memory-row flex-container">
+          <input class="menu_button" type="button" :value="t`查看地点信息`" @click="handle_show_locations" />
+        </div>
+
+        <div class="cosmos-memory-section-title flex-container">
           <strong class="flex1" data-i18n="物品">{{ t`物品` }}</strong>
         </div>
 
@@ -215,6 +232,47 @@
       </div>
     </dialog>
 
+    <dialog ref="location_dialog" class="cosmos-memory-dialog">
+      <div class="cosmos-memory-dialog-header">
+        <b>{{ t`当前聊天地点信息` }}</b>
+        <button class="menu_button" type="button" @click="handle_close_locations">{{ t`关闭` }}</button>
+      </div>
+
+      <div v-if="stored_locations.length === 0" class="cosmos-memory-empty">
+        {{ t`当前聊天记录还没有地点信息。` }}
+      </div>
+
+      <div v-else class="cosmos-memory-summary-list">
+        <article
+          v-for="country in stored_locations"
+          :key="country.name"
+          class="cosmos-memory-summary-item cosmos-memory-location-item"
+        >
+          <div class="cosmos-memory-summary-meta">
+            <b>{{ t`国家` }}：{{ country.name }}</b>
+          </div>
+          <p v-if="country.brief">{{ country.brief }}</p>
+
+          <section v-for="city in sorted_location_cities(country)" :key="city.name">
+            <h4>{{ t`城市` }}：{{ city.name }}</h4>
+            <p v-if="city.brief">{{ city.brief }}</p>
+
+            <section v-for="scene in sorted_location_scenes(city)" :key="scene.name">
+              <h5>{{ t`场景` }}：{{ scene.name }}</h5>
+              <p v-if="scene.brief">{{ scene.brief }}</p>
+
+              <dl v-if="sorted_location_rooms(scene).length > 0" class="cosmos-memory-location-rooms">
+                <template v-for="room in sorted_location_rooms(scene)" :key="room.name">
+                  <dt>{{ t`房间` }}：{{ room.name }}</dt>
+                  <dd v-if="room.brief">{{ room.brief }}</dd>
+                </template>
+              </dl>
+            </section>
+          </section>
+        </article>
+      </div>
+    </dialog>
+
     <dialog ref="character_dialog" class="cosmos-memory-dialog">
       <div class="cosmos-memory-dialog-header">
         <b>{{ t`当前聊天人物信息` }}</b>
@@ -275,6 +333,13 @@ import {
 import { getStoredItems, type StoredItem } from '@/core/items';
 import { getStoredMessageSummaries, type MessageSummary } from '@/core/summary';
 import { getStoredCurrentInfo, type CurrentInfo } from '@/core/current-info';
+import {
+  getStoredLocations,
+  type StoredLocationCity,
+  type StoredLocationCountry,
+  type StoredLocationRoom,
+  type StoredLocationScene,
+} from '@/core/locations';
 import { useSettingsStore } from '@/store/settings';
 import { storeToRefs } from 'pinia';
 
@@ -292,6 +357,7 @@ const test_result = ref<TestResult | null>(null);
 const stored_summaries = ref<MessageSummary[]>([]);
 const stored_characters = ref<StoredCharacter[]>([]);
 const stored_items = ref<StoredItem[]>([]);
+const stored_locations = ref<StoredLocationCountry[]>([]);
 const stored_current_info = ref<CurrentInfo>({
   current_time: '',
   location: '',
@@ -300,6 +366,7 @@ const stored_current_info = ref<CurrentInfo>({
 const summary_dialog = ref<HTMLDialogElement | null>(null);
 const character_dialog = ref<HTMLDialogElement | null>(null);
 const item_dialog = ref<HTMLDialogElement | null>(null);
+const location_dialog = ref<HTMLDialogElement | null>(null);
 
 const model_options = computed(() => {
   return [...new Set([settings.value.ai.selected_model, ...settings.value.ai.available_models])]
@@ -407,6 +474,15 @@ function handle_close_items() {
   item_dialog.value?.close();
 }
 
+function handle_show_locations() {
+  stored_locations.value = getStoredLocations();
+  location_dialog.value?.showModal();
+}
+
+function handle_close_locations() {
+  location_dialog.value?.close();
+}
+
 function handle_refresh_current_info() {
   refresh_stored_current_info();
 }
@@ -456,6 +532,18 @@ function normalize_retained_original_count() {
   settings.value.compression.retained_original_assistant_messages = Number.isFinite(count)
     ? Math.max(0, Math.floor(count))
     : 5;
+}
+
+function sorted_location_cities(country: StoredLocationCountry): StoredLocationCity[] {
+  return Object.values(country.cities).sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function sorted_location_scenes(city: StoredLocationCity): StoredLocationScene[] {
+  return Object.values(city.scenes).sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function sorted_location_rooms(scene: StoredLocationScene): StoredLocationRoom[] {
+  return Object.values(scene.rooms).sort((left, right) => left.name.localeCompare(right.name));
 }
 </script>
 
@@ -590,6 +678,29 @@ function normalize_retained_original_count() {
 
 .cosmos-memory-character-fields dd {
   margin: 4px 0 0;
+  white-space: pre-wrap;
+}
+
+.cosmos-memory-location-item section {
+  margin: 10px 0 0 12px;
+}
+
+.cosmos-memory-location-item h4,
+.cosmos-memory-location-item h5 {
+  margin: 8px 0 0;
+}
+
+.cosmos-memory-location-rooms {
+  margin: 8px 0 0 12px;
+}
+
+.cosmos-memory-location-rooms dt {
+  font-weight: 700;
+  margin-top: 6px;
+}
+
+.cosmos-memory-location-rooms dd {
+  margin: 4px 0 0 12px;
   white-space: pre-wrap;
 }
 </style>

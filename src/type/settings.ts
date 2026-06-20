@@ -39,6 +39,13 @@ export const ItemSettings = z
   })
   .prefault({});
 
+export type LocationSettings = z.infer<typeof LocationSettings>;
+export const LocationSettings = z
+  .object({
+    enabled: z.boolean().default(false),
+  })
+  .prefault({});
+
 export type Settings = z.infer<typeof Settings>;
 export const Settings = z
   .object({
@@ -47,6 +54,7 @@ export const Settings = z
     characters: CharacterSettings,
     current_info: CurrentInfoSettings,
     items: ItemSettings,
+    locations: LocationSettings,
   })
   .prefault({});
 
