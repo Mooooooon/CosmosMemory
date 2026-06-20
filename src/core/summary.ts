@@ -44,6 +44,17 @@ export type MessageSummary = {
   updated_at: string;
 };
 
+export type MemoryBacktrackCheckOptions = {
+  max_message_id?: number;
+};
+
+export type MemoryBacktrackCheckResult = {
+  max_message_id: number;
+  removed_summaries: MessageSummary[];
+  summarized_summaries: MessageSummary[];
+  rebuilt: boolean;
+};
+
 function getAssistantMessage(message_id: number): ChatMessage | null {
   const message = window.TavernHelper.getChatMessages(message_id, { include_swipes: false })[0];
   if (!message) {
@@ -96,13 +107,24 @@ function getStoredSummaryIds(): Set<number> {
   return new Set(getStoredMessageSummaries().map(summary => summary.message_id));
 }
 
-function getMissingAssistantMessageIds(): number[] {
-  const stored_summary_ids = getStoredSummaryIds();
+function getExistingChatMessages(max_message_id: number): ChatMessage[] {
+  return window.TavernHelper
+    .getChatMessages('0-{{lastMessageId}}', {
+      include_swipes: false,
+    })
+    .filter(message => message.message_id <= max_message_id);
+}
+
+function getCurrentLastMessageId(): number {
   return window.TavernHelper.getChatMessages('0-{{lastMessageId}}', {
-    role: 'assistant',
     include_swipes: false,
-  })
-    .filter(message => !stored_summary_ids.has(message.message_id))
+  }).reduce((max_message_id, message) => Math.max(max_message_id, message.message_id), -1);
+}
+
+function getMissingAssistantMessageIds(max_message_id: number): number[] {
+  const stored_summary_ids = getStoredSummaryIds();
+  return getExistingChatMessages(max_message_id)
+    .filter(message => message.role === 'assistant' && !stored_summary_ids.has(message.message_id))
     .map(message => message.message_id);
 }
 
@@ -137,7 +159,14 @@ export function getStoredMessageSummaries(): MessageSummary[] {
     .sort((left, right) => left.message_id - right.message_id);
 }
 
-export function pruneMessageSummariesAfterMessage(message_id: number): MessageSummary[] {
+function rebuildMemoryFromSummaries(summaries: MessageSummary[]) {
+  rebuildStoredCharactersFromSummaries(summaries);
+  rebuildStoredItemsFromSummaries(summaries);
+  rebuildStoredLocationsFromSummaries(summaries);
+  rebuildStoredCurrentInfoFromSummaries(summaries);
+}
+
+function pruneInvalidMessageSummaries(max_message_id: number, existing_assistant_message_ids: Set<number>): MessageSummary[] {
   const removed_summaries: MessageSummary[] = [];
 
   window.TavernHelper.updateVariablesWith(
@@ -148,7 +177,7 @@ export function pruneMessageSummariesAfterMessage(message_id: number): MessageSu
           typeof summary === 'object' &&
           summary !== null &&
           typeof summary.message_id === 'number' &&
-          summary.message_id > message_id
+          (summary.message_id > max_message_id || !existing_assistant_message_ids.has(summary.message_id))
         ) {
           removed_summaries.push(summary);
           _.unset(variables, `${SUMMARY_STORAGE_PATH}.${key}`);
@@ -160,18 +189,26 @@ export function pruneMessageSummariesAfterMessage(message_id: number): MessageSu
     { type: 'chat' },
   );
 
+  return removed_summaries.sort((left, right) => left.message_id - right.message_id);
+}
+
+export function pruneMessageSummariesAfterMessage(message_id: number): MessageSummary[] {
+  const existing_assistant_message_ids = new Set(
+    getExistingChatMessages(message_id)
+      .filter(message => message.role === 'assistant')
+      .map(message => message.message_id),
+  );
+  const removed_summaries = pruneInvalidMessageSummaries(message_id, existing_assistant_message_ids);
+
   if (removed_summaries.length > 0) {
     console.info('[CosmosMemory] 已清理高于当前发送楼层的悬空总结', {
       current_message_id: message_id,
       removed_message_ids: removed_summaries.map(summary => summary.message_id),
     });
-    rebuildStoredCharactersFromSummaries(getStoredMessageSummaries());
-    rebuildStoredItemsFromSummaries(getStoredMessageSummaries());
-    rebuildStoredLocationsFromSummaries(getStoredMessageSummaries());
-    rebuildStoredCurrentInfoFromSummaries(getStoredMessageSummaries());
+    rebuildMemoryFromSummaries(getStoredMessageSummaries());
   }
 
-  return removed_summaries.sort((left, right) => left.message_id - right.message_id);
+  return removed_summaries;
 }
 
 async function summarizeReceivedMessageCore(message_id: number): Promise<MessageSummary | null> {
@@ -249,7 +286,7 @@ export function summarizeReceivedMessage(message_id: number): Promise<MessageSum
 }
 
 export async function summarizeMissingAssistantMessages(): Promise<MessageSummary[]> {
-  const message_ids = getMissingAssistantMessageIds();
+  const message_ids = getMissingAssistantMessageIds(getCurrentLastMessageId());
   if (message_ids.length === 0) {
     console.info('[CosmosMemory] 发送前检查完成，没有缺失总结的 assistant 楼层');
     return [];
@@ -275,4 +312,82 @@ export async function summarizeMissingAssistantMessages(): Promise<MessageSummar
   });
 
   return summaries;
+}
+
+export async function runMemoryBacktrackCheck(
+  options: MemoryBacktrackCheckOptions = {},
+): Promise<MemoryBacktrackCheckResult> {
+  const max_message_id = options.max_message_id ?? getCurrentLastMessageId();
+  if (max_message_id < 0) {
+    console.info('[CosmosMemory] 回溯检查完成，当前聊天没有可检查楼层');
+    return {
+      max_message_id,
+      removed_summaries: [],
+      summarized_summaries: [],
+      rebuilt: false,
+    };
+  }
+
+  const existing_messages = getExistingChatMessages(max_message_id);
+  const existing_assistant_message_ids = new Set(
+    existing_messages.filter(message => message.role === 'assistant').map(message => message.message_id),
+  );
+
+  console.info('[CosmosMemory] 开始回溯检查记忆', {
+    max_message_id,
+    existing_assistant_message_ids: [...existing_assistant_message_ids],
+  });
+
+  const removed_summaries = pruneInvalidMessageSummaries(max_message_id, existing_assistant_message_ids);
+  if (removed_summaries.length > 0) {
+    console.info('[CosmosMemory] 回溯检查已清理悬空总结', {
+      max_message_id,
+      removed_message_ids: removed_summaries.map(summary => summary.message_id),
+    });
+  }
+
+  const rebuilt = removed_summaries.length > 0;
+  if (rebuilt) {
+    rebuildMemoryFromSummaries(getStoredMessageSummaries());
+  }
+
+  const missing_message_ids = getMissingAssistantMessageIds(max_message_id);
+  if (missing_message_ids.length === 0) {
+    console.info('[CosmosMemory] 回溯检查完成，没有缺失总结的 assistant 楼层');
+    return {
+      max_message_id,
+      removed_summaries,
+      summarized_summaries: [],
+      rebuilt,
+    };
+  }
+
+  console.info('[CosmosMemory] 回溯检查发现缺失总结的 assistant 楼层，开始依次补全', {
+    max_message_id,
+    message_ids: missing_message_ids,
+    count: missing_message_ids.length,
+  });
+
+  const summarized_summaries: MessageSummary[] = [];
+  for (const message_id of missing_message_ids) {
+    console.info('[CosmosMemory] 回溯检查补全楼层总结', { message_id });
+    const summary = await summarizeReceivedMessage(message_id);
+    if (summary) {
+      summarized_summaries.push(summary);
+    }
+  }
+
+  console.info('[CosmosMemory] 回溯检查完成', {
+    max_message_id,
+    removed_count: removed_summaries.length,
+    summarized_count: summarized_summaries.length,
+    rebuilt,
+  });
+
+  return {
+    max_message_id,
+    removed_summaries,
+    summarized_summaries,
+    rebuilt,
+  };
 }

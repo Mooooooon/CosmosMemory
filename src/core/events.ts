@@ -2,11 +2,7 @@ import { applyCharacterPromptInjection } from '@/core/characters';
 import { applySummaryCompressionForNextGeneration } from '@/core/compression';
 import { applyItemPromptInjection } from '@/core/items';
 import { applyLocationPromptInjection } from '@/core/locations';
-import {
-  pruneMessageSummariesAfterMessage,
-  summarizeMissingAssistantMessages,
-  summarizeReceivedMessage,
-} from '@/core/summary';
+import { runMemoryBacktrackCheck, summarizeReceivedMessage } from '@/core/summary';
 import { applyCurrentInfoPromptInjection } from '@/core/current-info';
 import { useSettingsStore } from '@/store/settings';
 import { event_types, eventSource } from '@sillytavern/script';
@@ -65,26 +61,25 @@ function handleMessageReceived(message_id: number, type: string) {
 
 async function handleMessageSent(message_id: number) {
   try {
-    console.info('[CosmosMemory] 收到 MESSAGE_SENT 事件，发送前清理悬空总结并检查缺失总结', { message_id });
-    const removed_summaries = pruneMessageSummariesAfterMessage(message_id);
-    if (removed_summaries.length > 0) {
+    console.info('[CosmosMemory] 收到 MESSAGE_SENT 事件，发送前执行回溯检查', { message_id });
+    const result = await runMemoryBacktrackCheck({ max_message_id: message_id });
+    if (result.removed_summaries.length > 0) {
       console.info('[CosmosMemory] 发送前已清理悬空总结', {
         trigger_message_id: message_id,
-        removed_message_ids: removed_summaries.map(summary => summary.message_id),
+        removed_message_ids: result.removed_summaries.map(summary => summary.message_id),
       });
     }
 
-    const summaries = await summarizeMissingAssistantMessages();
-    if (summaries.length > 0) {
+    if (result.summarized_summaries.length > 0) {
       console.info('[CosmosMemory] 发送前已补全缺失总结', {
         trigger_message_id: message_id,
-        summarized_message_ids: summaries.map(summary => summary.message_id),
+        summarized_message_ids: result.summarized_summaries.map(summary => summary.message_id),
       });
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error('[CosmosMemory] 发送前补全剧情总结失败', error);
-    toastr.error(message, 'Cosmos Memory 发送前补全总结失败');
+    console.error('[CosmosMemory] 发送前回溯检查失败', error);
+    toastr.error(message, 'Cosmos Memory 发送前回溯检查失败');
     throw error;
   }
 }

@@ -106,6 +106,13 @@
 
           <div class="cosmos-memory-row flex-container">
             <input class="menu_button" type="button" :value="t`查看已有总结`" @click="handle_show_summaries" />
+            <input
+              class="menu_button"
+              type="button"
+              :value="is_checking_memory ? t`检查中...` : t`手动检查记忆`"
+              :disabled="is_checking_memory"
+              @click="handle_check_memory"
+            />
           </div>
         </div>
 
@@ -338,7 +345,12 @@ import {
   type StoredCharacter,
 } from '@/core/characters';
 import { getStoredItems, type StoredItem } from '@/core/items';
-import { getStoredMessageSummaries, type MessageSummary } from '@/core/summary';
+import {
+  getStoredMessageSummaries,
+  runMemoryBacktrackCheck,
+  type MemoryBacktrackCheckResult,
+  type MessageSummary,
+} from '@/core/summary';
 import { getStoredCurrentInfo, type CurrentInfo } from '@/core/current-info';
 import {
   getStoredLocations,
@@ -347,6 +359,7 @@ import {
   type StoredLocationRoom,
   type StoredLocationScene,
 } from '@/core/locations';
+import { triggerUpdateStatusBar } from '@/core/status-bar';
 import { useSettingsStore } from '@/store/settings';
 import { storeToRefs } from 'pinia';
 
@@ -369,6 +382,7 @@ const tabs = computed(() => [
 
 const is_fetching_models = ref(false);
 const is_testing = ref(false);
+const is_checking_memory = ref(false);
 const is_regenerating_characters = ref(false);
 const test_result = ref<TestResult | null>(null);
 const stored_summaries = ref<MessageSummary[]>([]);
@@ -464,8 +478,7 @@ async function handle_send_test_message() {
 }
 
 function handle_show_summaries() {
-  stored_summaries.value = getStoredMessageSummaries();
-  refresh_stored_current_info();
+  refresh_stored_memory();
   summary_dialog.value?.showModal();
 }
 
@@ -515,6 +528,42 @@ function refresh_stored_current_info() {
       characters: {},
     };
   }
+}
+
+function refresh_stored_memory() {
+  stored_summaries.value = getStoredMessageSummaries();
+  stored_characters.value = getStoredCharacters();
+  stored_items.value = getStoredItems();
+  stored_locations.value = getStoredLocations();
+  refresh_stored_current_info();
+}
+
+async function handle_check_memory() {
+  is_checking_memory.value = true;
+
+  try {
+    const result = await runMemoryBacktrackCheck();
+    refresh_stored_memory();
+    if (result.removed_summaries.length > 0 || result.summarized_summaries.length > 0) {
+      triggerUpdateStatusBar();
+    }
+    toastr.success(format_memory_check_result(result), 'Cosmos Memory');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    toastr.error(message, t`Cosmos Memory 记忆检查失败`);
+  } finally {
+    is_checking_memory.value = false;
+  }
+}
+
+function format_memory_check_result(result: MemoryBacktrackCheckResult): string {
+  const removed_count = result.removed_summaries.length;
+  const summarized_count = result.summarized_summaries.length;
+  if (removed_count === 0 && summarized_count === 0) {
+    return t`记忆检查完成，没有发现需要修复的内容。`;
+  }
+
+  return `${t`记忆检查完成：已清理`} ${removed_count} ${t`条悬空总结，补全`} ${summarized_count} ${t`条缺失总结。`}`;
 }
 
 async function handle_regenerate_characters() {
