@@ -14,12 +14,12 @@ import {
   type ItemOperation,
 } from '@/core/items';
 import {
-  TimeUpdateResponse,
-  applyTimeUpdate,
-  getStoredTime,
-  rebuildStoredTimeFromSummaries,
-  type StoryTimeUpdate,
-} from '@/core/time';
+  CurrentInfoUpdateResponse,
+  applyCurrentInfoUpdate,
+  getStoredCurrentInfo,
+  rebuildStoredCurrentInfoFromSummaries,
+  type CurrentInfoUpdate,
+} from '@/core/current-info';
 import { useSettingsStore } from '@/store/settings';
 
 const STORAGE_ROOT = 'cosmos_memory';
@@ -32,7 +32,7 @@ export type MessageSummary = {
   summary: string;
   character_operations?: CharacterOperation[];
   item_operations?: ItemOperation[];
-  time_update?: StoryTimeUpdate | null;
+  current_info_update?: CurrentInfoUpdate | null;
   updated_at: string;
 };
 
@@ -114,12 +114,14 @@ export function getStoredMessageSummaries(): MessageSummary[] {
     .map(summary => {
       const character_operations = CharacterOperationsResponse.safeParse(summary.character_operations);
       const item_operations = ItemOperationsResponse.safeParse(summary.item_operations);
-      const time_update = TimeUpdateResponse.nullable().optional().safeParse(summary.time_update);
+      const current_info_update = CurrentInfoUpdateResponse.nullable().optional().safeParse(
+        summary.current_info_update,
+      );
       return {
         ...summary,
         character_operations: character_operations.success ? character_operations.data : [],
         item_operations: item_operations.success ? item_operations.data : [],
-        time_update: time_update.success ? time_update.data : null,
+        current_info_update: current_info_update.success ? current_info_update.data : null,
       };
     })
     .sort((left, right) => left.message_id - right.message_id);
@@ -155,7 +157,7 @@ export function pruneMessageSummariesAfterMessage(message_id: number): MessageSu
     });
     rebuildStoredCharactersFromSummaries(getStoredMessageSummaries());
     rebuildStoredItemsFromSummaries(getStoredMessageSummaries());
-    rebuildStoredTimeFromSummaries(getStoredMessageSummaries());
+    rebuildStoredCurrentInfoFromSummaries(getStoredMessageSummaries());
   }
 
   return removed_summaries.sort((left, right) => left.message_id - right.message_id);
@@ -181,22 +183,22 @@ async function summarizeReceivedMessageCore(message_id: number): Promise<Message
     selected_model: settings.ai.use_tavern_api ? undefined : settings.ai.selected_model,
     characters_enabled: settings.characters.enabled,
     items_enabled: settings.items.enabled,
-    time_enabled: settings.time.enabled,
+    current_info_enabled: settings.current_info.enabled,
   });
   const result = await summarizeMessage(settings.ai, source, {
     characters_enabled: settings.characters.enabled,
     stored_characters: settings.characters.enabled ? getStoredCharacters() : [],
     items_enabled: settings.items.enabled,
     stored_items: settings.items.enabled ? getStoredItems() : [],
-    time_enabled: settings.time.enabled,
-    current_time: settings.time.enabled ? getStoredTime() : '',
+    current_info_enabled: settings.current_info.enabled,
+    current_info: settings.current_info.enabled ? getStoredCurrentInfo() : undefined,
   });
   const summary: MessageSummary = {
     message_id,
     summary: result.summary,
     character_operations: settings.characters.enabled ? result.characters : [],
     item_operations: settings.items.enabled ? result.item_operations : [],
-    time_update: settings.time.enabled ? (result.time_update ?? null) : null,
+    current_info_update: settings.current_info.enabled ? (result.current_info_update ?? null) : null,
     updated_at: new Date().toISOString(),
   };
 
@@ -207,8 +209,8 @@ async function summarizeReceivedMessageCore(message_id: number): Promise<Message
   if (settings.items.enabled && summary.item_operations && summary.item_operations.length > 0) {
     applyItemOperations(summary.item_operations);
   }
-  if (settings.time.enabled) {
-    applyTimeUpdate(summary.time_update);
+  if (settings.current_info.enabled) {
+    applyCurrentInfoUpdate(summary.current_info_update);
   }
   return summary;
 }

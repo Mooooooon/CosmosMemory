@@ -6,7 +6,7 @@ import {
   summarizeMissingAssistantMessages,
   summarizeReceivedMessage,
 } from '@/core/summary';
-import { applyTimePromptInjection } from '@/core/time';
+import { applyCurrentInfoPromptInjection } from '@/core/current-info';
 import { useSettingsStore } from '@/store/settings';
 import { event_types, eventSource } from '@sillytavern/script';
 
@@ -45,7 +45,11 @@ function handleMessageReceived(message_id: number, type: string) {
         summary_length: summary.summary.length,
         character_operation_count: summary.character_operations?.length ?? 0,
         item_operation_count: summary.item_operations?.length ?? 0,
-        time_updated: Boolean(summary.time_update?.current_time),
+        current_info_updated: Boolean(
+          summary.current_info_update?.current_time ||
+            summary.current_info_update?.location ||
+            Object.keys(summary.current_info_update?.characters ?? {}).length > 0,
+        ),
       });
     })
     .catch(error => {
@@ -95,7 +99,7 @@ async function handleGenerationAfterCommands(
   try {
     const { settings } = useSettingsStore();
     await applySummaryCompressionForNextGeneration();
-    applyTimePromptInjection(settings.time.enabled);
+    applyCurrentInfoPromptInjection(settings.current_info.enabled);
     applyItemPromptInjection(settings.items.enabled);
     applyCharacterPromptInjection(settings.characters.enabled);
   } catch (error) {

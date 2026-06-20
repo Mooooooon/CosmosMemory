@@ -12,7 +12,12 @@ import {
   type ItemOperation,
   type StoredItem,
 } from '@/core/items';
-import { TimeUpdateResponse, formatTimeForSummaryRequest, type StoryTimeUpdate } from '@/core/time';
+import {
+  CurrentInfoUpdateResponse,
+  formatCurrentInfoForSummaryRequest,
+  type CurrentInfo,
+  type CurrentInfoUpdate,
+} from '@/core/current-info';
 import { parsePrettified } from '@/util/zod';
 
 const TEST_MESSAGE = '!ping';
@@ -30,7 +35,7 @@ const SummaryWithMemoryResponse = z.object({
   summary: z.string().trim().min(1),
   characters: CharacterOperationsResponse.optional().default([]),
   item_operations: ItemOperationsResponse.optional().default([]),
-  time_update: TimeUpdateResponse.nullable().optional(),
+  current_info_update: CurrentInfoUpdateResponse.nullable().optional(),
 });
 
 const CharacterExtractionResponse = z.object({
@@ -41,7 +46,7 @@ export type SummaryGenerationResult = {
   summary: string;
   characters: CharacterOperation[];
   item_operations: ItemOperation[];
-  time_update?: StoryTimeUpdate | null;
+  current_info_update?: CurrentInfoUpdate | null;
 };
 
 export type SummaryGenerationOptions = {
@@ -49,8 +54,8 @@ export type SummaryGenerationOptions = {
   stored_characters?: StoredCharacter[];
   items_enabled?: boolean;
   stored_items?: StoredItem[];
-  time_enabled?: boolean;
-  current_time?: string;
+  current_info_enabled?: boolean;
+  current_info?: CurrentInfo;
 };
 
 const SUMMARY_SYSTEM_PROMPT =
@@ -65,11 +70,11 @@ const CHARACTER_EXTRACTION_INSTRUCTION =
 const ITEM_EXTRACTION_INSTRUCTION =
   '同时提取本楼层明确新增、更新或删除的重要物品信息，返回 item_operations 数组。只记录会影响剧情的重要道具，例如武器、装备、礼物、信物、钥匙、契约、任务物品等；不要记录普通食物、零钱、临时杂物、随手可得且不影响剧情的物品。物品被使用、损坏、交出、消耗或状态改变时要及时用 set 更新简介；物品彻底失去剧情意义或不再持有时可用 delete 删除。只返回本楼层带来的变化，不要重复返回没有变化的已有物品。';
 
-const TIME_EXTRACTION_INSTRUCTION =
-  '同时维护当前故事时间，返回 time_update。若已有当前时间为空，请根据本楼层剧情内容生成一个符合故事背景的当前时间；若已有当前时间不为空，请根据本楼层剧情明确或可合理推断的耗时更新当前时间。若本楼层没有时间流逝或无法判断耗时，则保持当前时间不变。不要使用现实时间，除非剧情本身就是现实背景。';
+const CURRENT_INFO_EXTRACTION_INSTRUCTION =
+  '同时维护当前信息，返回 current_info_update。当前信息包括：时间、地点、角色列表。角色列表必须用角色名作为 key，value 记录角色服装和角色状态；角色状态应包含动作、姿势、所在状态等当前场景信息。若已有当前信息为空，请根据本楼层剧情内容生成符合背景的当前信息；若已有当前信息不为空，请根据本楼层结束后的状态更新。若本楼层没有明确变化，则保持原值。不要使用现实时间，除非剧情本身就是现实背景。';
 
-const TIME_JSON_FIELD_INSTRUCTION =
-  '"time_update":{"current_time":"本楼层结束后的当前故事时间","elapsed_time":"本楼层消耗的剧情时间，没有则为空字符串","reason":"更新时间的依据，没有则为空字符串"}';
+const CURRENT_INFO_JSON_FIELD_INSTRUCTION =
+  '"current_info_update":{"current_time":"本楼层结束后的当前故事时间","location":"本楼层结束后的当前地点","characters":{"角色名":{"clothing":"角色当前服装，没有则为空字符串","status":"角色当前状态，包含动作、姿势等，没有则为空字符串"}},"elapsed_time":"本楼层消耗的剧情时间，没有则为空字符串","reason":"更新当前信息的依据，没有则为空字符串"}';
 
 const FULL_CHARACTER_EXTRACTION_SYSTEM_PROMPT =
   '你是剧情人物档案整理器。请阅读用户提供的所有 AI 回复原文，整理剧情中需要长期记忆的人物信息。只记录有明确戏份的主要角色，以及会多次出现但不重要的次要 NPC，例如酒馆老板、公会看板娘。一次性路人、杂兵、临时敌人不要记录。不要续写剧情，不要加入原文没有的信息。';
@@ -158,12 +163,14 @@ function parseSummaryJson(raw: string, options: SummaryGenerationOptions = {}): 
     summary: result.summary,
     characters: options.characters_enabled ? result.characters : [],
     item_operations: options.items_enabled ? result.item_operations : [],
-    time_update: options.time_enabled ? (result.time_update ?? null) : null,
+    current_info_update: options.current_info_enabled ? (result.current_info_update ?? null) : null,
   };
 }
 
 function hasMemoryExtraction(options: SummaryGenerationOptions): boolean {
-  return options.characters_enabled === true || options.items_enabled === true || options.time_enabled === true;
+  return (
+    options.characters_enabled === true || options.items_enabled === true || options.current_info_enabled === true
+  );
 }
 
 function buildSummaryContent(content: string, options: SummaryGenerationOptions): string {
@@ -172,7 +179,7 @@ function buildSummaryContent(content: string, options: SummaryGenerationOptions)
   }
 
   const memory_sections = [
-    options.time_enabled ? formatTimeForSummaryRequest(options.current_time ?? '') : '',
+    options.current_info_enabled ? formatCurrentInfoForSummaryRequest(options.current_info) : '',
     options.items_enabled ? formatItemsForPrompt(options.stored_items ?? []) : '',
     options.characters_enabled ? formatCharactersForPrompt(options.stored_characters ?? []) : '',
   ].filter(Boolean);
@@ -187,8 +194,8 @@ function buildSummaryContent(content: string, options: SummaryGenerationOptions)
 function buildSummarySystemPrompt(options: SummaryGenerationOptions): string {
   const instructions = [SUMMARY_SYSTEM_PROMPT];
 
-  if (options.time_enabled) {
-    instructions.push(TIME_EXTRACTION_INSTRUCTION);
+  if (options.current_info_enabled) {
+    instructions.push(CURRENT_INFO_EXTRACTION_INSTRUCTION);
   }
 
   if (options.items_enabled) {
@@ -208,8 +215,8 @@ function buildSummaryJsonInstruction(options: SummaryGenerationOptions): string 
   }
 
   const fields = ['"summary":"连贯的剧情摘要"'];
-  if (options.time_enabled) {
-    fields.push(TIME_JSON_FIELD_INSTRUCTION);
+  if (options.current_info_enabled) {
+    fields.push(CURRENT_INFO_JSON_FIELD_INSTRUCTION);
   }
   if (options.items_enabled) {
     fields.push(
@@ -234,14 +241,37 @@ function buildStructuredSummarySchema(options: SummaryGenerationOptions): JsonSc
   };
   const required = ['summary'];
 
-  if (options.time_enabled) {
-    properties.time_update = {
+  if (options.current_info_enabled) {
+    properties.current_info_update = {
       type: 'object',
-      description: '本楼层结束后的当前故事时间；没有变化时 current_time 保持原值',
+      description: '本楼层结束后的当前信息；没有变化时保持原值',
       properties: {
         current_time: {
           type: 'string',
           description: '本楼层结束后的当前故事时间',
+        },
+        location: {
+          type: 'string',
+          description: '本楼层结束后的当前地点；无法判断则保持原值或返回空字符串',
+        },
+        characters: {
+          type: 'object',
+          description: '本楼层结束后的当前角色列表；key 为角色名',
+          additionalProperties: {
+            type: 'object',
+            properties: {
+              clothing: {
+                type: 'string',
+                description: '角色当前服装；无法判断则为空字符串',
+              },
+              status: {
+                type: 'string',
+                description: '角色当前状态，包含动作、姿势等；无法判断则为空字符串',
+              },
+            },
+            required: ['clothing', 'status'],
+            additionalProperties: false,
+          },
         },
         elapsed_time: {
           type: 'string',
@@ -249,13 +279,13 @@ function buildStructuredSummarySchema(options: SummaryGenerationOptions): JsonSc
         },
         reason: {
           type: 'string',
-          description: '更新时间的依据；没有则为空字符串',
+          description: '更新当前信息的依据；没有则为空字符串',
         },
       },
-      required: ['current_time', 'elapsed_time', 'reason'],
+      required: ['current_time', 'location', 'characters', 'elapsed_time', 'reason'],
       additionalProperties: false,
     };
-    required.push('time_update');
+    required.push('current_info_update');
   }
 
   if (options.items_enabled) {
@@ -413,7 +443,7 @@ async function summarizeMessageWithStructuredOutput(
     mode: custom_source === DEEPSEEK_API_SOURCE ? 'deepseek_json_object_via_st' : 'json_schema',
     characters_enabled: options.characters_enabled === true,
     items_enabled: options.items_enabled === true,
-    time_enabled: options.time_enabled === true,
+    current_info_enabled: options.current_info_enabled === true,
   });
 
   const result = await window.TavernHelper.generateRaw({

@@ -99,21 +99,34 @@
         </div>
 
         <div class="cosmos-memory-section-title flex-container">
-          <strong class="flex1" data-i18n="时间">{{ t`时间` }}</strong>
+          <strong class="flex1" data-i18n="当前信息">{{ t`当前信息` }}</strong>
         </div>
 
         <div class="cosmos-memory-row flex-container">
-          <input id="cosmos_memory_time_enabled" v-model="settings.time.enabled" type="checkbox" />
-          <label for="cosmos_memory_time_enabled">{{ t`时间信息` }}</label>
+          <input id="cosmos_memory_current_info_enabled" v-model="settings.current_info.enabled" type="checkbox" />
+          <label for="cosmos_memory_current_info_enabled">{{ t`当前信息` }}</label>
         </div>
 
         <div class="cosmos-memory-hint">
-          {{ t`开启后会在总结时维护当前故事时间，并注入到人物信息上方。` }}
+          {{ t`开启后会在总结时维护当前时间、地点和角色状态，并注入到人物信息上方。` }}
         </div>
 
-        <div class="cosmos-memory-row flex-container">
-          <span>{{ t`当前时间` }}：{{ stored_time || t`尚未记录` }}</span>
-          <input class="menu_button" type="button" :value="t`刷新`" @click="handle_refresh_time" />
+        <div class="cosmos-memory-current-info">
+          <div class="cosmos-memory-row flex-container">
+            <span>{{ t`当前时间` }}：{{ stored_current_info.current_time || t`尚未记录` }}</span>
+            <input class="menu_button" type="button" :value="t`刷新`" @click="handle_refresh_current_info" />
+          </div>
+          <div class="cosmos-memory-row flex-container">
+            <span>{{ t`当前地点` }}：{{ stored_current_info.location || t`尚未记录` }}</span>
+          </div>
+          <div v-if="current_character_entries.length > 0" class="cosmos-memory-current-characters">
+            <div class="cosmos-memory-current-characters-title">{{ t`当前角色列表` }}</div>
+            <dl v-for="[name, character] in current_character_entries" :key="name">
+              <dt>{{ name }}</dt>
+              <dd v-if="character.clothing">{{ t`角色服装` }}：{{ character.clothing }}</dd>
+              <dd v-if="character.status">{{ t`角色状态` }}：{{ character.status }}</dd>
+            </dl>
+          </div>
         </div>
 
         <div class="cosmos-memory-section-title flex-container">
@@ -261,7 +274,7 @@ import {
 } from '@/core/characters';
 import { getStoredItems, type StoredItem } from '@/core/items';
 import { getStoredMessageSummaries, type MessageSummary } from '@/core/summary';
-import { getStoredTime } from '@/core/time';
+import { getStoredCurrentInfo, type CurrentInfo } from '@/core/current-info';
 import { useSettingsStore } from '@/store/settings';
 import { storeToRefs } from 'pinia';
 
@@ -279,7 +292,11 @@ const test_result = ref<TestResult | null>(null);
 const stored_summaries = ref<MessageSummary[]>([]);
 const stored_characters = ref<StoredCharacter[]>([]);
 const stored_items = ref<StoredItem[]>([]);
-const stored_time = ref('');
+const stored_current_info = ref<CurrentInfo>({
+  current_time: '',
+  location: '',
+  characters: {},
+});
 const summary_dialog = ref<HTMLDialogElement | null>(null);
 const character_dialog = ref<HTMLDialogElement | null>(null);
 const item_dialog = ref<HTMLDialogElement | null>(null);
@@ -316,6 +333,10 @@ const primary_characters = computed(() => {
 
 const secondary_characters = computed(() => {
   return stored_characters.value.filter((character): character is SecondaryCharacter => character.type === 'secondary');
+});
+
+const current_character_entries = computed(() => {
+  return Object.entries(stored_current_info.value.characters).sort(([left], [right]) => left.localeCompare(right));
 });
 
 async function handle_fetch_models() {
@@ -360,7 +381,7 @@ async function handle_send_test_message() {
 
 function handle_show_summaries() {
   stored_summaries.value = getStoredMessageSummaries();
-  refresh_stored_time();
+  refresh_stored_current_info();
   summary_dialog.value?.showModal();
 }
 
@@ -386,16 +407,20 @@ function handle_close_items() {
   item_dialog.value?.close();
 }
 
-function handle_refresh_time() {
-  refresh_stored_time();
+function handle_refresh_current_info() {
+  refresh_stored_current_info();
 }
 
-function refresh_stored_time() {
+function refresh_stored_current_info() {
   try {
-    stored_time.value = getStoredTime();
+    stored_current_info.value = getStoredCurrentInfo();
   } catch (error) {
-    console.warn('[CosmosMemory] 读取当前故事时间失败', error);
-    stored_time.value = '';
+    console.warn('[CosmosMemory] 读取当前信息失败', error);
+    stored_current_info.value = {
+      current_time: '',
+      location: '',
+      characters: {},
+    };
   }
 }
 
@@ -457,6 +482,32 @@ function normalize_retained_original_count() {
   border-bottom: 1px solid var(--SmartThemeBorderColor);
   margin: 12px 0 8px;
   padding-bottom: 4px;
+}
+
+.cosmos-memory-current-info {
+  margin: 8px 0;
+}
+
+.cosmos-memory-current-characters {
+  margin-top: 8px;
+}
+
+.cosmos-memory-current-characters-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.cosmos-memory-current-characters dl {
+  margin: 6px 0;
+}
+
+.cosmos-memory-current-characters dt {
+  font-weight: 700;
+}
+
+.cosmos-memory-current-characters dd {
+  margin: 2px 0 0 12px;
+  white-space: pre-wrap;
 }
 
 .cosmos-memory-test-result {

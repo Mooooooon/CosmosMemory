@@ -25,8 +25,8 @@ export const CharacterSettings = z
   })
   .prefault({});
 
-export type TimeSettings = z.infer<typeof TimeSettings>;
-export const TimeSettings = z
+export type CurrentInfoSettings = z.infer<typeof CurrentInfoSettings>;
+export const CurrentInfoSettings = z
   .object({
     enabled: z.boolean().default(false),
   })
@@ -45,7 +45,7 @@ export const Settings = z
     ai: AiSettings,
     compression: CompressionSettings,
     characters: CharacterSettings,
-    time: TimeSettings,
+    current_info: CurrentInfoSettings,
     items: ItemSettings,
   })
   .prefault({});
