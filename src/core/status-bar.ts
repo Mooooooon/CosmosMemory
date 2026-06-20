@@ -1,0 +1,352 @@
+import { event_types, eventSource } from '@sillytavern/script';
+import { getStoredCurrentInfo } from '@/core/current-info';
+import { getStoredCharacters } from '@/core/characters';
+import { getStoredItems } from '@/core/items';
+import { getStoredLocations } from '@/core/locations';
+
+let activeTab: 'current' | 'characters' | 'items' | 'locations' = 'current';
+let updateTimeout: any = null;
+
+/**
+ * 获取最新未隐藏的 AI（assistant）回复楼层号
+ */
+function getLatestAiMessageId(): number | null {
+  try {
+    if (!window.TavernHelper) {
+      return null;
+    }
+    const last_message_id = window.TavernHelper.getLastMessageId();
+    if (last_message_id === null) return null;
+
+    const messages = window.TavernHelper.getChatMessages('0-{{lastMessageId}}', { include_swipes: false });
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg && msg.role === 'assistant' && !msg.is_hidden) {
+        return msg.message_id;
+      }
+    }
+  } catch (error) {
+    console.error('[CosmosMemory] 获取最新 AI 回复楼层失败', error);
+  }
+  return null;
+}
+
+/**
+ * 渲染指定 Tab 的内容
+ */
+function renderTabContent($container: JQuery<HTMLElement>) {
+  $container.empty();
+
+  try {
+    switch (activeTab) {
+      case 'current': {
+        const info = getStoredCurrentInfo();
+        if (!info.current_time && !info.location && Object.keys(info.characters).length === 0) {
+          $container.append($('<div class="cosmos-empty">').text(t`尚未记录`));
+          break;
+        }
+
+        const $list = $('<div class="cosmos-info-list">');
+        $list.append(
+          $('<div class="cosmos-info-item">').html(
+            `<strong>${t`当前时间`}：</strong><span>${info.current_time || t`尚未记录`}</span>`,
+          ),
+        );
+        $list.append(
+          $('<div class="cosmos-info-item">').html(
+            `<strong>${t`当前地点`}：</strong><span>${info.location || t`尚未记录`}</span>`,
+          ),
+        );
+
+        const charEntries = Object.entries(info.characters);
+        if (charEntries.length > 0) {
+          $list.append($('<div class="cosmos-info-sub-title">').text(t`当前角色列表`));
+          const $chars = $('<div class="cosmos-info-chars">');
+          for (const [name, char] of charEntries.sort(([left], [right]) => left.localeCompare(right))) {
+            const $charCard = $('<div class="cosmos-info-char-card">');
+            $charCard.append($('<div class="cosmos-char-name">').text(name));
+            if (char.clothing) {
+              $charCard.append(
+                $('<div class="cosmos-char-detail">').html(`<strong>${t`角色服装`}：</strong>${char.clothing}`),
+              );
+            }
+            if (char.status) {
+              $charCard.append(
+                $('<div class="cosmos-char-detail">').html(`<strong>${t`角色状态`}：</strong>${char.status}`),
+              );
+            }
+            $chars.append($charCard);
+          }
+          $list.append($chars);
+        }
+
+        $container.append($list);
+        break;
+      }
+
+      case 'characters': {
+        const chars = getStoredCharacters();
+        if (chars.length === 0) {
+          $container.append($('<div class="cosmos-empty">').text(t`当前聊天记录还没有人物信息。`));
+          break;
+        }
+
+        const primary = chars.filter(c => c.type === 'primary');
+        const secondary = chars.filter(c => c.type === 'secondary');
+
+        const $list = $('<div class="cosmos-info-list">');
+
+        if (primary.length > 0) {
+          $list.append($('<div class="cosmos-info-sub-title">').text(t`主要角色`));
+          for (const char of primary) {
+            const $charCard = $('<div class="cosmos-character-card">');
+            $charCard.append($('<div class="cosmos-char-name">').text(char.name));
+            if (char.background) {
+              $charCard.append(
+                $('<div class="cosmos-char-detail">').html(`<strong>${t`背景介绍`}：</strong>${char.background}`),
+              );
+            }
+            if (char.appearance) {
+              $charCard.append(
+                $('<div class="cosmos-char-detail">').html(`<strong>${t`外貌描写`}：</strong>${char.appearance}`),
+              );
+            }
+            if (char.personality) {
+              $charCard.append(
+                $('<div class="cosmos-char-detail">').html(`<strong>${t`性格描写`}：</strong>${char.personality}`),
+              );
+            }
+            $list.append($charCard);
+          }
+        }
+
+        if (secondary.length > 0) {
+          $list.append($('<div class="cosmos-info-sub-title">').text(t`次要角色`));
+          for (const char of secondary) {
+            const $charCard = $('<div class="cosmos-character-card">');
+            $charCard.append($('<div class="cosmos-char-name">').text(char.name));
+            if (char.brief) {
+              $charCard.append($('<div class="cosmos-char-detail">').text(char.brief));
+            }
+            $list.append($charCard);
+          }
+        }
+
+        $container.append($list);
+        break;
+      }
+
+      case 'items': {
+        const items = getStoredItems();
+        if (items.length === 0) {
+          $container.append($('<div class="cosmos-empty">').text(t`当前聊天记录还没有物品信息。`));
+          break;
+        }
+
+        const $list = $('<div class="cosmos-info-list">');
+        for (const item of items) {
+          const $itemCard = $('<div class="cosmos-item-card">');
+          $itemCard.append($('<div class="cosmos-item-name">').text(item.name));
+          if (item.brief) {
+            $itemCard.append($('<div class="cosmos-item-detail">').text(item.brief));
+          }
+          $list.append($itemCard);
+        }
+        $container.append($list);
+        break;
+      }
+
+      case 'locations': {
+        const locations = getStoredLocations();
+        if (locations.length === 0) {
+          $container.append($('<div class="cosmos-empty">').text(t`当前聊天记录还没有地点信息。`));
+          break;
+        }
+
+        const $tree = $('<div class="cosmos-location-tree">');
+        for (const country of locations) {
+          const $countryNode = $('<div class="cosmos-location-node cosmos-location-country">');
+          $countryNode.append(
+            $('<div class="cosmos-loc-header">').html(`<strong>${t`国家`}：</strong>${country.name}`),
+          );
+          if (country.brief) {
+            $countryNode.append($('<div class="cosmos-loc-desc">').text(country.brief));
+          }
+
+          const cities = Object.values(country.cities).sort((left, right) => left.name.localeCompare(right.name));
+          for (const city of cities) {
+            const $cityNode = $('<div class="cosmos-location-node cosmos-location-city">');
+            $cityNode.append($('<div class="cosmos-loc-header">').html(`<strong>${t`城市`}：</strong>${city.name}`));
+            if (city.brief) {
+              $cityNode.append($('<div class="cosmos-loc-desc">').text(city.brief));
+            }
+
+            const scenes = Object.values(city.scenes).sort((left, right) => left.name.localeCompare(right.name));
+            for (const scene of scenes) {
+              const $sceneNode = $('<div class="cosmos-location-node cosmos-location-scene">');
+              $sceneNode.append(
+                $('<div class="cosmos-loc-header">').html(`<strong>${t`场景`}：</strong>${scene.name}`),
+              );
+              if (scene.brief) {
+                $sceneNode.append($('<div class="cosmos-loc-desc">').text(scene.brief));
+              }
+
+              const rooms = Object.values(scene.rooms).sort((left, right) => left.name.localeCompare(right.name));
+              for (const room of rooms) {
+                const $roomNode = $('<div class="cosmos-location-node cosmos-location-room">');
+                $roomNode.append(
+                  $('<div class="cosmos-loc-header">').html(`<strong>${t`房间`}：</strong>${room.name}`),
+                );
+                if (room.brief) {
+                  $roomNode.append($('<div class="cosmos-loc-desc">').text(room.brief));
+                }
+                $sceneNode.append($roomNode);
+              }
+              $cityNode.append($sceneNode);
+            }
+            $countryNode.append($cityNode);
+          }
+          $tree.append($countryNode);
+        }
+        $container.append($tree);
+        break;
+      }
+    }
+  } catch (error) {
+    console.error('[CosmosMemory] 渲染状态栏 Tab 内容失败', error);
+    $container.append($('<div class="cosmos-error">').text('数据加载失败'));
+  }
+}
+
+/**
+ * 刷新并渲染状态栏
+ * @returns 是否成功获取 DOM 并挂载状态栏
+ */
+export function updateStatusBar(): boolean {
+  if (!window.TavernHelper) {
+    return false;
+  }
+
+  // 1. 查找最新 AI 回复的楼层号
+  const messageId = getLatestAiMessageId();
+  if (messageId === null) {
+    return false;
+  }
+
+  // 2. 获取对应的 DOM 容器
+  const $msgText = window.TavernHelper.retrieveDisplayedMessage(messageId);
+  if (!$msgText || $msgText.length === 0) {
+    return false;
+  }
+
+  // 3. 移除已有的状态栏元素以防重复
+  $('#chat .cosmos-memory-status-bar', window.parent.document).remove();
+
+  // 4. 构建状态栏 DOM 树
+  const $statusBar = $('<div class="cosmos-memory-status-bar">');
+  const $tabs = $('<div class="cosmos-tabs">');
+
+  const tabsConfig = [
+    { id: 'current', name: t`当前信息` },
+    { id: 'characters', name: t`人物信息` },
+    { id: 'items', name: t`物品信息` },
+    { id: 'locations', name: t`地点信息` },
+  ] as const;
+
+  tabsConfig.forEach(tab => {
+    const $tab = $(`<div class="cosmos-tab" data-tab="${tab.id}">`).text(tab.name);
+    if (tab.id === activeTab) {
+      $tab.addClass('active');
+    }
+
+    $tab.on('click', () => {
+      activeTab = tab.id;
+      $statusBar.find('.cosmos-tab').removeClass('active');
+      $tab.addClass('active');
+      renderTabContent($statusBar.find('.cosmos-tab-content'));
+    });
+
+    $tabs.append($tab);
+  });
+
+  const $content = $('<div class="cosmos-tab-content">');
+  $statusBar.append($tabs).append($content);
+
+  renderTabContent($content);
+
+  // 5. 将状态栏插入最新 AI 回复的末尾
+  $msgText.append($statusBar);
+  return true;
+}
+
+let retryCount = 0;
+
+/**
+ * 触发状态栏更新（防抖/异步）
+ */
+export function triggerUpdateStatusBar() {
+  if (updateTimeout) {
+    clearTimeout(updateTimeout);
+  }
+  updateTimeout = setTimeout(() => {
+    if (!window.TavernHelper) {
+      if (retryCount < 30) {
+        retryCount++;
+        triggerUpdateStatusBar();
+      } else {
+        console.warn('[CosmosMemory] TavernHelper 初始化超时，跳过状态栏更新。');
+      }
+      return;
+    }
+
+    const success = updateStatusBar();
+    if (!success) {
+      // 如果获取最新消息的 DOM 失败（可能聊天列表尚未渲染完毕），在 200ms 后重试
+      if (retryCount < 30) {
+        retryCount++;
+        if (updateTimeout) clearTimeout(updateTimeout);
+        updateTimeout = setTimeout(() => {
+          triggerUpdateStatusBar();
+        }, 200);
+      }
+      return;
+    }
+
+    retryCount = 0;
+  }, 100);
+}
+
+/**
+ * 初始化状态栏监听器
+ */
+export function initStatusBar() {
+  console.info('[CosmosMemory] 初始化状态栏监听器');
+
+  // 监听酒馆核心渲染/更改事件
+  eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, () => {
+    triggerUpdateStatusBar();
+  });
+
+  eventSource.on(event_types.USER_MESSAGE_RENDERED, () => {
+    triggerUpdateStatusBar();
+  });
+
+  eventSource.on(event_types.CHAT_CHANGED, () => {
+    triggerUpdateStatusBar();
+  });
+
+  eventSource.on(event_types.CHAT_LOADED, () => {
+    triggerUpdateStatusBar();
+  });
+
+  eventSource.on(event_types.MESSAGE_DELETED, () => {
+    triggerUpdateStatusBar();
+  });
+
+  eventSource.on(event_types.MESSAGE_EDITED, () => {
+    triggerUpdateStatusBar();
+  });
+
+  // 初次启动更新
+  triggerUpdateStatusBar();
+}

@@ -10,6 +10,7 @@ import {
 import { applyCurrentInfoPromptInjection } from '@/core/current-info';
 import { useSettingsStore } from '@/store/settings';
 import { event_types, eventSource } from '@sillytavern/script';
+import { initStatusBar, triggerUpdateStatusBar } from '@/core/status-bar';
 
 const SUMMARIZABLE_MESSAGE_TYPES = new Set([
   'normal',
@@ -53,6 +54,7 @@ function handleMessageReceived(message_id: number, type: string) {
           Object.keys(summary.current_info_update?.characters ?? {}).length > 0,
         ),
       });
+      triggerUpdateStatusBar();
     })
     .catch(error => {
       const message = error instanceof Error ? error.message : String(error);
@@ -123,5 +125,6 @@ export function registerSummaryEvents() {
   eventSource.on(event_types.MESSAGE_RECEIVED, handleMessageReceived);
   eventSource.on(event_types.MESSAGE_SENT, handleMessageSent);
   eventSource.on(event_types.GENERATION_AFTER_COMMANDS, handleGenerationAfterCommands);
+  initStatusBar();
   is_summary_listener_registered = true;
 }
