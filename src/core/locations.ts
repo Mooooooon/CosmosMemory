@@ -141,10 +141,7 @@ export function getStoredLocations(): StoredLocationWorld[] {
   return Object.values(getStoredLocationRecord()).sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function getOrCreateWorld(
-  locations: Record<string, StoredLocationWorld>,
-  world_name: string,
-): StoredLocationWorld {
+function getOrCreateWorld(locations: Record<string, StoredLocationWorld>, world_name: string): StoredLocationWorld {
   const world_key = normalizeLocationKey(world_name);
   const existing = locations[world_key];
   if (existing) {
@@ -261,11 +258,7 @@ function mergeLocationOperation(
       return locations;
     }
     if (country_name) {
-      _.unset(locations, [
-        world_key,
-        'countries',
-        normalizeLocationKey(country_name),
-      ]);
+      _.unset(locations, [world_key, 'countries', normalizeLocationKey(country_name)]);
       return locations;
     }
 
@@ -332,9 +325,7 @@ export function applyLocationOperations(operations: LocationOperation[]): Stored
   return getStoredLocations();
 }
 
-export function rebuildStoredLocationsFromSummaries(
-  summaries: SummaryWithLocationOperations[],
-): StoredLocationWorld[] {
+export function rebuildStoredLocationsFromSummaries(summaries: SummaryWithLocationOperations[]): StoredLocationWorld[] {
   const locations: Record<string, StoredLocationWorld> = {};
   for (const summary of summaries) {
     for (const operation of summary.location_operations ?? []) {
