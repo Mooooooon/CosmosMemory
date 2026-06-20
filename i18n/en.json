@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "API设置": "API settings",
   "是否使用酒馆API": "Use SillyTavern API",
   "将使用 SillyTavern 当前启用的 API 设置。": "The currently active SillyTavern API settings will be used.",
@@ -61,4 +62,9 @@
   "外貌描写": "Appearance",
   "性格描写": "Personality",
   "楼层": "Message"
+=======
+  "插件示例": "Plugin Example",
+  "示例按钮": "Example Button",
+  "示例开关": "Example Switch"
+>>>>>>> 24501862349b55ee873f8a8eb1f1419164a2b310
 }
