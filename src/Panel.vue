@@ -6,185 +6,192 @@
         <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
       </div>
       <div class="inline-drawer-content">
-        <div class="cosmos-memory-section-title flex-container">
-          <strong class="flex1" data-i18n="API设置">{{ t`API设置` }}</strong>
+        <!-- Tabs Header -->
+        <div class="cosmos-settings-tabs">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            class="cosmos-settings-tab"
+            :class="{ active: active_tab === tab.id }"
+            @click="active_tab = tab.id"
+          >
+            {{ tab.name }}
+          </button>
         </div>
 
-        <div class="cosmos-memory-row flex-container">
-          <input id="cosmos_memory_use_tavern_api" v-model="settings.ai.use_tavern_api" type="checkbox" />
-          <label for="cosmos_memory_use_tavern_api">{{ t`是否使用酒馆API` }}</label>
-        </div>
+        <!-- API settings Tab -->
+        <div v-show="active_tab === 'api'" class="cosmos-settings-tab-panel">
+          <div class="cosmos-memory-row flex-container">
+            <input id="cosmos_memory_use_tavern_api" v-model="settings.ai.use_tavern_api" type="checkbox" />
+            <label for="cosmos_memory_use_tavern_api">{{ t`是否使用酒馆API` }}</label>
+          </div>
 
-        <div v-if="settings.ai.use_tavern_api" class="cosmos-memory-hint">
-          {{ t`将使用 SillyTavern 当前启用的 API 设置。` }}
-        </div>
+          <div v-if="settings.ai.use_tavern_api" class="cosmos-memory-hint">
+            {{ t`将使用 SillyTavern 当前启用的 API 设置。` }}
+          </div>
 
-        <template v-else>
-          <label class="cosmos-memory-field">
-            <span>{{ t`自定义端点` }}</span>
-            <input
-              v-model.trim="settings.ai.custom_api_url"
-              class="text_pole"
-              type="url"
-              placeholder="https://api.deepseek.com/v1"
-            />
-          </label>
+          <template v-else>
+            <label class="cosmos-memory-field">
+              <span>{{ t`自定义端点` }}</span>
+              <input
+                v-model.trim="settings.ai.custom_api_url"
+                class="text_pole"
+                type="url"
+                placeholder="https://api.deepseek.com/v1"
+              />
+            </label>
 
-          <label class="cosmos-memory-field">
-            <span>{{ t`密钥` }}</span>
-            <input v-model.trim="settings.ai.custom_api_key" class="text_pole" type="password" autocomplete="off" />
-          </label>
+            <label class="cosmos-memory-field">
+              <span>{{ t`密钥` }}</span>
+              <input v-model.trim="settings.ai.custom_api_key" class="text_pole" type="password" autocomplete="off" />
+            </label>
+
+            <div class="cosmos-memory-row flex-container">
+              <input
+                class="menu_button"
+                type="button"
+                :value="is_fetching_models ? t`获取中...` : t`获取模型列表`"
+                :disabled="is_fetching_models || !settings.ai.custom_api_url.trim()"
+                @click="handle_fetch_models"
+              />
+            </div>
+
+            <label class="cosmos-memory-field">
+              <span>{{ t`模型` }}</span>
+              <select v-model="settings.ai.selected_model" class="text_pole" :disabled="model_options.length === 0">
+                <option value="">{{ t`请选择模型` }}</option>
+                <option v-for="model in model_options" :key="model" :value="model">
+                  {{ model }}
+                </option>
+              </select>
+            </label>
+          </template>
 
           <div class="cosmos-memory-row flex-container">
             <input
               class="menu_button"
               type="button"
-              :value="is_fetching_models ? t`获取中...` : t`获取模型列表`"
-              :disabled="is_fetching_models || !settings.ai.custom_api_url.trim()"
-              @click="handle_fetch_models"
+              :value="is_testing ? t`测试中...` : t`发送测试消息`"
+              :disabled="is_test_disabled"
+              @click="handle_send_test_message"
             />
           </div>
 
+          <div
+            v-if="test_result"
+            class="cosmos-memory-test-result"
+            :class="`cosmos-memory-test-result--${test_result.type}`"
+          >
+            {{ test_result.message }}
+          </div>
+        </div>
+
+        <!-- Summary Tab -->
+        <div v-show="active_tab === 'summary'" class="cosmos-settings-tab-panel">
           <label class="cosmos-memory-field">
-            <span>{{ t`模型` }}</span>
-            <select v-model="settings.ai.selected_model" class="text_pole" :disabled="model_options.length === 0">
-              <option value="">{{ t`请选择模型` }}</option>
-              <option v-for="model in model_options" :key="model" :value="model">
-                {{ model }}
-              </option>
-            </select>
+            <span>{{ t`保留原文的数量` }}</span>
+            <input
+              v-model.number="settings.compression.retained_original_assistant_messages"
+              class="text_pole"
+              type="number"
+              min="0"
+              step="1"
+              @change="normalize_retained_original_count"
+            />
           </label>
-        </template>
 
-        <div class="cosmos-memory-row flex-container">
-          <input
-            class="menu_button"
-            type="button"
-            :value="is_testing ? t`测试中...` : t`发送测试消息`"
-            :disabled="is_test_disabled"
-            @click="handle_send_test_message"
-          />
-        </div>
+          <div class="cosmos-memory-hint">
+            {{ t`当 AI 回复数量超过该值时，旧回复会被隐藏，并在生成时用已保存的摘要替代。` }}
+          </div>
 
-        <div
-          v-if="test_result"
-          class="cosmos-memory-test-result"
-          :class="`cosmos-memory-test-result--${test_result.type}`"
-        >
-          {{ test_result.message }}
-        </div>
-
-        <div class="cosmos-memory-section-title flex-container">
-          <strong class="flex1" data-i18n="总结">{{ t`总结` }}</strong>
-        </div>
-
-        <label class="cosmos-memory-field">
-          <span>{{ t`保留原文的数量` }}</span>
-          <input
-            v-model.number="settings.compression.retained_original_assistant_messages"
-            class="text_pole"
-            type="number"
-            min="0"
-            step="1"
-            @change="normalize_retained_original_count"
-          />
-        </label>
-
-        <div class="cosmos-memory-hint">
-          {{ t`当 AI 回复数量超过该值时，旧回复会被隐藏，并在生成时用已保存的摘要替代。` }}
-        </div>
-
-        <div class="cosmos-memory-row flex-container">
-          <input class="menu_button" type="button" :value="t`查看已有总结`" @click="handle_show_summaries" />
-        </div>
-
-        <div class="cosmos-memory-section-title flex-container">
-          <strong class="flex1" data-i18n="当前信息">{{ t`当前信息` }}</strong>
-        </div>
-
-        <div class="cosmos-memory-row flex-container">
-          <input id="cosmos_memory_current_info_enabled" v-model="settings.current_info.enabled" type="checkbox" />
-          <label for="cosmos_memory_current_info_enabled">{{ t`当前信息` }}</label>
-        </div>
-
-        <div class="cosmos-memory-hint">
-          {{ t`开启后会在总结时维护当前时间、地点和角色状态，并注入到人物信息上方。` }}
-        </div>
-
-        <div class="cosmos-memory-current-info">
           <div class="cosmos-memory-row flex-container">
-            <span>{{ t`当前时间` }}：{{ stored_current_info.current_time || t`尚未记录` }}</span>
-            <input class="menu_button" type="button" :value="t`刷新`" @click="handle_refresh_current_info" />
+            <input class="menu_button" type="button" :value="t`查看已有总结`" @click="handle_show_summaries" />
           </div>
+        </div>
+
+        <!-- Current Info Tab -->
+        <div v-show="active_tab === 'current_info'" class="cosmos-settings-tab-panel">
           <div class="cosmos-memory-row flex-container">
-            <span>{{ t`当前地点` }}：{{ stored_current_info.location || t`尚未记录` }}</span>
+            <input id="cosmos_memory_current_info_enabled" v-model="settings.current_info.enabled" type="checkbox" />
+            <label for="cosmos_memory_current_info_enabled">{{ t`启用当前信息` }}</label>
           </div>
-          <div v-if="current_character_entries.length > 0" class="cosmos-memory-current-characters">
-            <div class="cosmos-memory-current-characters-title">{{ t`当前角色列表` }}</div>
-            <dl v-for="[name, character] in current_character_entries" :key="name">
-              <dt>{{ name }}</dt>
-              <dd v-if="character.clothing">{{ t`角色服装` }}：{{ character.clothing }}</dd>
-              <dd v-if="character.status">{{ t`角色状态` }}：{{ character.status }}</dd>
-            </dl>
+
+          <div class="cosmos-memory-hint">
+            {{ t`开启后会在总结时维护当前时间、地点和角色状态，并注入到人物信息上方。` }}
+          </div>
+
+          <div class="cosmos-memory-current-info">
+            <div class="cosmos-memory-row flex-container">
+              <span>{{ t`当前时间` }}：{{ stored_current_info.current_time || t`尚未记录` }}</span>
+              <input class="menu_button" type="button" :value="t`刷新`" @click="handle_refresh_current_info" />
+            </div>
+            <div class="cosmos-memory-row flex-container">
+              <span>{{ t`当前地点` }}：{{ stored_current_info.location || t`尚未记录` }}</span>
+            </div>
+            <div v-if="current_character_entries.length > 0" class="cosmos-memory-current-characters">
+              <div class="cosmos-memory-current-characters-title">{{ t`当前角色列表` }}</div>
+              <dl v-for="[name, character] in current_character_entries" :key="name">
+                <dt>{{ name }}</dt>
+                <dd v-if="character.clothing">{{ t`角色服装` }}：{{ character.clothing }}</dd>
+                <dd v-if="character.status">{{ t`角色状态` }}：{{ character.status }}</dd>
+              </dl>
+            </div>
           </div>
         </div>
 
-        <div class="cosmos-memory-section-title flex-container">
-          <strong class="flex1" data-i18n="地点">{{ t`地点` }}</strong>
+        <!-- Locations Tab -->
+        <div v-show="active_tab === 'locations'" class="cosmos-settings-tab-panel">
+          <div class="cosmos-memory-row flex-container">
+            <input id="cosmos_memory_locations_enabled" v-model="settings.locations.enabled" type="checkbox" />
+            <label for="cosmos_memory_locations_enabled">{{ t`启用地点信息` }}</label>
+          </div>
+
+          <div class="cosmos-memory-hint">
+            {{ t`开启后会在总结时记录有重复使用价值的地点，并按国家、城市、场景、房间层级注入。` }}
+          </div>
+
+          <div class="cosmos-memory-row flex-container">
+            <input class="menu_button" type="button" :value="t`查看地点信息`" @click="handle_show_locations" />
+          </div>
         </div>
 
-        <div class="cosmos-memory-row flex-container">
-          <input id="cosmos_memory_locations_enabled" v-model="settings.locations.enabled" type="checkbox" />
-          <label for="cosmos_memory_locations_enabled">{{ t`地点信息` }}</label>
+        <!-- Items Tab -->
+        <div v-show="active_tab === 'items'" class="cosmos-settings-tab-panel">
+          <div class="cosmos-memory-row flex-container">
+            <input id="cosmos_memory_items_enabled" v-model="settings.items.enabled" type="checkbox" />
+            <label for="cosmos_memory_items_enabled">{{ t`启用物品信息` }}</label>
+          </div>
+
+          <div class="cosmos-memory-hint">
+            {{ t`开启后会在总结时记录影响剧情的重要道具，并注入到人物信息上方。` }}
+          </div>
+
+          <div class="cosmos-memory-row flex-container">
+            <input class="menu_button" type="button" :value="t`查看物品信息`" @click="handle_show_items" />
+          </div>
         </div>
 
-        <div class="cosmos-memory-hint">
-          {{ t`开启后会在总结时记录有重复使用价值的地点，并按国家、城市、场景、房间层级注入。` }}
-        </div>
+        <!-- Characters Tab -->
+        <div v-show="active_tab === 'characters'" class="cosmos-settings-tab-panel">
+          <div class="cosmos-memory-row flex-container">
+            <input id="cosmos_memory_characters_enabled" v-model="settings.characters.enabled" type="checkbox" />
+            <label for="cosmos_memory_characters_enabled">{{ t`启用人物信息` }}</label>
+          </div>
 
-        <div class="cosmos-memory-row flex-container">
-          <input class="menu_button" type="button" :value="t`查看地点信息`" @click="handle_show_locations" />
-        </div>
+          <div class="cosmos-memory-hint">
+            {{ t`开启后会在总结时提取主要角色和会重复出现的次要角色，并注入到后续提示词中。` }}
+          </div>
 
-        <div class="cosmos-memory-section-title flex-container">
-          <strong class="flex1" data-i18n="物品">{{ t`物品` }}</strong>
-        </div>
-
-        <div class="cosmos-memory-row flex-container">
-          <input id="cosmos_memory_items_enabled" v-model="settings.items.enabled" type="checkbox" />
-          <label for="cosmos_memory_items_enabled">{{ t`物品信息` }}</label>
-        </div>
-
-        <div class="cosmos-memory-hint">
-          {{ t`开启后会在总结时记录影响剧情的重要道具，并注入到人物信息上方。` }}
-        </div>
-
-        <div class="cosmos-memory-row flex-container">
-          <input class="menu_button" type="button" :value="t`查看物品信息`" @click="handle_show_items" />
-        </div>
-
-        <div class="cosmos-memory-section-title flex-container">
-          <strong class="flex1" data-i18n="人物">{{ t`人物` }}</strong>
-        </div>
-
-        <div class="cosmos-memory-row flex-container">
-          <input id="cosmos_memory_characters_enabled" v-model="settings.characters.enabled" type="checkbox" />
-          <label for="cosmos_memory_characters_enabled">{{ t`人物信息` }}</label>
-        </div>
-
-        <div class="cosmos-memory-hint">
-          {{ t`开启后会在总结时提取主要角色和会重复出现的次要角色，并注入到后续提示词中。` }}
-        </div>
-
-        <div class="cosmos-memory-row flex-container">
-          <input class="menu_button" type="button" :value="t`查看人物信息`" @click="handle_show_characters" />
-          <input
-            class="menu_button"
-            type="button"
-            :value="is_regenerating_characters ? t`重新生成中...` : t`重新生成`"
-            :disabled="is_regenerate_characters_disabled"
-            @click="handle_regenerate_characters"
-          />
+          <div class="cosmos-memory-row flex-container">
+            <input class="menu_button" type="button" :value="t`查看人物信息`" @click="handle_show_characters" />
+            <input
+              class="menu_button"
+              type="button"
+              :value="is_regenerating_characters ? t`重新生成中...` : t`重新生成`"
+              :disabled="is_regenerate_characters_disabled"
+              @click="handle_regenerate_characters"
+            />
+          </div>
         </div>
 
         <hr class="sysHR" />
@@ -349,6 +356,16 @@ type TestResult = {
 };
 
 const { settings } = storeToRefs(useSettingsStore());
+
+const active_tab = ref('api');
+const tabs = computed(() => [
+  { id: 'api', name: t`API设置` },
+  { id: 'summary', name: t`总结` },
+  { id: 'current_info', name: t`当前信息` },
+  { id: 'characters', name: t`人物` },
+  { id: 'locations', name: t`地点` },
+  { id: 'items', name: t`物品` },
+]);
 
 const is_fetching_models = ref(false);
 const is_testing = ref(false);
@@ -702,5 +719,65 @@ function sorted_location_rooms(scene: StoredLocationScene): StoredLocationRoom[]
 .cosmos-memory-location-rooms dd {
   margin: 4px 0 0 12px;
   white-space: pre-wrap;
+}
+
+/* 扩展设置面板 Tab 样式 */
+.cosmos-settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--SmartThemeBorderColor);
+  padding-bottom: 10px;
+}
+
+.cosmos-settings-tab {
+  flex: 1 1 calc(33.33% - 6px);
+  min-width: 80px;
+  padding: 8px 10px;
+  font-size: 0.88em;
+  font-weight: 500;
+  text-align: center;
+  color: var(--SmartThemeBodyColor);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+  user-select: none;
+}
+
+.cosmos-settings-tab:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.cosmos-settings-tab:active {
+  transform: translateY(0);
+}
+
+.cosmos-settings-tab.active {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.05) 100%);
+  border-color: var(--SmartThemeBorderColor);
+  font-weight: 700;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
+}
+
+.cosmos-settings-tab-panel {
+  animation: cosmos-panel-fade-in 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes cosmos-panel-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>
