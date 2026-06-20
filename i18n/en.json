@@ -1,5 +1,7 @@
 {
-  "API设置": "API settings",
+  "设置": "Settings",
+  "启用状态栏": "Enable status bar",
+  "开启后会在最新 AI 回复末尾显示状态栏，展示已启用功能的信息。": "When enabled, a status bar will appear at the end of the latest AI reply, showing information for enabled features.",
   "是否使用酒馆API": "Use SillyTavern API",
   "将使用 SillyTavern 当前启用的 API 设置。": "The currently active SillyTavern API settings will be used.",
   "自定义端点": "Custom endpoint",

@@ -19,8 +19,8 @@
           </button>
         </div>
 
-        <!-- API settings Tab -->
-        <div v-show="active_tab === 'api'" class="cosmos-settings-tab-panel">
+        <!-- Settings Tab -->
+        <div v-show="active_tab === 'settings'" class="cosmos-settings-tab-panel">
           <div class="cosmos-memory-row flex-container">
             <input id="cosmos_memory_use_tavern_api" v-model="settings.ai.use_tavern_api" type="checkbox" />
             <label for="cosmos_memory_use_tavern_api">{{ t`是否使用酒馆API` }}</label>
@@ -83,6 +83,17 @@
             :class="`cosmos-memory-test-result--${test_result.type}`"
           >
             {{ test_result.message }}
+          </div>
+
+          <hr class="sysHR" />
+
+          <div class="cosmos-memory-row flex-container">
+            <input id="cosmos_memory_status_bar_enabled" v-model="settings.status_bar.enabled" type="checkbox" @change="handle_status_bar_toggle" />
+            <label for="cosmos_memory_status_bar_enabled">{{ t`启用状态栏` }}</label>
+          </div>
+
+          <div class="cosmos-memory-hint">
+            {{ t`开启后会在最新 AI 回复末尾显示状态栏，展示已启用功能的信息。` }}
           </div>
         </div>
 
@@ -370,9 +381,9 @@ type TestResult = {
 
 const { settings } = storeToRefs(useSettingsStore());
 
-const active_tab = ref('api');
+const active_tab = ref('settings');
 const tabs = computed(() => [
-  { id: 'api', name: t`API设置` },
+  { id: 'settings', name: t`设置` },
   { id: 'summary', name: t`总结` },
   { id: 'current_info', name: t`当前信息` },
   { id: 'characters', name: t`人物` },
@@ -598,6 +609,15 @@ function normalize_retained_original_count() {
   settings.value.compression.retained_original_assistant_messages = Number.isFinite(count)
     ? Math.max(0, Math.floor(count))
     : 5;
+}
+
+function handle_status_bar_toggle() {
+  if (settings.value.status_bar.enabled) {
+    triggerUpdateStatusBar();
+  } else {
+    // 关闭时移除已有状态栏
+    $('#chat .cosmos-memory-status-bar', window.parent.document).remove();
+  }
 }
 
 function sorted_location_cities(country: StoredLocationCountry): StoredLocationCity[] {

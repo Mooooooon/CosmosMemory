@@ -3,6 +3,7 @@ import { getStoredCurrentInfo } from '@/core/current-info';
 import { getStoredCharacters } from '@/core/characters';
 import { getStoredItems } from '@/core/items';
 import { getStoredLocations } from '@/core/locations';
+import { useSettingsStore } from '@/store/settings';
 
 let activeTab: 'current' | 'characters' | 'items' | 'locations' = 'current';
 let updateTimeout: any = null;
@@ -227,6 +228,35 @@ export function updateStatusBar(): boolean {
     return false;
   }
 
+  const { settings } = useSettingsStore();
+
+  // 如果状态栏被关闭，移除已有状态栏并返回
+  if (!settings.status_bar.enabled) {
+    $('#chat .cosmos-memory-status-bar', window.parent.document).remove();
+    return true;
+  }
+
+  // 根据各功能开关过滤可用的 Tab
+  const allTabsConfig = [
+    { id: 'current' as const, name: t`当前信息`, enabled: settings.current_info.enabled },
+    { id: 'characters' as const, name: t`人物信息`, enabled: settings.characters.enabled },
+    { id: 'items' as const, name: t`物品信息`, enabled: settings.items.enabled },
+    { id: 'locations' as const, name: t`地点信息`, enabled: settings.locations.enabled },
+  ];
+
+  const enabledTabs = allTabsConfig.filter(tab => tab.enabled);
+
+  // 没有任何功能开启时，不显示状态栏
+  if (enabledTabs.length === 0) {
+    $('#chat .cosmos-memory-status-bar', window.parent.document).remove();
+    return true;
+  }
+
+  // 如果当前激活的 Tab 不在已启用列表中，切换到第一个可用 Tab
+  if (!enabledTabs.some(tab => tab.id === activeTab)) {
+    activeTab = enabledTabs[0]!.id;
+  }
+
   // 1. 查找最新 AI 回复的楼层号
   const messageId = getLatestAiMessageId();
   if (messageId === null) {
@@ -246,14 +276,7 @@ export function updateStatusBar(): boolean {
   const $statusBar = $('<div class="cosmos-memory-status-bar">');
   const $tabs = $('<div class="cosmos-tabs">');
 
-  const tabsConfig = [
-    { id: 'current', name: t`当前信息` },
-    { id: 'characters', name: t`人物信息` },
-    { id: 'items', name: t`物品信息` },
-    { id: 'locations', name: t`地点信息` },
-  ] as const;
-
-  tabsConfig.forEach(tab => {
+  enabledTabs.forEach(tab => {
     const $tab = $(`<div class="cosmos-tab" data-tab="${tab.id}">`).text(tab.name);
     if (tab.id === activeTab) {
       $tab.addClass('active');

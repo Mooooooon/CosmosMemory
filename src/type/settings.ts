@@ -46,6 +46,13 @@ export const LocationSettings = z
   })
   .prefault({});
 
+export type StatusBarSettings = z.infer<typeof StatusBarSettings>;
+export const StatusBarSettings = z
+  .object({
+    enabled: z.boolean().default(true),
+  })
+  .prefault({});
+
 export type Settings = z.infer<typeof Settings>;
 export const Settings = z
   .object({
@@ -55,6 +62,7 @@ export const Settings = z
     current_info: CurrentInfoSettings,
     items: ItemSettings,
     locations: LocationSettings,
+    status_bar: StatusBarSettings,
   })
   .prefault({});
 
