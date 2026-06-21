@@ -1,23 +1,10 @@
-import {
-  CHARACTER_PROMPT_DEPTH,
-  CHARACTER_PROMPT_ID,
-  formatCharactersForPrompt,
-} from '@/core/characters';
-import {
-  CURRENT_INFO_PROMPT_DEPTH,
-  CURRENT_INFO_PROMPT_ID,
-  formatCurrentInfoForPrompt,
-} from '@/core/current-info';
+import { CHARACTER_PROMPT_DEPTH, CHARACTER_PROMPT_ID, formatCharactersForPrompt } from '@/core/characters';
+import { CURRENT_INFO_PROMPT_DEPTH, CURRENT_INFO_PROMPT_ID, formatCurrentInfoForPrompt } from '@/core/current-info';
 import { formatItemsForPrompt, ITEM_PROMPT_DEPTH, ITEM_PROMPT_ID } from '@/core/items';
 import { formatLocationsForPrompt, LOCATION_PROMPT_DEPTH, LOCATION_PROMPT_ID } from '@/core/locations';
 import type { Settings } from '@/type/settings';
 
-const RUNTIME_MEMORY_PROMPT_IDS = [
-  CURRENT_INFO_PROMPT_ID,
-  LOCATION_PROMPT_ID,
-  ITEM_PROMPT_ID,
-  CHARACTER_PROMPT_ID,
-];
+const RUNTIME_MEMORY_PROMPT_IDS = [CURRENT_INFO_PROMPT_ID, LOCATION_PROMPT_ID, ITEM_PROMPT_ID, CHARACTER_PROMPT_ID];
 
 type RuntimeMemoryPromptInfo = {
   id: string;
