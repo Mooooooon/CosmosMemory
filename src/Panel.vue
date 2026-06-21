@@ -130,9 +130,7 @@
           </div>
 
           <div class="cosmos-memory-hint">
-            {{
-              t`开启后，总结请求会按顺序附带世界书（角色前）、玩家描述、角色描述、世界书（角色后）。`
-            }}
+            {{ t`开启后，总结请求会按顺序附带世界书（角色前）、玩家描述、角色描述、世界书（角色后）。` }}
           </div>
 
           <div class="cosmos-memory-row flex-container">
