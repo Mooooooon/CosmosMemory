@@ -97,6 +97,11 @@ const CHARACTER_EXTRACTION_INSTRUCTION = [
   '不应记录的人物：一次性路人、无名杂兵、临时遭遇的野兽/怪物（除非是有名字的BOSS）、背景描写中提到但未实际出场的人物、仅在对话中被提及但未登场的角色。',
   '',
   '只返回本楼层带来的变化。当已有人物获得了新的重要信息（如揭露了过去、外貌有新描写、展现了新的性格面）时，用 set 操作补充更新对应字段，将新信息与已有信息合并成完整描述，不要只返回增量片段。不要重复返回没有变化的已有人物。',
+  '',
+  '过时数据清理（必须严格执行）：',
+  '- 角色更名：先输出一条 delete（旧名称），再输出一条 add（新名称）；不可仅用 set 改名，否则旧条目将永久残留。',
+  '- 条目合并：若发现两个条目实为同一人（化名揭露、同一角色不同称呼），先 delete 多余条目，再 set 更新保留条目，合并全部信息。',
+  '- 角色离场：若角色在本楼层死亡或永久离场，输出 delete 删除其条目；暂时离场无需删除。',
 ].join('\n');
 
 const ITEM_EXTRACTION_INSTRUCTION = [
@@ -139,7 +144,7 @@ const CURRENT_INFO_JSON_FIELD_INSTRUCTION =
   '"current_info_update":{"current_time":"本楼层结束后的当前故事时间，必须精确到分钟；现实背景如\\"2026年6月20日 21:16\\"，架空背景如\\"银历3年 霜月·月望日 申时二刻（约21:16）\\"","location":"本楼层结束后的当前地点","characters":{"角色名":{"clothing":"角色当前服装，没有则为空字符串","status":"角色当前状态，包含动作、姿势等，没有则为空字符串"}},"elapsed_time":"本楼层消耗的剧情时间，必须严格对应原文描写，不得凭生活常识随意推断：吃饭≈30~60分钟、短途行走≈15~30分钟、一场战斗≈5~30分钟、一夜休眠≈6~8小时，原文无线索则填\\"约0分钟（无明确时间流逝）\\"","reason":"更新当前信息的依据，没有则为空字符串"}';
 
 const DESCRIPTION_AND_WORLD_INFO_INSTRUCTION =
-  '若请求中包含世界书、玩家描述或角色描述，它们只作为理解本楼层剧情的背景参考，用于消解称呼、设定和关系；不要把这些背景内容当成本楼层新发生的剧情。';
+  '请求中以「角色卡固定设定」标签包裹的世界书、玩家描述和角色描述，是角色卡的预设背景资料，属于只读内容，不可修改。这些内容不是本楼层新发生的剧情，不应从中提取任何 add/set/delete 变更操作，仅用于消解称呼、理解设定和人物关系。';
 
 const FULL_CHARACTER_EXTRACTION_SYSTEM_PROMPT = [
   '你是剧情人物档案整理器。请阅读用户提供的所有 AI 回复原文，整理剧情中需要长期记忆的人物信息。',
@@ -149,10 +154,16 @@ const FULL_CHARACTER_EXTRACTION_SYSTEM_PROMPT = [
   '次要角色是会多次出现但不推动主线的 NPC，只需保存姓名或身份称呼和一句话简介。',
   '',
   '不要记录一次性路人、无名杂兵、临时敌人、仅在对话中被提及但未实际登场的角色。不要续写剧情，不要加入原文没有的信息。从原文的具体描写中提取信息，不要用“漂亮”“帅气”等模糊形容代替原文的具体描述。',
+  '',
+  '去重与去噪规则（必须严格执行）：',
+  '- 若同一角色在不同章节使用了不同名称（化名揭露、更名等），只保留最终/最准确的名称，不输出旧名称条目。',
+  '- 若发现两个条目实际上是同一人，将其合并为一条，取最完整的信息，每个角色只输出一次。',
+  '- 若角色在剧情中已死亡、永久离场或完全失去后续价值，不输出该角色。',
+  '- 最终列表中每个角色只出现一次，没有重复条目。',
 ].join('\n');
 
 const FULL_CHARACTER_JSON_INSTRUCTION =
-  '请从以下剧情记录中整理所有需要保存的人物，只返回 JSON。格式：{"characters":[{"type":"primary|secondary","name":"姓名或身份","background":"主要角色背景：身份地位、种族、职业、家庭关系、重要经历，没有则为空字符串","appearance":"主要角色外貌：身高体型、发色发型、瞳色肤色、面部特征、标志性穿着，没有则为空字符串","personality":"主要角色性格：核心特质、说话方式、行为习惯、价值观，没有则为空字符串","brief":"次要角色简介，没有则为空字符串"}]}。不要使用 Markdown 代码块，不要返回额外解释。';
+  '请从以下剧情记录中整理所有需要保存的人物，输出去重、去噪后的最终列表，只返回 JSON。规则：同一角色若有更名，只保留最终名称；重复条目须合并；已死亡或永久离场的角色不输出；每个角色只出现一次。格式：{"characters":[{"type":"primary|secondary","name":"姓名或身份（仅最终名称）","background":"主要角色背景：身份地位、种族、职业、家庭关系、重要经历，没有则为空字符串","appearance":"主要角色外貌：身高体型、发色发型、瞳色肤色、面部特征、标志性穿着，没有则为空字符串","personality":"主要角色性格：核心特质、说话方式、行为习惯、价值观，没有则为空字符串","brief":"次要角色简介，没有则为空字符串"}]}。不要使用 Markdown 代码块，不要返回额外解释。';
 
 function inferCustomApiSource(settings: AiSettings): string {
   const target = `${settings.custom_api_url} ${settings.selected_model}`.toLowerCase();
@@ -310,7 +321,20 @@ function buildSummaryOrderedPrompts(
       role: 'system',
       content: buildSummarySystemPrompt(options),
     },
-    ...(options.send_descriptions_and_world_info ? DESCRIPTION_AND_WORLD_INFO_PROMPTS : []),
+    ...(options.send_descriptions_and_world_info
+      ? [
+          {
+            role: 'system',
+            content:
+              '=== 角色卡固定设定（只读背景，不可修改） ===\n以下内容是角色卡、玩家描述和世界书的预设设定，属于固定背景资料。这些内容不是本楼层新发生的剧情，不应从中提取任何变更操作，仅用于理解人物关系、称呼和世界背景。',
+          } as RolePrompt,
+          ...DESCRIPTION_AND_WORLD_INFO_PROMPTS,
+          {
+            role: 'system',
+            content: '=== 角色卡固定设定结束 ===',
+          } as RolePrompt,
+        ]
+      : []),
     {
       role: 'user',
       content: user_content,
@@ -339,7 +363,7 @@ function buildSummaryJsonInstruction(options: SummaryGenerationOptions): string 
   }
   if (options.characters_enabled) {
     fields.push(
-      '"characters":[{"type":"add|set|delete","character_type":"primary|secondary","name":"姓名或身份","background":"主要角色背景：身份地位、种族、职业、家庭关系、重要经历，没有则为空字符串","appearance":"主要角色外貌：身高体型、发色发型、瞳色肤色、面部特征、标志性穿着，没有则为空字符串","personality":"主要角色性格：核心特质、说话方式、行为习惯、价值观，没有则为空字符串","brief":"次要角色简介，没有则为空字符串"}]',
+      '"characters":[{"type":"add|set|delete（更名须先delete旧名再add新名；合并重复须先delete多余条目；死亡/永久离场须delete）","character_type":"primary|secondary","name":"姓名或身份","background":"主要角色背景：身份地位、种族、职业、家庭关系、重要经历，没有则为空字符串","appearance":"主要角色外貌：身高体型、发色发型、瞳色肤色、面部特征、标志性穿着，没有则为空字符串","personality":"主要角色性格：核心特质、说话方式、行为习惯、价值观，没有则为空字符串","brief":"次要角色简介，没有则为空字符串"}]',
     );
   }
 
@@ -507,14 +531,16 @@ function buildStructuredSummarySchema(options: SummaryGenerationOptions): JsonSc
   if (options.characters_enabled) {
     properties.characters = {
       type: 'array',
-      description: '本楼层带来的人物信息变更；没有变化时返回空数组',
+      description:
+        '本楼层带来的人物信息变更；没有变化时返回空数组。过时数据清理规则（必须严格执行）：①角色更名时，先输出一条 delete（旧名），再输出一条 add（新名），不可仅用 set，否则旧条目将残留；②发现重复/化名合并时，先 delete 多余条目，再 set 更新保留条目；③角色死亡或永久离场时，输出 delete 删除其条目。',
       items: {
         type: 'object',
         properties: {
           type: {
             type: 'string',
             enum: ['add', 'set', 'delete'],
-            description: '人物操作类型',
+            description:
+              '人物操作类型。add：新增角色；set：更新已有角色的字段（不改变 key）；delete：删除过时条目——用于更名旧名、合并多余条目、角色死亡/永久离场。',
           },
           character_type: {
             type: 'string',
@@ -523,7 +549,7 @@ function buildStructuredSummarySchema(options: SummaryGenerationOptions): JsonSc
           },
           name: {
             type: 'string',
-            description: '角色全名，或次要角色的稳定身份称呼',
+            description: '角色全名，或次要角色的稳定身份称呼；delete 操作时填写需要删除的旧名称',
           },
           background: {
             type: 'string',
