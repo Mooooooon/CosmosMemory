@@ -1,12 +1,9 @@
-import { applyCharacterPromptInjection } from '@/core/characters';
 import { applySummaryCompressionForNextGeneration } from '@/core/compression';
-import { applyItemPromptInjection } from '@/core/items';
-import { applyLocationPromptInjection } from '@/core/locations';
 import { runMemoryBacktrackCheck, summarizeReceivedMessage } from '@/core/summary';
-import { applyCurrentInfoPromptInjection } from '@/core/current-info';
 import { useSettingsStore } from '@/store/settings';
 import { event_types, eventSource } from '@sillytavern/script';
 import { initStatusBar, triggerUpdateStatusBar } from '@/core/status-bar';
+import { applyRuntimeMemoryPromptInjection } from '@/core/runtime-memory';
 
 const SUMMARIZABLE_MESSAGE_TYPES = new Set([
   'normal',
@@ -98,10 +95,7 @@ async function handleGenerationAfterCommands(
   try {
     const { settings } = useSettingsStore();
     await applySummaryCompressionForNextGeneration();
-    applyCurrentInfoPromptInjection(settings.current_info.enabled);
-    applyLocationPromptInjection(settings.locations.enabled);
-    applyItemPromptInjection(settings.items.enabled);
-    applyCharacterPromptInjection(settings.characters.enabled);
+    applyRuntimeMemoryPromptInjection(settings);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('[CosmosMemory] 生成前应用记忆注入失败', error);

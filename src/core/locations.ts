@@ -1,7 +1,7 @@
 const STORAGE_ROOT = 'cosmos_memory';
 const LOCATION_STORAGE_PATH = `${STORAGE_ROOT}.locations`;
-const LOCATION_PROMPT_ID = 'cosmos_memory_locations';
-const LOCATION_PROMPT_DEPTH = 10000.5;
+export const LOCATION_PROMPT_ID = 'cosmos_memory_locations';
+export const LOCATION_PROMPT_DEPTH = 10001;
 
 export type LocationOperationType = 'add' | 'set' | 'delete';
 

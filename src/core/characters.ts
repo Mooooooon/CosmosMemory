@@ -1,7 +1,7 @@
 const STORAGE_ROOT = 'cosmos_memory';
 const CHARACTER_STORAGE_PATH = `${STORAGE_ROOT}.characters`;
-const CHARACTER_PROMPT_ID = 'cosmos_memory_characters';
-const CHARACTER_PROMPT_DEPTH = 9999;
+export const CHARACTER_PROMPT_ID = 'cosmos_memory_characters';
+export const CHARACTER_PROMPT_DEPTH = 9999;
 
 export type CharacterKind = 'primary' | 'secondary';
 export type CharacterOperationType = 'add' | 'set' | 'delete';

@@ -1,7 +1,7 @@
 const STORAGE_ROOT = 'cosmos_memory';
 const CURRENT_INFO_STORAGE_PATH = `${STORAGE_ROOT}.current_info`;
-const CURRENT_INFO_PROMPT_ID = 'cosmos_memory_current_info';
-const CURRENT_INFO_PROMPT_DEPTH = 10001;
+export const CURRENT_INFO_PROMPT_ID = 'cosmos_memory_current_info';
+export const CURRENT_INFO_PROMPT_DEPTH = 10002;
 
 export type CurrentCharacterInfo = {
   clothing: string;

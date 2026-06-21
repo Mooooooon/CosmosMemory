@@ -1,7 +1,7 @@
 const STORAGE_ROOT = 'cosmos_memory';
 const ITEM_STORAGE_PATH = `${STORAGE_ROOT}.items`;
-const ITEM_PROMPT_ID = 'cosmos_memory_items';
-const ITEM_PROMPT_DEPTH = 10000;
+export const ITEM_PROMPT_ID = 'cosmos_memory_items';
+export const ITEM_PROMPT_DEPTH = 10000;
 
 export type ItemOperationType = 'add' | 'set' | 'delete';
 
