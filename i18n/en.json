@@ -12,6 +12,8 @@
   "请选择模型": "Select a model",
   "保留原文的数量": "Original replies to keep",
   "当 AI 回复数量超过该值时，旧回复会被隐藏，并在生成时用已保存的摘要替代。": "When AI replies exceed this value, older replies will be hidden and replaced by saved summaries during generation.",
+  "发送描述与世界书": "Send descriptions and world info",
+  "开启后，总结请求会按顺序附带世界书（角色前）、玩家描述、角色描述、世界书（角色后）。": "When enabled, summary requests will include world info before character, persona description, character description, and world info after character in that order.",
   "测试中...": "Testing...",
   "发送测试消息": "Send test message",
   "模型列表获取成功。": "Model list fetched.",

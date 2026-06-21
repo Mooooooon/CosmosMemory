@@ -25,8 +25,15 @@ const TEST_MESSAGE = '!ping';
 const DEFAULT_CUSTOM_API_SOURCE = 'openai';
 const DEEPSEEK_API_SOURCE = 'deepseek';
 const SUMMARY_MAX_TOKENS = 2048;
+const DESCRIPTION_AND_WORLD_INFO_PROMPTS: PlaceholderPrompt[] = [
+  'world_info_before',
+  'persona_description',
+  'char_description',
+  'world_info_after',
+];
 
 type CustomApi = NonNullable<GenerateConfig['custom_api']>;
+type SummaryPromptMode = 'structured_output' | 'json_prompt';
 
 const SummaryResponse = z.object({
   summary: z.string().trim().min(1),
@@ -61,6 +68,7 @@ export type SummaryGenerationOptions = {
   stored_locations?: StoredLocationWorld[];
   current_info_enabled?: boolean;
   current_info?: CurrentInfo;
+  send_descriptions_and_world_info?: boolean;
 };
 
 const SUMMARY_SYSTEM_PROMPT = [
@@ -129,6 +137,9 @@ const CURRENT_INFO_EXTRACTION_INSTRUCTION = [
 
 const CURRENT_INFO_JSON_FIELD_INSTRUCTION =
   '"current_info_update":{"current_time":"本楼层结束后的当前故事时间，必须精确到分钟；现实背景如\\"2026年6月20日 21:16\\"，架空背景如\\"银历3年 霜月·月望日 申时二刻（约21:16）\\"","location":"本楼层结束后的当前地点","characters":{"角色名":{"clothing":"角色当前服装，没有则为空字符串","status":"角色当前状态，包含动作、姿势等，没有则为空字符串"}},"elapsed_time":"本楼层消耗的剧情时间，必须严格对应原文描写，不得凭生活常识随意推断：吃饭≈30~60分钟、短途行走≈15~30分钟、一场战斗≈5~30分钟、一夜休眠≈6~8小时，原文无线索则填\\"约0分钟（无明确时间流逝）\\"","reason":"更新当前信息的依据，没有则为空字符串"}';
+
+const DESCRIPTION_AND_WORLD_INFO_INSTRUCTION =
+  '若请求中包含世界书、玩家描述或角色描述，它们只作为理解本楼层剧情的背景参考，用于消解称呼、设定和关系；不要把这些背景内容当成本楼层新发生的剧情。';
 
 const FULL_CHARACTER_EXTRACTION_SYSTEM_PROMPT = [
   '你是剧情人物档案整理器。请阅读用户提供的所有 AI 回复原文，整理剧情中需要长期记忆的人物信息。',
@@ -261,6 +272,10 @@ function buildSummaryContent(content: string, options: SummaryGenerationOptions)
 function buildSummarySystemPrompt(options: SummaryGenerationOptions): string {
   const instructions = [SUMMARY_SYSTEM_PROMPT];
 
+  if (options.send_descriptions_and_world_info) {
+    instructions.push(DESCRIPTION_AND_WORLD_INFO_INSTRUCTION);
+  }
+
   if (options.current_info_enabled) {
     instructions.push(CURRENT_INFO_EXTRACTION_INSTRUCTION);
   }
@@ -278,6 +293,29 @@ function buildSummarySystemPrompt(options: SummaryGenerationOptions): string {
   }
 
   return instructions.join('\n');
+}
+
+function buildSummaryOrderedPrompts(
+  content: string,
+  options: SummaryGenerationOptions,
+  mode: SummaryPromptMode,
+): (PlaceholderPrompt | RolePrompt)[] {
+  const user_content =
+    mode === 'structured_output'
+      ? `请总结以下剧情内容：\n\n${buildSummaryContent(content, options)}`
+      : `${buildSummaryJsonInstruction(options)}\n\n${buildSummaryContent(content, options)}`;
+
+  return [
+    {
+      role: 'system',
+      content: buildSummarySystemPrompt(options),
+    },
+    ...(options.send_descriptions_and_world_info ? DESCRIPTION_AND_WORLD_INFO_PROMPTS : []),
+    {
+      role: 'user',
+      content: user_content,
+    },
+  ];
 }
 
 function buildSummaryJsonInstruction(options: SummaryGenerationOptions): string {
@@ -599,21 +637,13 @@ async function summarizeMessageWithStructuredOutput(
     items_enabled: options.items_enabled === true,
     locations_enabled: options.locations_enabled === true,
     current_info_enabled: options.current_info_enabled === true,
+    send_descriptions_and_world_info: options.send_descriptions_and_world_info === true,
   });
 
   const result = await window.TavernHelper.generateRaw({
     should_silence: true,
     custom_api: buildCustomApi(settings),
-    ordered_prompts: [
-      {
-        role: 'system',
-        content: buildSummarySystemPrompt(options),
-      },
-      {
-        role: 'user',
-        content: `请总结以下剧情内容：\n\n${buildSummaryContent(content, options)}`,
-      },
-    ],
+    ordered_prompts: buildSummaryOrderedPrompts(content, options, 'structured_output'),
     json_schema: buildStructuredSummarySchema(options),
   });
 
@@ -632,16 +662,7 @@ async function summarizeMessageWithJsonPrompt(
   const result = await window.TavernHelper.generateRaw({
     should_silence: true,
     custom_api: buildCustomApi(settings),
-    ordered_prompts: [
-      {
-        role: 'system',
-        content: buildSummarySystemPrompt(options),
-      },
-      {
-        role: 'user',
-        content: `${buildSummaryJsonInstruction(options)}\n\n${buildSummaryContent(content, options)}`,
-      },
-    ],
+    ordered_prompts: buildSummaryOrderedPrompts(content, options, 'json_prompt'),
   });
 
   if (typeof result !== 'string') {

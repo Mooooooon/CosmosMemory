@@ -18,6 +18,13 @@ export const CompressionSettings = z
   })
   .prefault({});
 
+export type SummarySettings = z.infer<typeof SummarySettings>;
+export const SummarySettings = z
+  .object({
+    send_descriptions_and_world_info: z.boolean().default(false),
+  })
+  .prefault({});
+
 export type CharacterSettings = z.infer<typeof CharacterSettings>;
 export const CharacterSettings = z
   .object({
@@ -58,6 +65,7 @@ export const Settings = z
   .object({
     ai: AiSettings,
     compression: CompressionSettings,
+    summary: SummarySettings,
     characters: CharacterSettings,
     current_info: CurrentInfoSettings,
     items: ItemSettings,

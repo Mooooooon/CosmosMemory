@@ -121,6 +121,21 @@
           </div>
 
           <div class="cosmos-memory-row flex-container">
+            <input
+              id="cosmos_memory_send_descriptions_and_world_info"
+              v-model="settings.summary.send_descriptions_and_world_info"
+              type="checkbox"
+            />
+            <label for="cosmos_memory_send_descriptions_and_world_info">{{ t`发送描述与世界书` }}</label>
+          </div>
+
+          <div class="cosmos-memory-hint">
+            {{
+              t`开启后，总结请求会按顺序附带世界书（角色前）、玩家描述、角色描述、世界书（角色后）。`
+            }}
+          </div>
+
+          <div class="cosmos-memory-row flex-container">
             <input class="menu_button" type="button" :value="t`查看已有总结`" @click="handle_show_summaries" />
             <input
               class="menu_button"

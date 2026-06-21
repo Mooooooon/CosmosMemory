@@ -234,6 +234,7 @@ async function summarizeReceivedMessageCore(message_id: number): Promise<Message
     items_enabled: settings.items.enabled,
     locations_enabled: settings.locations.enabled,
     current_info_enabled: settings.current_info.enabled,
+    send_descriptions_and_world_info: settings.summary.send_descriptions_and_world_info,
   });
   const result = await summarizeMessage(settings.ai, source, {
     characters_enabled: settings.characters.enabled,
@@ -244,6 +245,7 @@ async function summarizeReceivedMessageCore(message_id: number): Promise<Message
     stored_locations: settings.locations.enabled ? getStoredLocations() : [],
     current_info_enabled: settings.current_info.enabled,
     current_info: settings.current_info.enabled ? getStoredCurrentInfo() : undefined,
+    send_descriptions_and_world_info: settings.summary.send_descriptions_and_world_info,
   });
   const summary: MessageSummary = {
     message_id,
