@@ -1,5 +1,9 @@
 {
+<<<<<<< HEAD
   "name": "cosmos-memory",
+=======
+  "name": "<插件名称>",
+>>>>>>> a1bdefc0540aadccfbc292d90128283b6bf0b27f
   "version": "1.0.0",
   "scripts": {
     "build": "vite build",
