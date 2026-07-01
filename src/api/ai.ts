@@ -59,6 +59,11 @@ export type SummaryGenerationResult = {
   current_info_update?: CurrentInfoUpdate | null;
 };
 
+export type SummaryContextEntry = {
+  message_id: number;
+  summary: string;
+};
+
 export type SummaryGenerationOptions = {
   characters_enabled?: boolean;
   stored_characters?: StoredCharacter[];
@@ -69,6 +74,7 @@ export type SummaryGenerationOptions = {
   current_info_enabled?: boolean;
   current_info?: CurrentInfo;
   send_descriptions_and_world_info?: boolean;
+  previous_summaries?: SummaryContextEntry[];
 };
 
 const SUMMARY_SYSTEM_PROMPT = [
@@ -145,6 +151,9 @@ const CURRENT_INFO_JSON_FIELD_INSTRUCTION =
 
 const DESCRIPTION_AND_WORLD_INFO_INSTRUCTION =
   '请求中以「角色卡固定设定」标签包裹的世界书、玩家描述和角色描述，是角色卡的预设背景资料，属于只读内容，不可修改。这些内容不是本楼层新发生的剧情，不应从中提取任何 add/set/delete 变更操作，仅用于消解称呼、理解设定和人物关系。';
+
+const PREVIOUS_SUMMARY_CONTEXT_INSTRUCTION =
+  '请求中以「之前剧情总结」标签包裹的内容，是本楼层之前的剧情摘要，仅用于理解剧情走向、称呼和因果关系。最终 summary 仍应聚焦本楼层回复，不要把之前总结中的旧事件当成本楼层新发生的内容。';
 
 const FULL_CHARACTER_EXTRACTION_SYSTEM_PROMPT = [
   '你是剧情人物档案整理器。请阅读用户提供的所有 AI 回复原文，整理剧情中需要长期记忆的人物信息。',
@@ -261,16 +270,25 @@ function hasMemoryExtraction(options: SummaryGenerationOptions): boolean {
   );
 }
 
-function buildSummaryContent(content: string, options: SummaryGenerationOptions): string {
-  if (!hasMemoryExtraction(options)) {
-    return content;
+function formatPreviousSummariesForPrompt(summaries: SummaryContextEntry[] | undefined): string {
+  if (!summaries || summaries.length === 0) {
+    return '';
   }
 
+  return [
+    '[之前剧情总结，仅供理解剧情走向]',
+    ...summaries.map(summary => `#${summary.message_id}\n${summary.summary}`),
+    '[之前剧情总结结束]',
+  ].join('\n\n');
+}
+
+function buildSummaryContent(content: string, options: SummaryGenerationOptions): string {
   const memory_sections = [
     options.current_info_enabled ? formatCurrentInfoForSummaryRequest(options.current_info) : '',
     options.locations_enabled ? formatLocationsForPrompt(options.stored_locations ?? []) : '',
     options.items_enabled ? formatItemsForPrompt(options.stored_items ?? []) : '',
     options.characters_enabled ? formatCharactersForPrompt(options.stored_characters ?? []) : '',
+    formatPreviousSummariesForPrompt(options.previous_summaries),
   ].filter(Boolean);
 
   if (memory_sections.length === 0) {
@@ -285,6 +303,10 @@ function buildSummarySystemPrompt(options: SummaryGenerationOptions): string {
 
   if (options.send_descriptions_and_world_info) {
     instructions.push(DESCRIPTION_AND_WORLD_INFO_INSTRUCTION);
+  }
+
+  if (options.previous_summaries && options.previous_summaries.length > 0) {
+    instructions.push(PREVIOUS_SUMMARY_CONTEXT_INSTRUCTION);
   }
 
   if (options.current_info_enabled) {
@@ -664,6 +686,7 @@ async function summarizeMessageWithStructuredOutput(
     locations_enabled: options.locations_enabled === true,
     current_info_enabled: options.current_info_enabled === true,
     send_descriptions_and_world_info: options.send_descriptions_and_world_info === true,
+    previous_summary_count: options.previous_summaries?.length ?? 0,
   });
 
   const result = await window.TavernHelper.generateRaw({

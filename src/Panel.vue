@@ -134,6 +134,28 @@
           </div>
 
           <div class="cosmos-memory-row flex-container">
+            <input id="cosmos_memory_send_summary_context" v-model="settings.summary.send_summary_context" type="checkbox" />
+            <label for="cosmos_memory_send_summary_context">{{ t`发送上下文` }}</label>
+          </div>
+
+          <div class="cosmos-memory-hint">
+            {{ t`开启后，总结请求会附带最近的已有总结，帮助 AI 理解之前的剧情走向。` }}
+          </div>
+
+          <label class="cosmos-memory-field">
+            <span>{{ t`发送总结条数` }}</span>
+            <input
+              v-model.number="settings.summary.summary_context_count"
+              class="text_pole"
+              type="number"
+              min="1"
+              step="1"
+              :disabled="!settings.summary.send_summary_context"
+              @change="normalize_summary_context_count"
+            />
+          </label>
+
+          <div class="cosmos-memory-row flex-container">
             <input class="menu_button" type="button" :value="t`查看已有总结`" @click="handle_show_summaries" />
             <input
               class="menu_button"
@@ -633,6 +655,11 @@ function normalize_retained_original_count() {
   settings.value.compression.retained_original_assistant_messages = Number.isFinite(count)
     ? Math.max(0, Math.floor(count))
     : 5;
+}
+
+function normalize_summary_context_count() {
+  const count = settings.value.summary.summary_context_count;
+  settings.value.summary.summary_context_count = Number.isFinite(count) ? Math.max(1, Math.floor(count)) : 5;
 }
 
 function handle_status_bar_toggle() {

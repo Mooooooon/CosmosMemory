@@ -1,4 +1,4 @@
-import { summarizeMessage } from '@/api/ai';
+import { summarizeMessage, type SummaryContextEntry } from '@/api/ai';
 import {
   CharacterOperationsResponse,
   applyCharacterOperations,
@@ -87,6 +87,20 @@ function getRegexedAiContent(message: ChatMessage): string {
   });
 
   return regexed_content;
+}
+
+function getPreviousSummaryContext(message_id: number, count: number): SummaryContextEntry[] {
+  if (count <= 0) {
+    return [];
+  }
+
+  return getStoredMessageSummaries()
+    .filter(summary => summary.message_id < message_id)
+    .slice(-count)
+    .map(summary => ({
+      message_id: summary.message_id,
+      summary: summary.summary,
+    }));
 }
 
 function saveMessageSummary(summary: MessageSummary) {
@@ -235,7 +249,12 @@ async function summarizeReceivedMessageCore(message_id: number): Promise<Message
     locations_enabled: settings.locations.enabled,
     current_info_enabled: settings.current_info.enabled,
     send_descriptions_and_world_info: settings.summary.send_descriptions_and_world_info,
+    send_summary_context: settings.summary.send_summary_context,
+    summary_context_count: settings.summary.summary_context_count,
   });
+  const previous_summaries = settings.summary.send_summary_context
+    ? getPreviousSummaryContext(message_id, settings.summary.summary_context_count)
+    : [];
   const result = await summarizeMessage(settings.ai, source, {
     characters_enabled: settings.characters.enabled,
     stored_characters: settings.characters.enabled ? getStoredCharacters() : [],
@@ -246,6 +265,7 @@ async function summarizeReceivedMessageCore(message_id: number): Promise<Message
     current_info_enabled: settings.current_info.enabled,
     current_info: settings.current_info.enabled ? getStoredCurrentInfo() : undefined,
     send_descriptions_and_world_info: settings.summary.send_descriptions_and_world_info,
+    previous_summaries,
   });
   const summary: MessageSummary = {
     message_id,
