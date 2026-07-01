@@ -134,7 +134,11 @@
           </div>
 
           <div class="cosmos-memory-row flex-container">
-            <input id="cosmos_memory_send_summary_context" v-model="settings.summary.send_summary_context" type="checkbox" />
+            <input
+              id="cosmos_memory_send_summary_context"
+              v-model="settings.summary.send_summary_context"
+              type="checkbox"
+            />
             <label for="cosmos_memory_send_summary_context">{{ t`发送上下文` }}</label>
           </div>
 
