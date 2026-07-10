@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "设置": "Settings",
   "启用状态栏": "Enable status bar",
   "开启后会在最新 AI 回复末尾显示状态栏，展示已启用功能的信息。": "When enabled, a status bar will appear at the end of the latest AI reply, showing information for enabled features.",
@@ -76,4 +77,9 @@
   "外貌描写": "Appearance",
   "性格描写": "Personality",
   "楼层": "Message"
+=======
+  "插件示例": "Plugin Example",
+  "示例按钮": "Example Button",
+  "示例开关": "Example Switch"
+>>>>>>> 43c2383756c50f3da44b54a7fdd860a16788c2ab
 }
