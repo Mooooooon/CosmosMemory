@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 export const DEFAULT_CUSTOM_API_URL = 'https://api.deepseek.com/v1';
 
 export type AiSettings = z.infer<typeof AiSettings>;
@@ -77,3 +78,13 @@ export const Settings = z
   .prefault({});
 
 export const setting_field = 'cosmos_memory';
+=======
+export type Settings = z.infer<typeof Settings>;
+export const Settings = z
+  .object({
+    button_selected: z.boolean().default(false),
+  })
+  .prefault({});
+
+export const setting_field = 'tavern_extension_example';
+>>>>>>> 4629787aab19c87872ec58696864de663d9ee38c

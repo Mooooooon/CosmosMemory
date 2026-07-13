@@ -1,13 +1,23 @@
 {
+<<<<<<< HEAD
   "display_name": "CosmosMemory",
+=======
+  "display_name": "<插件名称>",
+>>>>>>> 4629787aab19c87872ec58696864de663d9ee38c
   "loading_order": 120,
   "requires": [],
   "optional": [],
   "js": "dist/index.js",
   "css": "dist/index.css",
+<<<<<<< HEAD
   "author": "Mooooooon",
   "version": "1.0.0",
   "homePage": "https://github.com/Mooooooon/CosmosMemory",
+=======
+  "author": "<作者名称>",
+  "version": "1.0.0",
+  "homePage": "<仓库URL>",
+>>>>>>> 4629787aab19c87872ec58696864de663d9ee38c
   "auto_update": true,
   "i18n": {
     "en": "i18n/en.json"
