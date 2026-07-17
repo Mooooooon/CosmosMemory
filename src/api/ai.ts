@@ -198,13 +198,13 @@ function buildCustomApi(settings: AiSettings): CustomApi | undefined {
 
   const apiurl = settings.custom_api_url.trim();
   if (!apiurl) {
-    throw new Error('请先填写自定义端点。');
+    throw new Error(t`请先填写自定义端点。`);
   }
 
   const key = settings.custom_api_key.trim();
   const model = settings.selected_model.trim();
   if (!model) {
-    throw new Error('请选择模型。');
+    throw new Error(t`请选择模型。`);
   }
 
   return {
@@ -219,7 +219,7 @@ function buildCustomApi(settings: AiSettings): CustomApi | undefined {
 export async function fetchCustomModelNames(settings: AiSettings): Promise<string[]> {
   const apiurl = settings.custom_api_url.trim();
   if (!apiurl) {
-    throw new Error('请先填写自定义端点。');
+    throw new Error(t`请先填写自定义端点。`);
   }
 
   const models = await window.TavernHelper.getModelList({
@@ -239,7 +239,7 @@ export async function sendPing(settings: AiSettings): Promise<string> {
 
   const content = typeof result === 'string' ? result : result.content;
   if (!content.trim()) {
-    throw new Error('AI 返回了空内容。');
+    throw new Error(t`AI 返回了空内容。`);
   }
 
   return content;
@@ -707,7 +707,7 @@ async function summarizeMessageWithStructuredOutput(
   });
 
   if (typeof result !== 'string') {
-    throw new Error('总结请求返回了非文本结果。');
+    throw new Error(t`总结请求返回了非文本结果。`);
   }
 
   return parseSummaryJson(result, options);
@@ -726,7 +726,7 @@ async function summarizeMessageWithJsonPrompt(
   });
 
   if (typeof result !== 'string') {
-    throw new Error('总结请求返回了非文本结果。');
+    throw new Error(t`总结请求返回了非文本结果。`);
   }
 
   return parseSummaryJson(result, options);
@@ -788,7 +788,7 @@ async function extractCharactersWithStructuredOutput(
   });
 
   if (typeof result !== 'string') {
-    throw new Error('人物信息重新生成返回了非文本结果。');
+    throw new Error(t`人物信息重新生成返回了非文本结果。`);
   }
 
   return parseFullCharacterExtractionJson(result);
@@ -811,7 +811,7 @@ async function extractCharactersWithJsonPrompt(settings: AiSettings, content: st
   });
 
   if (typeof result !== 'string') {
-    throw new Error('人物信息重新生成返回了非文本结果。');
+    throw new Error(t`人物信息重新生成返回了非文本结果。`);
   }
 
   return parseFullCharacterExtractionJson(result);

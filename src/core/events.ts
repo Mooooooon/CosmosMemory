@@ -65,7 +65,7 @@ function handleMessageReceived(message_id: number, type: string) {
       }
       const message = error instanceof Error ? error.message : String(error);
       console.error('[CosmosMemory] 剧情总结失败', error);
-      toastr.error(message, 'Cosmos Memory 剧情总结失败');
+      toastr.error(message, t`Cosmos Memory 剧情总结失败`);
     });
 }
 
@@ -90,7 +90,7 @@ function handleMessageEdited(message_id: number) {
       }
       const message = error instanceof Error ? error.message : String(error);
       console.error('[CosmosMemory] 编辑楼层后重新总结失败', error);
-      toastr.error(message, 'Cosmos Memory 剧情总结失败');
+      toastr.error(message, t`Cosmos Memory 剧情总结失败`);
     });
 }
 
@@ -115,7 +115,7 @@ async function handleMessageSent(message_id: number) {
     // 回溯检查失败不应阻断用户的发送流程，仅提示并继续
     const message = error instanceof Error ? error.message : String(error);
     console.error('[CosmosMemory] 发送前回溯检查失败', error);
-    toastr.error(message, 'Cosmos Memory 发送前回溯检查失败');
+    toastr.error(message, t`Cosmos Memory 发送前回溯检查失败`);
   }
 }
 
@@ -138,7 +138,7 @@ async function handleGenerationAfterCommands(
     // 记忆注入是优化项，失败时不应中断本次生成，仅提示并继续
     const message = error instanceof Error ? error.message : String(error);
     console.error('[CosmosMemory] 生成前应用记忆注入失败', error);
-    toastr.error(message, 'Cosmos Memory 生成前记忆注入失败');
+    toastr.error(message, t`Cosmos Memory 生成前记忆注入失败`);
   }
 }
 

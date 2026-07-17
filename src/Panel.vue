@@ -681,7 +681,9 @@ function format_memory_check_result(result: MemoryBacktrackCheckResult): string 
     return t`记忆检查完成，没有发现需要修复的内容。`;
   }
 
-  return `${t`记忆检查完成：已清理`} ${removed_count} ${t`条悬空总结，补全`} ${summarized_count} ${t`条缺失总结。`}`;
+  return t`记忆检查完成：已清理 {removed} 条悬空总结，补全 {summarized} 条缺失总结。`
+    .replace('{removed}', String(removed_count))
+    .replace('{summarized}', String(summarized_count));
 }
 
 async function handle_regenerate_characters() {

@@ -29,7 +29,7 @@ function getAssistantChatContent(): string {
 export async function regenerateCharactersFromChat(settings: AiSettings): Promise<StoredCharacter[]> {
   const content = getAssistantChatContent();
   if (!content) {
-    throw new Error('当前聊天没有可用于生成人物信息的 AI 回复。');
+    throw new Error(t`当前聊天没有可用于生成人物信息的 AI 回复。`);
   }
 
   const characters = await extractCharactersFromChatContent(settings, content);

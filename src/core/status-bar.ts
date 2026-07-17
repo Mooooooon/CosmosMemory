@@ -209,7 +209,7 @@ function renderTabContent($container: JQuery<HTMLElement>) {
     }
   } catch (error) {
     console.error('[CosmosMemory] 渲染状态栏 Tab 内容失败', error);
-    $container.append($('<div class="cosmos-error">').text('数据加载失败'));
+    $container.append($('<div class="cosmos-error">').text(t`数据加载失败`));
   }
 }
 
