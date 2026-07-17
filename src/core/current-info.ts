@@ -182,4 +182,3 @@ export function formatCurrentInfoForSummaryRequest(current_info: CurrentInfo | u
     '[/CosmosMemory 当前信息]',
   ].join('\n');
 }
-
