@@ -1,12 +1,26 @@
 export const DEFAULT_CUSTOM_API_URL = 'https://api.deepseek.com/v1';
 export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 
+/** 自定义端点的 API 源选项；auto 表示按端点/模型名自动推断（仅识别 deepseek，其余按 openai 处理） */
+export const CUSTOM_API_SOURCE_OPTIONS = [
+  'auto',
+  'openai',
+  'deepseek',
+  'claude',
+  'openrouter',
+  'makersuite',
+  'mistralai',
+  'groq',
+] as const;
+export type CustomApiSourceOption = (typeof CUSTOM_API_SOURCE_OPTIONS)[number];
+
 export type AiSettings = z.infer<typeof AiSettings>;
 export const AiSettings = z
   .object({
     use_tavern_api: z.boolean().default(true),
     custom_api_url: z.string().default(DEFAULT_CUSTOM_API_URL),
     custom_api_key: z.string().default(''),
+    custom_api_source: z.enum(CUSTOM_API_SOURCE_OPTIONS).default('auto'),
     selected_model: z.string().default(''),
     available_models: z.array(z.string()).default([]),
     max_output_tokens: z.number().int().min(1).default(DEFAULT_MAX_OUTPUT_TOKENS),

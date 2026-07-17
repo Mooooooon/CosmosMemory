@@ -67,6 +67,18 @@
             </label>
 
             <label class="cosmos-memory-field">
+              <span>{{ t`API 源` }}</span>
+              <select v-model="settings.ai.custom_api_source" class="text_pole">
+                <option value="auto">{{ t`自动推断` }}</option>
+                <option v-for="source in custom_api_source_options" :key="source" :value="source">{{ source }}</option>
+              </select>
+            </label>
+
+            <div class="cosmos-memory-hint">
+              {{ t`自定义端点的 API 类型。自动推断只能识别 deepseek，其他端点请求失败时请手动选择。` }}
+            </div>
+
+            <label class="cosmos-memory-field">
               <span>{{ t`最大输出 Token` }}</span>
               <input
                 v-model.number="settings.ai.max_output_tokens"
@@ -450,8 +462,10 @@ import {
 } from '@/core/locations';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
 import { useSettingsStore } from '@/store/settings';
-import { DEFAULT_MAX_OUTPUT_TOKENS } from '@/type/settings';
+import { CUSTOM_API_SOURCE_OPTIONS, DEFAULT_MAX_OUTPUT_TOKENS } from '@/type/settings';
 import { storeToRefs } from 'pinia';
+
+const custom_api_source_options = CUSTOM_API_SOURCE_OPTIONS.filter(option => option !== 'auto');
 
 type TestResult = {
   type: 'success' | 'error';

@@ -177,7 +177,12 @@ const FULL_CHARACTER_EXTRACTION_SYSTEM_PROMPT = [
 const FULL_CHARACTER_JSON_INSTRUCTION =
   '请从以下剧情记录中整理所有需要保存的人物，输出去重、去噪后的最终列表，只返回 JSON。规则：同一角色若有更名，只保留最终名称；重复条目须合并；已死亡或永久离场的角色不输出；每个角色只出现一次。格式：{"characters":[{"type":"primary|secondary","name":"姓名或身份（仅最终名称）","background":"主要角色背景：身份地位、种族、职业、家庭关系、重要经历，没有则为空字符串","appearance":"主要角色外貌：身高体型、发色发型、瞳色肤色、面部特征、标志性穿着，没有则为空字符串","personality":"主要角色性格：核心特质、说话方式、行为习惯、价值观，没有则为空字符串","brief":"次要角色简介，没有则为空字符串"}]}。不要使用 Markdown 代码块，不要返回额外解释。';
 
-function inferCustomApiSource(settings: AiSettings): string {
+function resolveCustomApiSource(settings: AiSettings): string {
+  // 用户手动指定的源优先；自动推断仅作兜底：识别 deepseek，其余一律按 openai 处理
+  if (settings.custom_api_source !== 'auto') {
+    return settings.custom_api_source;
+  }
+
   const target = `${settings.custom_api_url} ${settings.selected_model}`.toLowerCase();
   if (target.includes('deepseek')) {
     return DEEPSEEK_API_SOURCE;
@@ -205,8 +210,8 @@ function buildCustomApi(settings: AiSettings): CustomApi | undefined {
   return {
     apiurl,
     key: key || undefined,
-    model: model || undefined,
-    source: inferCustomApiSource(settings),
+    model,
+    source: resolveCustomApiSource(settings),
     max_tokens: settings.max_output_tokens,
   };
 }
@@ -232,11 +237,12 @@ export async function sendPing(settings: AiSettings): Promise<string> {
     ordered_prompts: [{ role: 'user', content: TEST_MESSAGE }],
   });
 
-  if (typeof result !== 'string') {
-    return result.content;
+  const content = typeof result === 'string' ? result : result.content;
+  if (!content.trim()) {
+    throw new Error('AI 返回了空内容。');
   }
 
-  return result;
+  return content;
 }
 
 function parseSummaryJson(raw: string, options: SummaryGenerationOptions = {}): SummaryGenerationResult {
@@ -680,7 +686,7 @@ async function summarizeMessageWithStructuredOutput(
   content: string,
   options: SummaryGenerationOptions = {},
 ): Promise<SummaryGenerationResult> {
-  const custom_source = settings.use_tavern_api ? undefined : inferCustomApiSource(settings);
+  const custom_source = settings.use_tavern_api ? undefined : resolveCustomApiSource(settings);
   console.info('[CosmosMemory] 使用结构化输出请求剧情总结', {
     custom_source,
     mode: custom_source === DEEPSEEK_API_SOURCE ? 'deepseek_json_object_via_st' : 'json_schema',
@@ -726,6 +732,18 @@ async function summarizeMessageWithJsonPrompt(
   return parseSummaryJson(result, options);
 }
 
+/**
+ * 判断是否为鉴权/网络类确定性失败。
+ * 这类错误降级重试注定再失败一次，只会浪费 token，应直接上抛；
+ * 只有输出格式类错误（JSON 解析失败、schema 校验失败、端点不支持结构化输出等）才值得降级重试。
+ */
+function isDeterministicRequestError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /401|403|unauthorized|forbidden|invalid[_ ]?api[_ ]?key|incorrect[_ ]?api[_ ]?key|authentication|鉴权|network error|timeout|timed out|econnrefused|enotfound|fetch failed/i.test(
+    message,
+  );
+}
+
 export async function summarizeMessage(
   settings: AiSettings,
   content: string,
@@ -736,6 +754,11 @@ export async function summarizeMessage(
   } catch (error) {
     if (options.should_cancel?.()) {
       console.info('[CosmosMemory] 总结请求已被取消，跳过降级重试');
+      throw error;
+    }
+    if (isDeterministicRequestError(error)) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn('[CosmosMemory] 结构化输出总结请求遇到鉴权/网络错误，不再降级重试', { message });
       throw error;
     }
     const message = error instanceof Error ? error.message : String(error);
@@ -801,6 +824,11 @@ export async function extractCharactersFromChatContent(
   try {
     return await extractCharactersWithStructuredOutput(settings, content);
   } catch (error) {
+    if (isDeterministicRequestError(error)) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn('[CosmosMemory] 结构化输出人物信息重新生成遇到鉴权/网络错误，不再降级重试', { message });
+      throw error;
+    }
     const message = error instanceof Error ? error.message : String(error);
     console.warn('[CosmosMemory] 结构化输出人物信息重新生成失败，降级为普通 JSON 提示重试', { message });
     return extractCharactersWithJsonPrompt(settings, content);
