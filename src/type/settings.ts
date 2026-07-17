@@ -1,4 +1,5 @@
 export const DEFAULT_CUSTOM_API_URL = 'https://api.deepseek.com/v1';
+export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 
 export type AiSettings = z.infer<typeof AiSettings>;
 export const AiSettings = z
@@ -8,6 +9,7 @@ export const AiSettings = z
     custom_api_key: z.string().default(''),
     selected_model: z.string().default(''),
     available_models: z.array(z.string()).default([]),
+    max_output_tokens: z.number().int().min(1).default(DEFAULT_MAX_OUTPUT_TOKENS),
   })
   .prefault({});
 

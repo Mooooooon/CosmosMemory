@@ -65,6 +65,22 @@
                 </option>
               </select>
             </label>
+
+            <label class="cosmos-memory-field">
+              <span>{{ t`最大输出 Token` }}</span>
+              <input
+                v-model.number="settings.ai.max_output_tokens"
+                class="text_pole"
+                type="number"
+                min="1"
+                step="256"
+                @change="normalize_max_output_tokens"
+              />
+            </label>
+
+            <div class="cosmos-memory-hint">
+              {{ t`包含模型的思维链与最终正文；推理模型建议至少设置为 8192。` }}
+            </div>
           </template>
 
           <div class="cosmos-memory-row flex-container">
@@ -422,6 +438,7 @@ import {
 } from '@/core/locations';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
 import { useSettingsStore } from '@/store/settings';
+import { DEFAULT_MAX_OUTPUT_TOKENS } from '@/type/settings';
 import { storeToRefs } from 'pinia';
 
 type TestResult = {
@@ -659,6 +676,13 @@ function normalize_retained_original_count() {
   settings.value.compression.retained_original_assistant_messages = Number.isFinite(count)
     ? Math.max(0, Math.floor(count))
     : 5;
+}
+
+function normalize_max_output_tokens() {
+  const count = settings.value.ai.max_output_tokens;
+  settings.value.ai.max_output_tokens = Number.isFinite(count)
+    ? Math.max(1, Math.floor(count))
+    : DEFAULT_MAX_OUTPUT_TOKENS;
 }
 
 function normalize_summary_context_count() {

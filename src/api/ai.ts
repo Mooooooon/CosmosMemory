@@ -24,7 +24,6 @@ import { parsePrettified } from '@/util/zod';
 const TEST_MESSAGE = '!ping';
 const DEFAULT_CUSTOM_API_SOURCE = 'openai';
 const DEEPSEEK_API_SOURCE = 'deepseek';
-const SUMMARY_MAX_TOKENS = 2048;
 const DESCRIPTION_AND_WORLD_INFO_PROMPTS: PlaceholderPrompt[] = [
   'world_info_before',
   'persona_description',
@@ -204,7 +203,7 @@ function buildCustomApi(settings: AiSettings): CustomApi | undefined {
     key: key || undefined,
     model: model || undefined,
     source: inferCustomApiSource(settings),
-    max_tokens: SUMMARY_MAX_TOKENS,
+    max_tokens: settings.max_output_tokens,
   };
 }
 
