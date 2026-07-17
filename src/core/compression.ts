@@ -2,7 +2,7 @@ import { STORAGE_ROOT } from '@/core/entity-store';
 import { getStoredMessageSummaries, type MessageSummary } from '@/core/summary';
 import { useSettingsStore } from '@/store/settings';
 
-const SUMMARY_PROMPT_ID_PREFIX = 'cosmos_memory_summary_';
+const SUMMARY_PROMPT_ID = 'cosmos_memory_summary';
 const HIDDEN_BY_COMPRESSION_PATH = `${STORAGE_ROOT}.hidden_by_compression`;
 
 let injected_summary_prompt_ids: string[] = [];
@@ -53,14 +53,14 @@ function clearInjectedSummaryPrompts() {
 }
 
 /**
- * 给注入的摘要包上固定的头尾标记：
- * - 让 AI 明确这是替代原文的前情提要，而不是自己之前说过的对话内容；
- * - 标记替代了哪一楼原文，便于排查，也为后续摘要检索提供可识别的上下文边界。
+ * 将全部摘要合并为一条注入内容：
+ * - 只在开头说明一次这是总结内容，避免每个楼层重复一遍提示；
+ * - 摘要按楼层顺序排列，保持剧情的时间线。
  */
-function buildSummaryPromptContent(summary: MessageSummary): string {
+function buildCombinedSummaryPromptContent(summaries: MessageSummary[]): string {
   return [
-    `[CosmosMemory 前情摘要] 以下摘要替代了第 ${summary.message_id} 楼被压缩隐藏的 AI 回复原文，是前情提要而非当前对话内容：`,
-    summary.summary,
+    '[CosmosMemory 前情摘要] 以下是对此前被压缩隐藏的早期剧情的总结，属于前情提要而非当前对话内容：',
+    summaries.map(summary => summary.summary).join('\n\n'),
     '[/CosmosMemory 前情摘要]',
   ].join('\n');
 }
@@ -68,32 +68,32 @@ function buildSummaryPromptContent(summary: MessageSummary): string {
 function injectSummariesForHiddenMessages(messages: ChatMessage[], summaries: Map<number, MessageSummary>): number[] {
   clearInjectedSummaryPrompts();
 
-  const last_message_id = window.TavernHelper.getLastMessageId();
-  const prompts = messages
-    .map(message => {
-      const summary = summaries.get(message.message_id);
-      if (!summary) {
-        return null;
-      }
-
-      const id = `${SUMMARY_PROMPT_ID_PREFIX}${message.message_id}`;
-      return {
-        id,
-        position: 'in_chat' as const,
-        depth: Math.max(0, last_message_id - message.message_id),
-        role: 'system' as const,
-        content: buildSummaryPromptContent(summary),
-      };
-    })
-    .filter((prompt): prompt is NonNullable<typeof prompt> => prompt !== null);
-
-  if (prompts.length === 0) {
+  // messages 按楼层升序传入，过滤后仍保持时间顺序
+  const ordered_summaries = messages
+    .map(message => summaries.get(message.message_id))
+    .filter((summary): summary is MessageSummary => summary !== undefined);
+  if (ordered_summaries.length === 0) {
     return [];
   }
 
-  injected_summary_prompt_ids = prompts.map(prompt => prompt.id);
-  window.TavernHelper.injectPrompts(prompts, { once: true });
-  return messages.map(message => message.message_id);
+  // 合并为一条提示词，注入到最旧一条摘要所在楼层的深度，让前情摘要整体出现在保留楼层原文之前
+  const last_message_id = window.TavernHelper.getLastMessageId();
+  const depth = Math.max(0, last_message_id - ordered_summaries[0].message_id);
+
+  injected_summary_prompt_ids = [SUMMARY_PROMPT_ID];
+  window.TavernHelper.injectPrompts(
+    [
+      {
+        id: SUMMARY_PROMPT_ID,
+        position: 'in_chat' as const,
+        depth,
+        role: 'system' as const,
+        content: buildCombinedSummaryPromptContent(ordered_summaries),
+      },
+    ],
+    { once: true },
+  );
+  return ordered_summaries.map(summary => summary.message_id);
 }
 
 export async function applySummaryCompressionForNextGeneration(enabled: boolean = true): Promise<CompressionResult> {
