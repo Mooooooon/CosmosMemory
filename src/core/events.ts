@@ -5,14 +5,7 @@ import { event_types, eventSource } from '@sillytavern/script';
 import { initStatusBar, triggerUpdateStatusBar } from '@/core/status-bar';
 import { applyRuntimeMemoryPromptInjection } from '@/core/runtime-memory';
 
-const SUMMARIZABLE_MESSAGE_TYPES = new Set([
-  'normal',
-  'regenerate',
-  'swipe',
-  'append',
-  'appendFinal',
-  'continue',
-]);
+const SUMMARIZABLE_MESSAGE_TYPES = new Set(['normal', 'regenerate', 'swipe', 'append', 'appendFinal', 'continue']);
 
 const SKIPPED_COMPRESSION_GENERATION_TYPES = new Set(['quiet']);
 
