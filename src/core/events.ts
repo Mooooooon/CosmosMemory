@@ -1,5 +1,5 @@
 import { applySummaryCompressionForNextGeneration } from '@/core/compression';
-import { runMemoryBacktrackCheck, summarizeReceivedMessage } from '@/core/summary';
+import { getStoredMessageSummaries, runMemoryBacktrackCheck, summarizeReceivedMessage } from '@/core/summary';
 import { useSettingsStore } from '@/store/settings';
 import { event_types, eventSource } from '@sillytavern/script';
 import { initStatusBar, triggerUpdateStatusBar } from '@/core/status-bar';
@@ -12,7 +12,6 @@ const SUMMARIZABLE_MESSAGE_TYPES = new Set([
   'append',
   'appendFinal',
   'continue',
-  'first_message',
 ]);
 
 const SKIPPED_COMPRESSION_GENERATION_TYPES = new Set(['quiet']);
@@ -24,6 +23,16 @@ function handleMessageReceived(message_id: number, type: string) {
 
   if (!SUMMARIZABLE_MESSAGE_TYPES.has(type)) {
     console.info('[CosmosMemory] 跳过不可总结的消息类型', { message_id, type });
+    return;
+  }
+
+  if (!window.TavernHelper) {
+    console.warn('[CosmosMemory] TavernHelper 尚未初始化，跳过本次楼层总结', { message_id, type });
+    return;
+  }
+
+  if (type === 'normal' && getStoredMessageSummaries().some(summary => summary.message_id === message_id)) {
+    console.info('[CosmosMemory] 普通回复楼层已有总结，跳过重复请求', { message_id, type });
     return;
   }
 
