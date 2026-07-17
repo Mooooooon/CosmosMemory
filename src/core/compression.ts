@@ -1,9 +1,9 @@
+import { STORAGE_ROOT } from '@/core/entity-store';
 import { getStoredMessageSummaries, type MessageSummary } from '@/core/summary';
 import { useSettingsStore } from '@/store/settings';
 
 const SUMMARY_PROMPT_ID_PREFIX = 'cosmos_memory_summary_';
-const MESSAGE_DATA_PATH = 'cosmos_memory';
-const HIDDEN_BY_COMPRESSION_PATH = `${MESSAGE_DATA_PATH}.hidden_by_compression`;
+const HIDDEN_BY_COMPRESSION_PATH = `${STORAGE_ROOT}.hidden_by_compression`;
 
 let injected_summary_prompt_ids: string[] = [];
 
@@ -15,7 +15,7 @@ type CompressionResult = {
 };
 
 function isCosmosMemoryMessage(message: ChatMessage): boolean {
-  return _.get(message.data, `${MESSAGE_DATA_PATH}.kind`) === 'summary';
+  return _.get(message.data, `${STORAGE_ROOT}.kind`) === 'summary';
 }
 
 function isHiddenByCompression(message: ChatMessage): boolean {
@@ -52,8 +52,17 @@ function clearInjectedSummaryPrompts() {
   injected_summary_prompt_ids = [];
 }
 
+/**
+ * 给注入的摘要包上固定的头尾标记：
+ * - 让 AI 明确这是替代原文的前情提要，而不是自己之前说过的对话内容；
+ * - 标记替代了哪一楼原文，便于排查，也为后续摘要检索提供可识别的上下文边界。
+ */
 function buildSummaryPromptContent(summary: MessageSummary): string {
-  return summary.summary;
+  return [
+    `[CosmosMemory 前情摘要] 以下摘要替代了第 ${summary.message_id} 楼被压缩隐藏的 AI 回复原文，是前情提要而非当前对话内容：`,
+    summary.summary,
+    '[/CosmosMemory 前情摘要]',
+  ].join('\n');
 }
 
 function injectSummariesForHiddenMessages(messages: ChatMessage[], summaries: Map<number, MessageSummary>): number[] {
@@ -72,7 +81,7 @@ function injectSummariesForHiddenMessages(messages: ChatMessage[], summaries: Ma
         id,
         position: 'in_chat' as const,
         depth: Math.max(0, last_message_id - message.message_id),
-        role: 'assistant' as const,
+        role: 'system' as const,
         content: buildSummaryPromptContent(summary),
       };
     })

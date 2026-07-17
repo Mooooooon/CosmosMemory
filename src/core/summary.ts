@@ -27,10 +27,10 @@ import {
   rebuildStoredCurrentInfoFromSummaries,
   type CurrentInfoUpdate,
 } from '@/core/current-info';
+import { STORAGE_ROOT } from '@/core/entity-store';
 import { useSettingsStore } from '@/store/settings';
 import { getCurrentChatId } from '@sillytavern/script';
 
-const STORAGE_ROOT = 'cosmos_memory';
 const SUMMARY_STORAGE_PATH = `${STORAGE_ROOT}.summaries`;
 const SUMMARY_BACKFILL_CONCURRENCY = 2;
 
