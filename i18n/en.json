@@ -13,6 +13,7 @@
   "最大输出 Token": "Maximum output tokens",
   "包含模型的思维链与最终正文；推理模型建议至少设置为 8192。": "Includes both model reasoning and the final response; at least 8192 is recommended for reasoning models.",
   "保留原文的数量": "Original replies to keep",
+  "启用压缩": "Enable compression",
   "当 AI 回复数量超过该值时，旧回复会被隐藏，并在生成时用已保存的摘要替代。": "When AI replies exceed this value, older replies will be hidden and replaced by saved summaries during generation.",
   "发送描述与世界书": "Send descriptions and world info",
   "开启后，总结请求会按顺序附带世界书（角色前）、玩家描述、角色描述、世界书（角色后）。": "When enabled, summary requests will include world info before character, persona description, character description, and world info after character in that order.",

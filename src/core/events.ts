@@ -2,6 +2,7 @@ import { applySummaryCompressionForNextGeneration } from '@/core/compression';
 import {
   cancelSummarizationForChatChange,
   getStoredMessageSummaries,
+  invalidateAndResummarizeMessage,
   runMemoryBacktrackCheck,
   summarizeReceivedMessage,
   wasSummarizeTaskCancelled,
@@ -68,6 +69,31 @@ function handleMessageReceived(message_id: number, type: string) {
     });
 }
 
+function handleMessageEdited(message_id: number) {
+  console.info('[CosmosMemory] 收到 MESSAGE_EDITED 事件', { message_id });
+
+  if (!window.TavernHelper) {
+    console.warn('[CosmosMemory] TavernHelper 尚未初始化，跳过本次编辑失效处理', { message_id });
+    return;
+  }
+
+  void invalidateAndResummarizeMessage(message_id)
+    .then(summary => {
+      if (summary) {
+        triggerUpdateStatusBar();
+      }
+    })
+    .catch(error => {
+      if (wasSummarizeTaskCancelled(message_id)) {
+        console.info('[CosmosMemory] 编辑后的重新总结已被取消', { message_id });
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[CosmosMemory] 编辑楼层后重新总结失败', error);
+      toastr.error(message, 'Cosmos Memory 剧情总结失败');
+    });
+}
+
 async function handleMessageSent(message_id: number) {
   try {
     console.info('[CosmosMemory] 收到 MESSAGE_SENT 事件，发送前执行回溯检查', { message_id });
@@ -106,7 +132,7 @@ async function handleGenerationAfterCommands(
 
   try {
     const { settings } = useSettingsStore();
-    await applySummaryCompressionForNextGeneration();
+    await applySummaryCompressionForNextGeneration(settings.compression.enabled);
     applyRuntimeMemoryPromptInjection(settings);
   } catch (error) {
     // 记忆注入是优化项，失败时不应中断本次生成，仅提示并继续
@@ -122,8 +148,11 @@ export function registerSummaryEvents() {
     return;
   }
 
-  console.info('[CosmosMemory] 注册 MESSAGE_RECEIVED / MESSAGE_SENT / GENERATION_AFTER_COMMANDS / CHAT_CHANGED 剧情总结监听');
+  console.info(
+    '[CosmosMemory] 注册 MESSAGE_RECEIVED / MESSAGE_EDITED / MESSAGE_SENT / GENERATION_AFTER_COMMANDS / CHAT_CHANGED 剧情总结监听',
+  );
   eventSource.on(event_types.MESSAGE_RECEIVED, handleMessageReceived);
+  eventSource.on(event_types.MESSAGE_EDITED, handleMessageEdited);
   eventSource.on(event_types.MESSAGE_SENT, handleMessageSent);
   eventSource.on(event_types.GENERATION_AFTER_COMMANDS, handleGenerationAfterCommands);
   eventSource.on(event_types.CHAT_CHANGED, cancelSummarizationForChatChange);

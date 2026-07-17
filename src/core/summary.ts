@@ -386,6 +386,49 @@ export function wasSummarizeTaskCancelled(message_id: number): boolean {
   return cancelled_message_ids.has(message_id);
 }
 
+/** 取消指定楼层正在进行的总结任务（编辑楼层后，基于旧内容的任务结果必须丢弃） */
+function cancelSummarizeTask(message_id: number) {
+  const task = summarizing_messages.get(message_id);
+  if (!task) {
+    return;
+  }
+
+  cancelled_message_ids.add(message_id);
+  try {
+    window.TavernHelper.stopGenerationById(task.generation_id);
+  } catch (error) {
+    console.warn('[CosmosMemory] 停止总结请求失败', { message_id, error });
+  }
+  summarizing_messages.delete(message_id);
+}
+
+function deleteMessageSummary(message_id: number) {
+  window.TavernHelper.updateVariablesWith(
+    variables => {
+      _.unset(variables, `${SUMMARY_STORAGE_PATH}.${message_id}`);
+      return variables;
+    },
+    { type: 'chat' },
+  );
+}
+
+/**
+ * 楼层内容被编辑后调用：取消基于旧内容的进行中任务、删除旧摘要、
+ * 全量重放剩余摘要（回滚旧摘要的实体变更），最后基于新内容重新总结。
+ * 没有摘要的楼层（如保留窗口内的近期楼层）不受影响。
+ */
+export async function invalidateAndResummarizeMessage(message_id: number): Promise<MessageSummary | null> {
+  if (!getStoredSummaryIds().has(message_id)) {
+    return null;
+  }
+
+  console.info('[CosmosMemory] 楼层内容已被编辑，旧摘要失效，回滚其变更后重新总结', { message_id });
+  cancelSummarizeTask(message_id);
+  deleteMessageSummary(message_id);
+  rebuildMemoryFromSummaries(getStoredMessageSummaries());
+  return summarizeReceivedMessage(message_id);
+}
+
 async function backfillMissingSummaries(
   message_ids: number[],
 ): Promise<{ summaries: MessageSummary[]; aborted: boolean }> {

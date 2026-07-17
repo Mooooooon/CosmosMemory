@@ -120,6 +120,16 @@
 
         <!-- Summary Tab -->
         <div v-show="active_tab === 'summary'" class="cosmos-settings-tab-panel">
+          <div class="cosmos-memory-row flex-container">
+            <input
+              id="cosmos_memory_compression_enabled"
+              v-model="settings.compression.enabled"
+              type="checkbox"
+              @change="handle_compression_toggle"
+            />
+            <label for="cosmos_memory_compression_enabled">{{ t`启用压缩` }}</label>
+          </div>
+
           <label class="cosmos-memory-field">
             <span>{{ t`保留原文的数量` }}</span>
             <input
@@ -128,6 +138,7 @@
               type="number"
               min="0"
               step="1"
+              :disabled="!settings.compression.enabled"
               @change="normalize_retained_original_count"
             />
           </label>
@@ -413,6 +424,7 @@
 <script setup lang="ts">
 import { fetchCustomModelNames, sendPing } from '@/api/ai';
 import { regenerateCharactersFromChat } from '@/core/character-regeneration';
+import { applySummaryCompressionForNextGeneration } from '@/core/compression';
 import {
   getStoredCharacters,
   type PrimaryCharacter,
@@ -683,6 +695,15 @@ function format_time(value: string) {
   }
 
   return date.toLocaleString();
+}
+
+function handle_compression_toggle() {
+  // 关闭压缩时立即恢复被压缩隐藏的楼层；开启时无需处理，下次生成前会自动应用压缩
+  if (!settings.value.compression.enabled) {
+    void applySummaryCompressionForNextGeneration(false).catch(error => {
+      console.error('[CosmosMemory] 关闭压缩时恢复隐藏楼层失败', error);
+    });
+  }
 }
 
 function normalize_retained_original_count() {

@@ -16,6 +16,7 @@ export const AiSettings = z
 export type CompressionSettings = z.infer<typeof CompressionSettings>;
 export const CompressionSettings = z
   .object({
+    enabled: z.boolean().default(true),
     retained_original_assistant_messages: z.number().int().min(0).default(5),
   })
   .prefault({});

@@ -96,11 +96,15 @@ function injectSummariesForHiddenMessages(messages: ChatMessage[], summaries: Ma
   return messages.map(message => message.message_id);
 }
 
-export async function applySummaryCompressionForNextGeneration(): Promise<CompressionResult> {
+export async function applySummaryCompressionForNextGeneration(enabled: boolean = true): Promise<CompressionResult> {
   const assistant_messages = getOriginalAssistantMessages();
   const retained_count = getRetainedOriginalAssistantCount();
-  const compressible_messages =
-    retained_count === 0 ? assistant_messages : assistant_messages.slice(0, -retained_count);
+  // 压缩关闭时不隐藏任何楼层，但恢复逻辑照常执行，会把之前压缩隐藏的楼层恢复原文
+  const compressible_messages = !enabled
+    ? []
+    : retained_count === 0
+      ? assistant_messages
+      : assistant_messages.slice(0, -retained_count);
   const summaries = getSummaryByMessageId();
   const skipped_without_summary_ids = compressible_messages
     .filter(message => !summaries.has(message.message_id))
@@ -139,9 +143,19 @@ export async function applySummaryCompressionForNextGeneration(): Promise<Compre
     await window.TavernHelper.setChatMessages(updates, { refresh: 'affected' });
   }
 
-  const injected_summary_ids = injectSummariesForHiddenMessages(messages_to_hide, summaries);
+  // 注入对象 = 生成时处于隐藏状态且有摘要的全部楼层（含用户手动隐藏的楼层），
+  // 避免手动隐藏的楼层既无原文又无摘要，剧情从上下文静默丢失
+  const messages_to_inject = assistant_messages.filter(message => {
+    if (!summaries.has(message.message_id)) {
+      return false;
+    }
+
+    return message.is_hidden || messages_to_hide_ids.has(message.message_id);
+  });
+  const injected_summary_ids = injectSummariesForHiddenMessages(messages_to_inject, summaries);
 
   console.info('[CosmosMemory] 已应用生成前摘要压缩', {
+    enabled,
     retained_count,
     assistant_count: assistant_messages.length,
     hidden_message_ids,
