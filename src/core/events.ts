@@ -3,6 +3,7 @@ import {
   cancelSummarizationForChatChange,
   getStoredMessageSummaries,
   invalidateAndResummarizeMessage,
+  rollbackSummariesFromMessage,
   runMemoryBacktrackCheck,
   summarizeReceivedMessage,
   wasSummarizeTaskCancelled,
@@ -94,6 +95,19 @@ function handleMessageEdited(message_id: number) {
     });
 }
 
+function handleMessageDeleted(new_chat_length: number) {
+  console.info('[CosmosMemory] 收到 MESSAGE_DELETED 事件', { new_chat_length });
+
+  if (!window.TavernHelper) {
+    console.warn('[CosmosMemory] TavernHelper 尚未初始化，跳过本次删除回滚处理', { new_chat_length });
+    return;
+  }
+
+  // 重新生成会先删除旧楼层、再于同楼层写入新内容（此时 MESSAGE_RECEIVED 的 type 为 normal）：
+  // 提前回滚被删楼层的摘要，随后的 MESSAGE_RECEIVED 才不会被「已有总结」守卫跳过
+  rollbackSummariesFromMessage(new_chat_length);
+}
+
 async function handleMessageSent(message_id: number) {
   try {
     console.info('[CosmosMemory] 收到 MESSAGE_SENT 事件，发送前执行回溯检查', { message_id });
@@ -149,10 +163,11 @@ export function registerSummaryEvents() {
   }
 
   console.info(
-    '[CosmosMemory] 注册 MESSAGE_RECEIVED / MESSAGE_EDITED / MESSAGE_SENT / GENERATION_AFTER_COMMANDS / CHAT_CHANGED 剧情总结监听',
+    '[CosmosMemory] 注册 MESSAGE_RECEIVED / MESSAGE_EDITED / MESSAGE_DELETED / MESSAGE_SENT / GENERATION_AFTER_COMMANDS / CHAT_CHANGED 剧情总结监听',
   );
   eventSource.on(event_types.MESSAGE_RECEIVED, handleMessageReceived);
   eventSource.on(event_types.MESSAGE_EDITED, handleMessageEdited);
+  eventSource.on(event_types.MESSAGE_DELETED, handleMessageDeleted);
   eventSource.on(event_types.MESSAGE_SENT, handleMessageSent);
   eventSource.on(event_types.GENERATION_AFTER_COMMANDS, handleGenerationAfterCommands);
   eventSource.on(event_types.CHAT_CHANGED, cancelSummarizationForChatChange);

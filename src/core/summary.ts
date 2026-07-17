@@ -188,10 +188,7 @@ function rebuildMemoryFromSummaries(summaries: MessageSummary[]) {
   rebuildStoredCurrentInfoFromSummaries(summaries);
 }
 
-function pruneInvalidMessageSummaries(
-  max_message_id: number,
-  existing_assistant_message_ids: Set<number>,
-): MessageSummary[] {
+function removeMessageSummariesMatching(shouldRemove: (summary: MessageSummary) => boolean): MessageSummary[] {
   const removed_summaries: MessageSummary[] = [];
 
   window.TavernHelper.updateVariablesWith(
@@ -202,7 +199,7 @@ function pruneInvalidMessageSummaries(
           typeof summary === 'object' &&
           summary !== null &&
           typeof summary.message_id === 'number' &&
-          (summary.message_id > max_message_id || !existing_assistant_message_ids.has(summary.message_id))
+          shouldRemove(summary)
         ) {
           removed_summaries.push(summary);
           _.unset(variables, `${SUMMARY_STORAGE_PATH}.${key}`);
@@ -215,6 +212,15 @@ function pruneInvalidMessageSummaries(
   );
 
   return removed_summaries.sort((left, right) => left.message_id - right.message_id);
+}
+
+function pruneInvalidMessageSummaries(
+  max_message_id: number,
+  existing_assistant_message_ids: Set<number>,
+): MessageSummary[] {
+  return removeMessageSummariesMatching(
+    summary => summary.message_id > max_message_id || !existing_assistant_message_ids.has(summary.message_id),
+  );
 }
 
 export function pruneMessageSummariesAfterMessage(message_id: number): MessageSummary[] {
@@ -427,6 +433,36 @@ export async function invalidateAndResummarizeMessage(message_id: number): Promi
   deleteMessageSummary(message_id);
   rebuildMemoryFromSummaries(getStoredMessageSummaries());
   return summarizeReceivedMessage(message_id);
+}
+
+/**
+ * 楼层被删除后调用（重新生成会先删除旧楼层、再于同一楼层写入新内容，
+ * 两者共用同一楼层号）：取消被删楼层上仍在进行的总结任务、清理这些楼层的摘要
+ * 并按现存摘要全量重放（回滚其派生变更），使同楼层新消息到达时能基于新内容重新总结，
+ * 与 swipe 覆盖旧摘要的处理路径保持一致。
+ * @param first_deleted_message_id 删除后的剩余楼层数，即第一个被删除楼层的 id（MESSAGE_DELETED 事件参数）
+ */
+export function rollbackSummariesFromMessage(first_deleted_message_id: number): MessageSummary[] {
+  // 被删楼层上基于旧内容的进行中任务必须取消，避免其结果写回同楼层的新消息
+  for (const pending_message_id of [...summarizing_messages.keys()]) {
+    if (pending_message_id >= first_deleted_message_id) {
+      cancelSummarizeTask(pending_message_id);
+    }
+  }
+
+  const removed_summaries = removeMessageSummariesMatching(
+    summary => summary.message_id >= first_deleted_message_id,
+  );
+
+  if (removed_summaries.length > 0) {
+    console.info('[CosmosMemory] 楼层已被删除，清理对应摘要并回滚其派生变更', {
+      first_deleted_message_id,
+      removed_message_ids: removed_summaries.map(summary => summary.message_id),
+    });
+    rebuildMemoryFromSummaries(getStoredMessageSummaries());
+  }
+
+  return removed_summaries;
 }
 
 async function backfillMissingSummaries(
