@@ -1,4 +1,5 @@
-const STORAGE_ROOT = 'cosmos_memory';
+import { normalizeText, STORAGE_ROOT } from '@/core/entity-store';
+
 const CURRENT_INFO_STORAGE_PATH = `${STORAGE_ROOT}.current_info`;
 export const CURRENT_INFO_PROMPT_ID = 'cosmos_memory_current_info';
 export const CURRENT_INFO_PROMPT_DEPTH = 10002;
@@ -35,12 +36,6 @@ export const CurrentInfoUpdateResponse = z.object({
   elapsed_time: z.string().trim().optional().default(''),
   reason: z.string().trim().optional().default(''),
 });
-
-let current_info_prompt_injected = false;
-
-function normalizeText(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
 
 function normalizeCurrentCharacters(value: unknown): Record<string, CurrentCharacterInfo> {
   if (!_.isPlainObject(value)) {
@@ -188,48 +183,3 @@ export function formatCurrentInfoForSummaryRequest(current_info: CurrentInfo | u
   ].join('\n');
 }
 
-function clearChatCurrentInfoPrompt() {
-  if (!current_info_prompt_injected) {
-    return;
-  }
-
-  window.TavernHelper.uninjectPrompts([CURRENT_INFO_PROMPT_ID]);
-  current_info_prompt_injected = false;
-}
-
-export function clearCurrentInfoPromptInjection() {
-  try {
-    window.TavernHelper.uninjectPrompts([CURRENT_INFO_PROMPT_ID]);
-  } catch (error) {
-    console.warn('[CosmosMemory] 清理当前信息聊天注入失败', error);
-  }
-  current_info_prompt_injected = false;
-}
-
-export function applyCurrentInfoPromptInjection(enabled: boolean): boolean {
-  clearChatCurrentInfoPrompt();
-
-  if (!enabled) {
-    return false;
-  }
-
-  const content = formatCurrentInfoForPrompt();
-  if (!content) {
-    return false;
-  }
-
-  window.TavernHelper.injectPrompts(
-    [
-      {
-        id: CURRENT_INFO_PROMPT_ID,
-        position: 'in_chat',
-        depth: CURRENT_INFO_PROMPT_DEPTH,
-        role: 'system',
-        content,
-      },
-    ],
-    { once: true },
-  );
-  current_info_prompt_injected = true;
-  return true;
-}

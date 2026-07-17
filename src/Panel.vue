@@ -180,9 +180,8 @@
             <input
               class="menu_button"
               type="button"
-              :value="is_checking_memory ? t`检查中...` : t`手动检查记忆`"
-              :disabled="is_checking_memory"
-              @click="handle_check_memory"
+              :value="is_checking_memory ? t`停止检查` : t`手动检查记忆`"
+              @click="handle_memory_check_button"
             />
           </div>
         </div>
@@ -424,6 +423,7 @@ import { getStoredItems, type StoredItem } from '@/core/items';
 import {
   getStoredMessageSummaries,
   runMemoryBacktrackCheck,
+  stopSummarizeTasks,
   type MemoryBacktrackCheckResult,
   type MessageSummary,
 } from '@/core/summary';
@@ -616,6 +616,16 @@ function refresh_stored_memory() {
   refresh_stored_current_info();
 }
 
+function handle_memory_check_button() {
+  if (is_checking_memory.value) {
+    // 检查进行中再次点击 = 停止补全
+    stopSummarizeTasks();
+    return;
+  }
+
+  void handle_check_memory();
+}
+
 async function handle_check_memory() {
   is_checking_memory.value = true;
 
@@ -625,7 +635,11 @@ async function handle_check_memory() {
     if (result.removed_summaries.length > 0 || result.summarized_summaries.length > 0) {
       triggerUpdateStatusBar();
     }
-    toastr.success(format_memory_check_result(result), 'Cosmos Memory');
+    if (result.aborted) {
+      toastr.warning(t`记忆检查已手动停止。`, 'Cosmos Memory');
+    } else {
+      toastr.success(format_memory_check_result(result), 'Cosmos Memory');
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     toastr.error(message, t`Cosmos Memory 记忆检查失败`);

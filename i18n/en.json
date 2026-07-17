@@ -77,5 +77,9 @@
   "背景介绍": "Background",
   "外貌描写": "Appearance",
   "性格描写": "Personality",
-  "楼层": "Message"
+  "楼层": "Message",
+  "停止检查": "Stop check",
+  "记忆检查已手动停止。": "Memory check stopped manually.",
+  "Cosmos Memory 正在补全缺失的剧情总结，请稍候…": "Cosmos Memory is filling in missing story summaries, please wait…",
+  "Cosmos Memory 设置数据异常，已重置为默认设置。": "Cosmos Memory settings were invalid and have been reset to defaults."
 }

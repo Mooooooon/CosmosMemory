@@ -1,11 +1,10 @@
 import { extractCharactersFromChatContent } from '@/api/ai';
 import { replaceStoredCharacters, type StoredCharacter } from '@/core/characters';
+import { STORAGE_ROOT } from '@/core/entity-store';
 import type { AiSettings } from '@/type/settings';
 
-const MESSAGE_DATA_PATH = 'cosmos_memory';
-
 function isCosmosMemoryMessage(message: ChatMessage): boolean {
-  return _.get(message.data, `${MESSAGE_DATA_PATH}.kind`) === 'summary';
+  return _.get(message.data, `${STORAGE_ROOT}.kind`) === 'summary';
 }
 
 function getAssistantChatContent(): string {

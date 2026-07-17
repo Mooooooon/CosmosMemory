@@ -1,4 +1,11 @@
-const STORAGE_ROOT = 'cosmos_memory';
+import {
+  defineEntityStore,
+  normalizeEntityKey,
+  normalizeText,
+  STORAGE_ROOT,
+  type EntityMeta,
+} from '@/core/entity-store';
+
 const CHARACTER_STORAGE_PATH = `${STORAGE_ROOT}.characters`;
 export const CHARACTER_PROMPT_ID = 'cosmos_memory_characters';
 export const CHARACTER_PROMPT_DEPTH = 9999;
@@ -22,17 +29,27 @@ export type PrimaryCharacter = {
   background: string;
   appearance: string;
   personality: string;
+  /** 最后影响该记录的摘要楼层；手动重建或旧版本数据为 undefined */
+  source_message_id?: number;
+  /** 最后影响该记录的摘要生成时间 */
+  updated_at?: string;
 };
 
 export type SecondaryCharacter = {
   type: 'secondary';
   name: string;
   brief: string;
+  /** 最后影响该记录的摘要楼层；手动重建或旧版本数据为 undefined */
+  source_message_id?: number;
+  /** 最后影响该记录的摘要生成时间 */
+  updated_at?: string;
 };
 
 export type StoredCharacter = PrimaryCharacter | SecondaryCharacter;
 
 type SummaryWithCharacterOperations = {
+  message_id?: number;
+  updated_at?: string;
   character_operations?: CharacterOperation[];
 };
 
@@ -48,6 +65,11 @@ export const CharacterOperationResponse = z.object({
 
 export const CharacterOperationsResponse = z.array(CharacterOperationResponse).default([]);
 
+const EntityMetaFields = {
+  source_message_id: z.number().int().optional(),
+  updated_at: z.string().optional(),
+};
+
 export const StoredCharacterResponse = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('primary'),
@@ -55,63 +77,32 @@ export const StoredCharacterResponse = z.discriminatedUnion('type', [
     background: z.string().trim().default(''),
     appearance: z.string().trim().default(''),
     personality: z.string().trim().default(''),
+    ...EntityMetaFields,
   }),
   z.object({
     type: z.literal('secondary'),
     name: z.string().trim().min(1),
     brief: z.string().trim().default(''),
+    ...EntityMetaFields,
   }),
 ]);
 
 export const StoredCharactersResponse = z.array(StoredCharacterResponse).default([]);
 
-let character_prompt_injected = false;
-
-function normalizeText(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
 export function normalizeCharacterKey(name: string): string {
-  return name.trim().replace(/\s+/g, ' ').toLowerCase();
+  return normalizeEntityKey(name);
 }
 
 function isStoredCharacter(value: unknown): value is StoredCharacter {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const character = value as Partial<StoredCharacter>;
-  if (character.type === 'primary') {
-    return (
-      typeof character.name === 'string' &&
-      typeof character.background === 'string' &&
-      typeof character.appearance === 'string' &&
-      typeof character.personality === 'string'
-    );
-  }
-
-  return character.type === 'secondary' && typeof character.name === 'string' && typeof character.brief === 'string';
+  return StoredCharacterResponse.safeParse(value).success;
 }
 
-function getStoredCharacterRecord(): Record<string, StoredCharacter> {
-  const variables = window.TavernHelper.getVariables({ type: 'chat' });
-  const characters = _.get(variables, CHARACTER_STORAGE_PATH, {}) as Record<string, unknown>;
-  return Object.fromEntries(
-    Object.entries(characters).filter((entry): entry is [string, StoredCharacter] => {
-      const [key, character] = entry;
-      return Boolean(key) && isStoredCharacter(character);
-    }),
-  );
-}
+function compareStoredCharacters(left: StoredCharacter, right: StoredCharacter): number {
+  if (left.type !== right.type) {
+    return left.type === 'primary' ? -1 : 1;
+  }
 
-export function getStoredCharacters(): StoredCharacter[] {
-  return Object.values(getStoredCharacterRecord()).sort((left, right) => {
-    if (left.type !== right.type) {
-      return left.type === 'primary' ? -1 : 1;
-    }
-
-    return left.name.localeCompare(right.name);
-  });
+  return left.name.localeCompare(right.name);
 }
 
 function mergeCharacterOperation(
@@ -170,49 +161,35 @@ function mergeCharacterOperation(
   return characters;
 }
 
-export function applyCharacterOperations(operations: CharacterOperation[]): StoredCharacter[] {
-  const characters = getStoredCharacterRecord();
-  for (const operation of operations) {
-    mergeCharacterOperation(characters, operation);
-  }
+const characterStore = defineEntityStore<StoredCharacter, CharacterOperation, SummaryWithCharacterOperations>({
+  storagePath: CHARACTER_STORAGE_PATH,
+  entityName: '人物',
+  isValidEntity: isStoredCharacter,
+  getEntityKey: character => normalizeCharacterKey(character.name),
+  applyOperation: (record, operation) => {
+    const key = normalizeCharacterKey(normalizeText(operation.name));
+    mergeCharacterOperation(record, operation);
+    return key ? [key] : [];
+  },
+  sortEntities: compareStoredCharacters,
+  getSummaryOperations: summary => summary.character_operations,
+  getSummaryMeta: summary => ({ source_message_id: summary.message_id, updated_at: summary.updated_at }),
+});
 
-  saveCharacterRecord(characters);
-  return getStoredCharacters();
+export function getStoredCharacters(): StoredCharacter[] {
+  return characterStore.getAll();
+}
+
+export function applyCharacterOperations(operations: CharacterOperation[], meta: EntityMeta = {}): StoredCharacter[] {
+  return characterStore.applyOperations(operations, meta);
 }
 
 export function rebuildStoredCharactersFromSummaries(summaries: SummaryWithCharacterOperations[]): StoredCharacter[] {
-  const characters: Record<string, StoredCharacter> = {};
-  for (const summary of summaries) {
-    for (const operation of summary.character_operations ?? []) {
-      mergeCharacterOperation(characters, operation);
-    }
-  }
-
-  saveCharacterRecord(characters);
-  return Object.values(characters).sort((left, right) => left.name.localeCompare(right.name));
-}
-
-function saveCharacterRecord(characters: Record<string, StoredCharacter>) {
-  window.TavernHelper.updateVariablesWith(
-    variables => {
-      _.set(variables, CHARACTER_STORAGE_PATH, characters);
-      return variables;
-    },
-    { type: 'chat' },
-  );
+  return characterStore.rebuildFromSummaries(summaries);
 }
 
 export function replaceStoredCharacters(characters: StoredCharacter[]): StoredCharacter[] {
-  const next: Record<string, StoredCharacter> = {};
-  for (const character of characters) {
-    const key = normalizeCharacterKey(character.name);
-    if (key) {
-      next[key] = character;
-    }
-  }
-
-  saveCharacterRecord(next);
-  return getStoredCharacters();
+  return characterStore.replaceAll(characters, { updated_at: new Date().toISOString() });
 }
 
 export function formatCharactersForPrompt(characters: StoredCharacter[] = getStoredCharacters()): string {
@@ -257,50 +234,4 @@ export function formatCharactersForPrompt(characters: StoredCharacter[] = getSto
 
   lines.push('[/CosmosMemory 人物信息]');
   return lines.join('\n');
-}
-
-function clearChatCharacterPrompt() {
-  if (!character_prompt_injected) {
-    return;
-  }
-
-  window.TavernHelper.uninjectPrompts([CHARACTER_PROMPT_ID]);
-  character_prompt_injected = false;
-}
-
-export function clearCharacterPromptInjection() {
-  try {
-    window.TavernHelper.uninjectPrompts([CHARACTER_PROMPT_ID]);
-  } catch (error) {
-    console.warn('[CosmosMemory] 清理人物信息聊天注入失败', error);
-  }
-  character_prompt_injected = false;
-}
-
-export function applyCharacterPromptInjection(enabled: boolean): boolean {
-  clearChatCharacterPrompt();
-
-  if (!enabled) {
-    return false;
-  }
-
-  const content = formatCharactersForPrompt();
-  if (!content) {
-    return false;
-  }
-
-  window.TavernHelper.injectPrompts(
-    [
-      {
-        id: CHARACTER_PROMPT_ID,
-        position: 'in_chat',
-        depth: CHARACTER_PROMPT_DEPTH,
-        role: 'system',
-        content,
-      },
-    ],
-    { once: true },
-  );
-  character_prompt_injected = true;
-  return true;
 }

@@ -1,4 +1,11 @@
-const STORAGE_ROOT = 'cosmos_memory';
+import {
+  defineEntityStore,
+  normalizeEntityKey,
+  normalizeText,
+  STORAGE_ROOT,
+  type EntityMeta,
+} from '@/core/entity-store';
+
 const LOCATION_STORAGE_PATH = `${STORAGE_ROOT}.locations`;
 export const LOCATION_PROMPT_ID = 'cosmos_memory_locations';
 export const LOCATION_PROMPT_DEPTH = 10001;
@@ -46,9 +53,15 @@ export type StoredLocationWorld = {
   name: string;
   brief: string;
   countries: Record<string, StoredLocationCountry>;
+  /** 最后影响该世界（含其下级地点）的摘要楼层；旧版本数据为 undefined */
+  source_message_id?: number;
+  /** 最后影响该世界（含其下级地点）的摘要生成时间 */
+  updated_at?: string;
 };
 
 type SummaryWithLocationOperations = {
+  message_id?: number;
+  updated_at?: string;
   location_operations?: LocationOperation[];
 };
 
@@ -68,14 +81,8 @@ export const LocationOperationResponse = z.object({
 
 export const LocationOperationsResponse = z.array(LocationOperationResponse).default([]);
 
-let location_prompt_injected = false;
-
-function normalizeText(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
 function normalizeLocationKey(name: string): string {
-  return name.trim().replace(/\s+/g, ' ').toLowerCase();
+  return normalizeEntityKey(name);
 }
 
 function isStoredLocationRoom(value: unknown): value is StoredLocationRoom {
@@ -124,21 +131,6 @@ function isStoredLocationWorld(value: unknown): value is StoredLocationWorld {
     _.isPlainObject((value as Partial<StoredLocationWorld>).countries) &&
     Object.values((value as StoredLocationWorld).countries).every(isStoredLocationCountry)
   );
-}
-
-function getStoredLocationRecord(): Record<string, StoredLocationWorld> {
-  const variables = window.TavernHelper.getVariables({ type: 'chat' });
-  const locations = _.get(variables, LOCATION_STORAGE_PATH, {}) as Record<string, unknown>;
-  return Object.fromEntries(
-    Object.entries(locations).filter((entry): entry is [string, StoredLocationWorld] => {
-      const [key, location] = entry;
-      return Boolean(key) && isStoredLocationWorld(location);
-    }),
-  );
-}
-
-export function getStoredLocations(): StoredLocationWorld[] {
-  return Object.values(getStoredLocationRecord()).sort((left, right) => left.name.localeCompare(right.name));
 }
 
 function getOrCreateWorld(locations: Record<string, StoredLocationWorld>, world_name: string): StoredLocationWorld {
@@ -315,36 +307,33 @@ function mergeLocationOperation(
   return locations;
 }
 
-export function applyLocationOperations(operations: LocationOperation[]): StoredLocationWorld[] {
-  const locations = getStoredLocationRecord();
-  for (const operation of operations) {
-    mergeLocationOperation(locations, operation);
-  }
+const locationStore = defineEntityStore<StoredLocationWorld, LocationOperation, SummaryWithLocationOperations>({
+  storagePath: LOCATION_STORAGE_PATH,
+  entityName: '地点',
+  isValidEntity: isStoredLocationWorld,
+  getEntityKey: world => normalizeLocationKey(world.name),
+  // 元数据记录在世界级实体上：一条地点操作可能触及世界下的任意层级，
+  // 以世界为粒度记录来源楼层，足以支撑后续按楼层检索和级联失效
+  applyOperation: (record, operation) => {
+    const world_key = normalizeLocationKey(normalizeText(operation.world));
+    mergeLocationOperation(record, operation);
+    return world_key ? [world_key] : [];
+  },
+  sortEntities: (left, right) => left.name.localeCompare(right.name),
+  getSummaryOperations: summary => summary.location_operations,
+  getSummaryMeta: summary => ({ source_message_id: summary.message_id, updated_at: summary.updated_at }),
+});
 
-  saveLocationRecord(locations);
-  return getStoredLocations();
+export function getStoredLocations(): StoredLocationWorld[] {
+  return locationStore.getAll();
+}
+
+export function applyLocationOperations(operations: LocationOperation[], meta: EntityMeta = {}): StoredLocationWorld[] {
+  return locationStore.applyOperations(operations, meta);
 }
 
 export function rebuildStoredLocationsFromSummaries(summaries: SummaryWithLocationOperations[]): StoredLocationWorld[] {
-  const locations: Record<string, StoredLocationWorld> = {};
-  for (const summary of summaries) {
-    for (const operation of summary.location_operations ?? []) {
-      mergeLocationOperation(locations, operation);
-    }
-  }
-
-  saveLocationRecord(locations);
-  return Object.values(locations).sort((left, right) => left.name.localeCompare(right.name));
-}
-
-function saveLocationRecord(locations: Record<string, StoredLocationWorld>) {
-  window.TavernHelper.updateVariablesWith(
-    variables => {
-      _.set(variables, LOCATION_STORAGE_PATH, locations);
-      return variables;
-    },
-    { type: 'chat' },
-  );
+  return locationStore.rebuildFromSummaries(summaries);
 }
 
 export function formatLocationsForPrompt(locations: StoredLocationWorld[] = getStoredLocations()): string {
@@ -394,41 +383,4 @@ export function formatLocationsForPrompt(locations: StoredLocationWorld[] = getS
 
   lines.push('[/CosmosMemory 地点信息]');
   return lines.join('\n');
-}
-
-function clearChatLocationPrompt() {
-  if (!location_prompt_injected) {
-    return;
-  }
-
-  window.TavernHelper.uninjectPrompts([LOCATION_PROMPT_ID]);
-  location_prompt_injected = false;
-}
-
-export function applyLocationPromptInjection(enabled: boolean): boolean {
-  clearChatLocationPrompt();
-
-  if (!enabled) {
-    return false;
-  }
-
-  const content = formatLocationsForPrompt();
-  if (!content) {
-    return false;
-  }
-
-  window.TavernHelper.injectPrompts(
-    [
-      {
-        id: LOCATION_PROMPT_ID,
-        position: 'in_chat',
-        depth: LOCATION_PROMPT_DEPTH,
-        role: 'system',
-        content,
-      },
-    ],
-    { once: true },
-  );
-  location_prompt_injected = true;
-  return true;
 }

@@ -74,6 +74,10 @@ export type SummaryGenerationOptions = {
   current_info?: CurrentInfo;
   send_descriptions_and_world_info?: boolean;
   previous_summaries?: SummaryContextEntry[];
+  /** 生成请求唯一标识符，可通过 stopGenerationById 停止本次总结请求 */
+  generation_id?: string;
+  /** 返回 true 表示任务已被外部取消，失败后不再降级重试 */
+  should_cancel?: () => boolean;
 };
 
 const SUMMARY_SYSTEM_PROMPT = [
@@ -690,6 +694,7 @@ async function summarizeMessageWithStructuredOutput(
 
   const result = await window.TavernHelper.generateRaw({
     should_silence: true,
+    generation_id: options.generation_id,
     custom_api: buildCustomApi(settings),
     ordered_prompts: buildSummaryOrderedPrompts(content, options, 'structured_output'),
     json_schema: buildStructuredSummarySchema(options),
@@ -709,6 +714,7 @@ async function summarizeMessageWithJsonPrompt(
 ): Promise<SummaryGenerationResult> {
   const result = await window.TavernHelper.generateRaw({
     should_silence: true,
+    generation_id: options.generation_id,
     custom_api: buildCustomApi(settings),
     ordered_prompts: buildSummaryOrderedPrompts(content, options, 'json_prompt'),
   });
@@ -728,6 +734,10 @@ export async function summarizeMessage(
   try {
     return await summarizeMessageWithStructuredOutput(settings, content, options);
   } catch (error) {
+    if (options.should_cancel?.()) {
+      console.info('[CosmosMemory] 总结请求已被取消，跳过降级重试');
+      throw error;
+    }
     const message = error instanceof Error ? error.message : String(error);
     console.warn('[CosmosMemory] 结构化输出总结请求失败，降级为普通 JSON 提示重试', { message });
     return summarizeMessageWithJsonPrompt(settings, content, options);

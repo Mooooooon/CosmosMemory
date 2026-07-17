@@ -33,6 +33,14 @@ function getLatestAiMessageId(): number | null {
 }
 
 /**
+ * 构建「标签：值」形式的行元素。
+ * 值一律通过 .text() 写入，避免 AI 生成内容携带 HTML 破坏 DOM 或执行脚本。
+ */
+function makeLabeledLine(class_name: string, label: string, value: string): JQuery<HTMLElement> {
+  return $(`<div class="${class_name}">`).append($('<strong>').text(label)).append($('<span>').text(value));
+}
+
+/**
  * 渲染指定 Tab 的内容
  */
 function renderTabContent($container: JQuery<HTMLElement>) {
@@ -48,16 +56,8 @@ function renderTabContent($container: JQuery<HTMLElement>) {
         }
 
         const $list = $('<div class="cosmos-info-list">');
-        $list.append(
-          $('<div class="cosmos-info-item">').html(
-            `<strong>${t`当前时间`}：</strong><span>${info.current_time || t`尚未记录`}</span>`,
-          ),
-        );
-        $list.append(
-          $('<div class="cosmos-info-item">').html(
-            `<strong>${t`当前地点`}：</strong><span>${info.location || t`尚未记录`}</span>`,
-          ),
-        );
+        $list.append(makeLabeledLine('cosmos-info-item', `${t`当前时间`}：`, info.current_time || t`尚未记录`));
+        $list.append(makeLabeledLine('cosmos-info-item', `${t`当前地点`}：`, info.location || t`尚未记录`));
 
         const charEntries = Object.entries(info.characters);
         if (charEntries.length > 0) {
@@ -67,14 +67,10 @@ function renderTabContent($container: JQuery<HTMLElement>) {
             const $charCard = $('<div class="cosmos-info-char-card">');
             $charCard.append($('<div class="cosmos-char-name">').text(name));
             if (char.clothing) {
-              $charCard.append(
-                $('<div class="cosmos-char-detail">').html(`<strong>${t`角色服装`}：</strong>${char.clothing}`),
-              );
+              $charCard.append(makeLabeledLine('cosmos-char-detail', `${t`角色服装`}：`, char.clothing));
             }
             if (char.status) {
-              $charCard.append(
-                $('<div class="cosmos-char-detail">').html(`<strong>${t`角色状态`}：</strong>${char.status}`),
-              );
+              $charCard.append(makeLabeledLine('cosmos-char-detail', `${t`角色状态`}：`, char.status));
             }
             $chars.append($charCard);
           }
@@ -103,19 +99,13 @@ function renderTabContent($container: JQuery<HTMLElement>) {
             const $charCard = $('<div class="cosmos-character-card">');
             $charCard.append($('<div class="cosmos-char-name">').text(char.name));
             if (char.background) {
-              $charCard.append(
-                $('<div class="cosmos-char-detail">').html(`<strong>${t`背景介绍`}：</strong>${char.background}`),
-              );
+              $charCard.append(makeLabeledLine('cosmos-char-detail', `${t`背景介绍`}：`, char.background));
             }
             if (char.appearance) {
-              $charCard.append(
-                $('<div class="cosmos-char-detail">').html(`<strong>${t`外貌描写`}：</strong>${char.appearance}`),
-              );
+              $charCard.append(makeLabeledLine('cosmos-char-detail', `${t`外貌描写`}：`, char.appearance));
             }
             if (char.personality) {
-              $charCard.append(
-                $('<div class="cosmos-char-detail">').html(`<strong>${t`性格描写`}：</strong>${char.personality}`),
-              );
+              $charCard.append(makeLabeledLine('cosmos-char-detail', `${t`性格描写`}：`, char.personality));
             }
             $list.append($charCard);
           }
@@ -167,9 +157,7 @@ function renderTabContent($container: JQuery<HTMLElement>) {
         const $tree = $('<div class="cosmos-location-tree">');
         for (const world of locations) {
           const $worldNode = $('<div class="cosmos-location-node cosmos-location-world">');
-          $worldNode.append(
-            $('<div class="cosmos-loc-header">').html(`<strong>${t`世界/大陆`}：</strong>${world.name}`),
-          );
+          $worldNode.append(makeLabeledLine('cosmos-loc-header', `${t`世界/大陆`}：`, world.name));
           if (world.brief) {
             $worldNode.append($('<div class="cosmos-loc-desc">').text(world.brief));
           }
@@ -177,9 +165,7 @@ function renderTabContent($container: JQuery<HTMLElement>) {
           const countries = Object.values(world.countries).sort((left, right) => left.name.localeCompare(right.name));
           for (const country of countries) {
             const $countryNode = $('<div class="cosmos-location-node cosmos-location-country">');
-            $countryNode.append(
-              $('<div class="cosmos-loc-header">').html(`<strong>${t`国家/地区`}：</strong>${country.name}`),
-            );
+            $countryNode.append(makeLabeledLine('cosmos-loc-header', `${t`国家/地区`}：`, country.name));
             if (country.brief) {
               $countryNode.append($('<div class="cosmos-loc-desc">').text(country.brief));
             }
@@ -187,9 +173,7 @@ function renderTabContent($container: JQuery<HTMLElement>) {
             const cities = Object.values(country.cities).sort((left, right) => left.name.localeCompare(right.name));
             for (const city of cities) {
               const $cityNode = $('<div class="cosmos-location-node cosmos-location-city">');
-              $cityNode.append(
-                $('<div class="cosmos-loc-header">').html(`<strong>${t`城市/城镇`}：</strong>${city.name}`),
-              );
+              $cityNode.append(makeLabeledLine('cosmos-loc-header', `${t`城市/城镇`}：`, city.name));
               if (city.brief) {
                 $cityNode.append($('<div class="cosmos-loc-desc">').text(city.brief));
               }
@@ -197,9 +181,7 @@ function renderTabContent($container: JQuery<HTMLElement>) {
               const scenes = Object.values(city.scenes).sort((left, right) => left.name.localeCompare(right.name));
               for (const scene of scenes) {
                 const $sceneNode = $('<div class="cosmos-location-node cosmos-location-scene">');
-                $sceneNode.append(
-                  $('<div class="cosmos-loc-header">').html(`<strong>${t`场景/建筑`}：</strong>${scene.name}`),
-                );
+                $sceneNode.append(makeLabeledLine('cosmos-loc-header', `${t`场景/建筑`}：`, scene.name));
                 if (scene.brief) {
                   $sceneNode.append($('<div class="cosmos-loc-desc">').text(scene.brief));
                 }
@@ -207,9 +189,7 @@ function renderTabContent($container: JQuery<HTMLElement>) {
                 const rooms = Object.values(scene.rooms).sort((left, right) => left.name.localeCompare(right.name));
                 for (const room of rooms) {
                   const $roomNode = $('<div class="cosmos-location-node cosmos-location-room">');
-                  $roomNode.append(
-                    $('<div class="cosmos-loc-header">').html(`<strong>${t`房间/具体地点`}：</strong>${room.name}`),
-                  );
+                  $roomNode.append(makeLabeledLine('cosmos-loc-header', `${t`房间/具体地点`}：`, room.name));
                   if (room.brief) {
                     $roomNode.append($('<div class="cosmos-loc-desc">').text(room.brief));
                   }

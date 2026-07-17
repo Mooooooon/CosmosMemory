@@ -28,11 +28,20 @@ import {
   type CurrentInfoUpdate,
 } from '@/core/current-info';
 import { useSettingsStore } from '@/store/settings';
+import { getCurrentChatId } from '@sillytavern/script';
 
 const STORAGE_ROOT = 'cosmos_memory';
 const SUMMARY_STORAGE_PATH = `${STORAGE_ROOT}.summaries`;
+const SUMMARY_BACKFILL_CONCURRENCY = 2;
 
-const summarizing_messages = new Map<number, Promise<MessageSummary | null>>();
+type SummarizingTask = {
+  promise: Promise<MessageSummary | null>;
+  generation_id: string;
+};
+
+const summarizing_messages = new Map<number, SummarizingTask>();
+const cancelled_message_ids = new Set<number>();
+let backfill_abort_signal: { aborted: boolean } | null = null;
 
 export type MessageSummary = {
   message_id: number;
@@ -53,6 +62,7 @@ export type MemoryBacktrackCheckResult = {
   removed_summaries: MessageSummary[];
   summarized_summaries: MessageSummary[];
   rebuilt: boolean;
+  aborted: boolean;
 };
 
 function getAssistantMessage(message_id: number): ChatMessage | null {
@@ -226,7 +236,18 @@ export function pruneMessageSummariesAfterMessage(message_id: number): MessageSu
   return removed_summaries;
 }
 
-async function summarizeReceivedMessageCore(message_id: number): Promise<MessageSummary | null> {
+function safeGetCurrentChatId(): string | null {
+  try {
+    return getCurrentChatId() || null;
+  } catch (error) {
+    console.warn('[CosmosMemory] 获取当前聊天 ID 失败', error);
+    return null;
+  }
+}
+
+async function summarizeReceivedMessageCore(message_id: number, generation_id: string): Promise<MessageSummary | null> {
+  const chat_id = safeGetCurrentChatId();
+
   const message = getAssistantMessage(message_id);
   if (!message) {
     return null;
@@ -266,7 +287,22 @@ async function summarizeReceivedMessageCore(message_id: number): Promise<Message
     current_info: settings.current_info.enabled ? getStoredCurrentInfo() : undefined,
     send_descriptions_and_world_info: settings.summary.send_descriptions_and_world_info,
     previous_summaries,
+    generation_id,
+    should_cancel: () => cancelled_message_ids.has(message_id),
   });
+
+  // 异步请求期间任务可能被手动停止：直接丢弃结果，不再写入变量
+  if (cancelled_message_ids.has(message_id)) {
+    console.info('[CosmosMemory] 总结任务已被取消，丢弃总结结果', { message_id });
+    return null;
+  }
+
+  // 异步请求期间用户可能切换了聊天：此时写入会污染新聊天的变量，直接丢弃结果
+  if (safeGetCurrentChatId() !== chat_id) {
+    console.warn('[CosmosMemory] 总结完成时聊天已切换，丢弃总结结果', { message_id, chat_id });
+    return null;
+  }
+
   const summary: MessageSummary = {
     message_id,
     summary: result.summary,
@@ -277,18 +313,27 @@ async function summarizeReceivedMessageCore(message_id: number): Promise<Message
     updated_at: new Date().toISOString(),
   };
 
+  // swipe / regenerate / continue 会覆盖同楼层旧摘要：旧摘要派生的实体变更必须回滚，
+  // 因此覆盖时按现存摘要全量重放，而不是增量应用新摘要的操作
+  const had_previous_summary = getStoredSummaryIds().has(message_id);
   saveMessageSummary(summary);
-  if (settings.characters.enabled && summary.character_operations && summary.character_operations.length > 0) {
-    applyCharacterOperations(summary.character_operations);
-  }
-  if (settings.items.enabled && summary.item_operations && summary.item_operations.length > 0) {
-    applyItemOperations(summary.item_operations);
-  }
-  if (settings.locations.enabled && summary.location_operations && summary.location_operations.length > 0) {
-    applyLocationOperations(summary.location_operations);
-  }
-  if (settings.current_info.enabled) {
-    applyCurrentInfoUpdate(summary.current_info_update);
+  if (had_previous_summary) {
+    console.info('[CosmosMemory] 同楼层旧摘要已被覆盖，重建记忆以回滚旧分支变更', { message_id });
+    rebuildMemoryFromSummaries(getStoredMessageSummaries());
+  } else {
+    const entity_meta = { source_message_id: message_id, updated_at: summary.updated_at };
+    if (settings.characters.enabled && summary.character_operations && summary.character_operations.length > 0) {
+      applyCharacterOperations(summary.character_operations, entity_meta);
+    }
+    if (settings.items.enabled && summary.item_operations && summary.item_operations.length > 0) {
+      applyItemOperations(summary.item_operations, entity_meta);
+    }
+    if (settings.locations.enabled && summary.location_operations && summary.location_operations.length > 0) {
+      applyLocationOperations(summary.location_operations, entity_meta);
+    }
+    if (settings.current_info.enabled) {
+      applyCurrentInfoUpdate(summary.current_info_update);
+    }
   }
   return summary;
 }
@@ -297,15 +342,98 @@ export function summarizeReceivedMessage(message_id: number): Promise<MessageSum
   const existing_task = summarizing_messages.get(message_id);
   if (existing_task) {
     console.info('[CosmosMemory] 复用正在进行的楼层总结任务', { message_id });
-    return existing_task;
+    return existing_task.promise;
   }
 
-  const task = summarizeReceivedMessageCore(message_id).finally(() => {
+  cancelled_message_ids.delete(message_id);
+  const generation_id = `cosmos-memory-summary-${message_id}-${Date.now()}`;
+  const promise = summarizeReceivedMessageCore(message_id, generation_id).finally(() => {
     summarizing_messages.delete(message_id);
   });
 
-  summarizing_messages.set(message_id, task);
-  return task;
+  summarizing_messages.set(message_id, { promise, generation_id });
+  return promise;
+}
+
+/** 停止所有进行中的总结请求，并标记中止当前的补全循环 */
+export function stopSummarizeTasks() {
+  if (backfill_abort_signal) {
+    backfill_abort_signal.aborted = true;
+  }
+
+  for (const [message_id, task] of summarizing_messages) {
+    cancelled_message_ids.add(message_id);
+    try {
+      window.TavernHelper.stopGenerationById(task.generation_id);
+    } catch (error) {
+      console.warn('[CosmosMemory] 停止总结请求失败', { message_id, error });
+    }
+  }
+  summarizing_messages.clear();
+}
+
+/** 聊天切换时调用：取消未完成的总结任务，防止结果写入新聊天 */
+export function cancelSummarizationForChatChange() {
+  if (summarizing_messages.size === 0 && backfill_abort_signal === null) {
+    return;
+  }
+
+  console.info('[CosmosMemory] 聊天已切换，取消未完成的总结任务', { pending_count: summarizing_messages.size });
+  stopSummarizeTasks();
+}
+
+export function wasSummarizeTaskCancelled(message_id: number): boolean {
+  return cancelled_message_ids.has(message_id);
+}
+
+async function backfillMissingSummaries(
+  message_ids: number[],
+): Promise<{ summaries: MessageSummary[]; aborted: boolean }> {
+  const abort_signal = { aborted: false };
+  backfill_abort_signal = abort_signal;
+
+  toastr.info(`${t`Cosmos Memory 正在补全缺失的剧情总结，请稍候…`}（${message_ids.length}）`);
+
+  const summaries: MessageSummary[] = [];
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < message_ids.length && !abort_signal.aborted) {
+      const message_id = message_ids[cursor];
+      cursor += 1;
+      console.info('[CosmosMemory] 补全楼层总结', { message_id });
+      try {
+        const summary = await summarizeReceivedMessage(message_id);
+        if (summary) {
+          summaries.push(summary);
+        }
+      } catch (error) {
+        // 单个楼层失败（包含被手动停止）不应阻断整体补全
+        console.warn('[CosmosMemory] 补全楼层总结失败，跳过该楼层', { message_id, error });
+      }
+    }
+  };
+
+  try {
+    const worker_count = Math.min(SUMMARY_BACKFILL_CONCURRENCY, message_ids.length);
+    await Promise.all(Array.from({ length: worker_count }, () => worker()));
+  } finally {
+    if (backfill_abort_signal === abort_signal) {
+      backfill_abort_signal = null;
+    }
+  }
+
+  // 并发补全时实体变更可能乱序应用，最后按楼层顺序全量重放一次保证一致性
+  if (summaries.length > 0) {
+    rebuildMemoryFromSummaries(getStoredMessageSummaries());
+  }
+
+  console.info('[CosmosMemory] 缺失总结补全结束', {
+    requested_count: message_ids.length,
+    summarized_count: summaries.length,
+    aborted: abort_signal.aborted,
+  });
+
+  return { summaries, aborted: abort_signal.aborted };
 }
 
 export async function summarizeMissingAssistantMessages(): Promise<MessageSummary[]> {
@@ -315,25 +443,12 @@ export async function summarizeMissingAssistantMessages(): Promise<MessageSummar
     return [];
   }
 
-  console.info('[CosmosMemory] 发送前发现缺失总结的 assistant 楼层，开始依次补全', {
+  console.info('[CosmosMemory] 发送前发现缺失总结的 assistant 楼层，开始补全', {
     message_ids,
     count: message_ids.length,
   });
 
-  const summaries: MessageSummary[] = [];
-  for (const message_id of message_ids) {
-    console.info('[CosmosMemory] 发送前补全楼层总结', { message_id });
-    const summary = await summarizeReceivedMessage(message_id);
-    if (summary) {
-      summaries.push(summary);
-    }
-  }
-
-  console.info('[CosmosMemory] 发送前缺失总结补全完成', {
-    requested_count: message_ids.length,
-    summarized_count: summaries.length,
-  });
-
+  const { summaries } = await backfillMissingSummaries(message_ids);
   return summaries;
 }
 
@@ -348,6 +463,7 @@ export async function runMemoryBacktrackCheck(
       removed_summaries: [],
       summarized_summaries: [],
       rebuilt: false,
+      aborted: false,
     };
   }
 
@@ -382,29 +498,24 @@ export async function runMemoryBacktrackCheck(
       removed_summaries,
       summarized_summaries: [],
       rebuilt,
+      aborted: false,
     };
   }
 
-  console.info('[CosmosMemory] 回溯检查发现缺失总结的 assistant 楼层，开始依次补全', {
+  console.info('[CosmosMemory] 回溯检查发现缺失总结的 assistant 楼层，开始补全', {
     max_message_id,
     message_ids: missing_message_ids,
     count: missing_message_ids.length,
   });
 
-  const summarized_summaries: MessageSummary[] = [];
-  for (const message_id of missing_message_ids) {
-    console.info('[CosmosMemory] 回溯检查补全楼层总结', { message_id });
-    const summary = await summarizeReceivedMessage(message_id);
-    if (summary) {
-      summarized_summaries.push(summary);
-    }
-  }
+  const { summaries: summarized_summaries, aborted } = await backfillMissingSummaries(missing_message_ids);
 
   console.info('[CosmosMemory] 回溯检查完成', {
     max_message_id,
     removed_count: removed_summaries.length,
     summarized_count: summarized_summaries.length,
     rebuilt,
+    aborted,
   });
 
   return {
@@ -412,5 +523,6 @@ export async function runMemoryBacktrackCheck(
     removed_summaries,
     summarized_summaries,
     rebuilt,
+    aborted,
   };
 }
