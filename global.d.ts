@@ -7,9 +7,6 @@ import type {
 } from 'type-fest';
 
 declare global {
-  const hljs: typeof import('highlight.js').default;
-  const Popper: typeof import('@popperjs/core');
-
   namespace TypeFest {
     export type LiteralUnion<LiteralType, BaseType extends TypeFestPrimitive = string> = TypeFestLiteralUnion<
       LiteralType,

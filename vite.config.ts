@@ -1,18 +1,14 @@
 import vue from '@vitejs/plugin-vue';
 import path from 'node:path';
 import unpluginAutoImport from 'unplugin-auto-import/vite';
-import { VueUseComponentsResolver, VueUseDirectiveResolver } from 'unplugin-vue-components/resolvers';
 import unpluginVueComponents from 'unplugin-vue-components/vite';
 import { defineConfig } from 'vite';
 import pluginExternal from 'vite-plugin-external';
 
 const externals = {
   jquery: '$',
-  hljs: 'hljs',
   lodash: '_',
-  showdown: 'showdown',
   toastr: 'toastr',
-  '@popperjs/core': 'Popper',
 } as const;
 
 const relative_sillytavern_path = path.relative(
@@ -35,10 +31,8 @@ export default defineConfig(({ mode }) => ({
       imports: [
         'vue',
         'pinia',
-        '@vueuse/core',
         { from: '@sillytavern/scripts/i18n', imports: ['t'] },
         { from: 'klona', imports: ['klona'] },
-        { from: 'vue-final-modal', imports: ['useModal'] },
         { from: 'zod', imports: ['z'] },
       ],
       dirs: [{ glob: './src/panel/composable', types: true }],
@@ -47,7 +41,6 @@ export default defineConfig(({ mode }) => ({
       dts: true,
       syncMode: 'overwrite',
       // globs: ['src/panel/component/*.vue'],
-      resolvers: [VueUseComponentsResolver(), VueUseDirectiveResolver()],
     }),
     {
       name: 'sillytavern_resolver',
