@@ -450,9 +450,7 @@ export function rollbackSummariesFromMessage(first_deleted_message_id: number): 
     }
   }
 
-  const removed_summaries = removeMessageSummariesMatching(
-    summary => summary.message_id >= first_deleted_message_id,
-  );
+  const removed_summaries = removeMessageSummariesMatching(summary => summary.message_id >= first_deleted_message_id);
 
   if (removed_summaries.length > 0) {
     console.info('[CosmosMemory] 楼层已被删除，清理对应摘要并回滚其派生变更', {
