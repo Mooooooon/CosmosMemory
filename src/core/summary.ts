@@ -33,6 +33,11 @@ import { getCurrentChatId } from '@sillytavern/script';
 
 const SUMMARY_STORAGE_PATH = `${STORAGE_ROOT}.summaries`;
 const SUMMARY_BACKFILL_CONCURRENCY = 2;
+/**
+ * 开场白所在楼层：first_message 事件始终以楼层 0 触发。
+ * 开场白属于角色卡自带内容且始终保留在上下文中，不参与总结，也不计入缺失补全。
+ */
+const OPENING_MESSAGE_ID = 0;
 
 type SummarizingTask = {
   promise: Promise<MessageSummary | null>;
@@ -146,7 +151,12 @@ function getCurrentLastMessageId(): number {
 function getMissingAssistantMessageIds(max_message_id: number): number[] {
   const stored_summary_ids = getStoredSummaryIds();
   return getExistingChatMessages(max_message_id)
-    .filter(message => message.role === 'assistant' && !stored_summary_ids.has(message.message_id))
+    .filter(
+      message =>
+        message.message_id !== OPENING_MESSAGE_ID &&
+        message.role === 'assistant' &&
+        !stored_summary_ids.has(message.message_id),
+    )
     .map(message => message.message_id);
 }
 
@@ -218,8 +228,12 @@ function pruneInvalidMessageSummaries(
   max_message_id: number,
   existing_assistant_message_ids: Set<number>,
 ): MessageSummary[] {
+  // 开场白摘要同样视为无效：既清理早期版本误补全的残留，也防止压缩逻辑据此隐藏开场白
   return removeMessageSummariesMatching(
-    summary => summary.message_id > max_message_id || !existing_assistant_message_ids.has(summary.message_id),
+    summary =>
+      summary.message_id === OPENING_MESSAGE_ID ||
+      summary.message_id > max_message_id ||
+      !existing_assistant_message_ids.has(summary.message_id),
   );
 }
 
@@ -345,6 +359,11 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
 }
 
 export function summarizeReceivedMessage(message_id: number): Promise<MessageSummary | null> {
+  if (message_id === OPENING_MESSAGE_ID) {
+    console.info('[CosmosMemory] 开场白楼层不参与总结', { message_id });
+    return Promise.resolve(null);
+  }
+
   const existing_task = summarizing_messages.get(message_id);
   if (existing_task) {
     console.info('[CosmosMemory] 复用正在进行的楼层总结任务', { message_id });
