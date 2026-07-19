@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "设置": "Settings",
   "启用状态栏": "Enable status bar",
   "启用当前信息": "Enable current info",
@@ -95,4 +96,9 @@
   "记忆检查已手动停止。": "Memory check stopped manually.",
   "Cosmos Memory 正在补全缺失的剧情总结，请稍候…": "Cosmos Memory is filling in missing story summaries, please wait…",
   "Cosmos Memory 设置数据异常，已重置为默认设置。": "Cosmos Memory settings were invalid and have been reset to defaults."
+=======
+  "插件示例": "Plugin Example",
+  "示例按钮": "Example Button",
+  "示例开关": "Example Switch"
+>>>>>>> 67191711fc1d3c98fbb012cd46e1ca2e546d5945
 }
