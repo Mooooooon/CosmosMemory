@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 export const DEFAULT_CUSTOM_API_URL = 'https://api.deepseek.com/v1';
 export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 
@@ -94,3 +95,13 @@ export const Settings = z
   .prefault({});
 
 export const setting_field = 'cosmos_memory';
+=======
+export type Settings = z.infer<typeof Settings>;
+export const Settings = z
+  .object({
+    button_selected: z.boolean().default(false),
+  })
+  .prefault({});
+
+export const setting_field = 'tavern_extension_example';
+>>>>>>> 32e193a5f94b8e4e882fd1025408fedafe99fdce
