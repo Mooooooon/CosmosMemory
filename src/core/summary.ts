@@ -306,6 +306,9 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
     current_info_enabled: settings.current_info.enabled,
     current_info: settings.current_info.enabled ? getStoredCurrentInfo() : undefined,
     send_descriptions_and_world_info: settings.summary.send_descriptions_and_world_info,
+    world_info_scan_messages: settings.summary.send_descriptions_and_world_info
+      ? [{ role: message.role, content: source }]
+      : undefined,
     previous_summaries,
     generation_id,
     should_cancel: () => cancelled_message_ids.has(message_id),

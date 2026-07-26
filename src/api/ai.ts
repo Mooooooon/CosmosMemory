@@ -73,6 +73,8 @@ export type SummaryGenerationOptions = {
   current_info_enabled?: boolean;
   current_info?: CurrentInfo;
   send_descriptions_and_world_info?: boolean;
+  /** 仅用于按酒馆规则扫描本次应激活的世界书条目，不会作为聊天历史发送给总结模型 */
+  world_info_scan_messages?: RolePrompt[];
   previous_summaries?: SummaryContextEntry[];
   /** 生成请求唯一标识符，可通过 stopGenerationById 停止本次总结请求 */
   generation_id?: string;
@@ -371,6 +373,20 @@ function buildSummaryOrderedPrompts(
       content: user_content,
     },
   ];
+}
+
+function buildSummaryOverrides(options: SummaryGenerationOptions): Overrides | undefined {
+  if (!options.send_descriptions_and_world_info) {
+    return undefined;
+  }
+
+  return {
+    chat_history: {
+      prompts: options.world_info_scan_messages ?? [],
+      // 当前总结提示词只发送角色定义前后的世界书，不使用按深度插入的条目。
+      with_depth_entries: false,
+    },
+  };
 }
 
 function buildSummaryJsonInstruction(options: SummaryGenerationOptions): string {
@@ -695,6 +711,7 @@ async function summarizeMessageWithStructuredOutput(
     locations_enabled: options.locations_enabled === true,
     current_info_enabled: options.current_info_enabled === true,
     send_descriptions_and_world_info: options.send_descriptions_and_world_info === true,
+    world_info_scan_message_count: options.world_info_scan_messages?.length ?? 0,
     previous_summary_count: options.previous_summaries?.length ?? 0,
   });
 
@@ -702,6 +719,7 @@ async function summarizeMessageWithStructuredOutput(
     should_silence: true,
     generation_id: options.generation_id,
     custom_api: buildCustomApi(settings),
+    overrides: buildSummaryOverrides(options),
     ordered_prompts: buildSummaryOrderedPrompts(content, options, 'structured_output'),
     json_schema: buildStructuredSummarySchema(options),
   });
@@ -722,6 +740,7 @@ async function summarizeMessageWithJsonPrompt(
     should_silence: true,
     generation_id: options.generation_id,
     custom_api: buildCustomApi(settings),
+    overrides: buildSummaryOverrides(options),
     ordered_prompts: buildSummaryOrderedPrompts(content, options, 'json_prompt'),
   });
 
