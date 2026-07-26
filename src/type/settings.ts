@@ -39,6 +39,7 @@ export type SummarySettings = z.infer<typeof SummarySettings>;
 export const SummarySettings = z
   .object({
     send_descriptions_and_world_info: z.boolean().default(false),
+    send_previous_message_original: z.boolean().default(false),
     send_summary_context: z.boolean().default(false),
     summary_context_count: z.number().int().min(1).default(5),
   })

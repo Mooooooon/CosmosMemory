@@ -63,6 +63,13 @@ export type SummaryContextEntry = {
   summary: string;
 };
 
+export type OriginalMessageContextEntry = {
+  message_id: number;
+  name: string;
+  role: ChatMessage['role'];
+  content: string;
+};
+
 export type SummaryGenerationOptions = {
   characters_enabled?: boolean;
   stored_characters?: StoredCharacter[];
@@ -75,6 +82,7 @@ export type SummaryGenerationOptions = {
   send_descriptions_and_world_info?: boolean;
   /** 仅用于按酒馆规则扫描本次应激活的世界书条目，不会作为聊天历史发送给总结模型 */
   world_info_scan_messages?: RolePrompt[];
+  previous_original_message?: OriginalMessageContextEntry;
   previous_summaries?: SummaryContextEntry[];
   /** 生成请求唯一标识符，可通过 stopGenerationById 停止本次总结请求 */
   generation_id?: string;
@@ -159,6 +167,9 @@ const DESCRIPTION_AND_WORLD_INFO_INSTRUCTION =
 
 const PREVIOUS_SUMMARY_CONTEXT_INSTRUCTION =
   '请求中以「之前剧情总结」标签包裹的内容，是本楼层之前的剧情摘要，仅用于理解剧情走向、称呼和因果关系。最终 summary 仍应聚焦本楼层回复，不要把之前总结中的旧事件当成本楼层新发生的内容。';
+
+const PREVIOUS_ORIGINAL_MESSAGE_INSTRUCTION =
+  '请求中以「上一楼原文」标签包裹的内容，是本楼层紧邻的上一楼消息，仅用于理解本楼层回复的前因、用户意图和上下文。最终 summary 仍应聚焦本楼层回复；若它与之前剧情总结存在冲突或重复，以原文为准。';
 
 const FULL_CHARACTER_EXTRACTION_SYSTEM_PROMPT = [
   '你是剧情人物档案整理器。请阅读用户提供的所有 AI 回复原文，整理剧情中需要长期记忆的人物信息。',
@@ -293,6 +304,20 @@ function formatPreviousSummariesForPrompt(summaries: SummaryContextEntry[] | und
   ].join('\n\n');
 }
 
+function formatPreviousOriginalMessageForPrompt(message: OriginalMessageContextEntry | undefined): string {
+  if (!message) {
+    return '';
+  }
+
+  const speaker = message.name.trim() ? `${message.role} · ${message.name}` : message.role;
+  return [
+    '[上一楼原文，优先于同楼总结]',
+    `#${message.message_id} (${speaker})`,
+    message.content,
+    '[上一楼原文结束]',
+  ].join('\n');
+}
+
 function buildSummaryContent(content: string, options: SummaryGenerationOptions): string {
   const memory_sections = [
     options.current_info_enabled ? formatCurrentInfoForSummaryRequest(options.current_info) : '',
@@ -300,6 +325,7 @@ function buildSummaryContent(content: string, options: SummaryGenerationOptions)
     options.items_enabled ? formatItemsForPrompt(options.stored_items ?? []) : '',
     options.characters_enabled ? formatCharactersForPrompt(options.stored_characters ?? []) : '',
     formatPreviousSummariesForPrompt(options.previous_summaries),
+    formatPreviousOriginalMessageForPrompt(options.previous_original_message),
   ].filter(Boolean);
 
   if (memory_sections.length === 0) {
@@ -318,6 +344,10 @@ function buildSummarySystemPrompt(options: SummaryGenerationOptions): string {
 
   if (options.previous_summaries && options.previous_summaries.length > 0) {
     instructions.push(PREVIOUS_SUMMARY_CONTEXT_INSTRUCTION);
+  }
+
+  if (options.previous_original_message) {
+    instructions.push(PREVIOUS_ORIGINAL_MESSAGE_INSTRUCTION);
   }
 
   if (options.current_info_enabled) {
@@ -712,6 +742,7 @@ async function summarizeMessageWithStructuredOutput(
     current_info_enabled: options.current_info_enabled === true,
     send_descriptions_and_world_info: options.send_descriptions_and_world_info === true,
     world_info_scan_message_count: options.world_info_scan_messages?.length ?? 0,
+    previous_original_message_id: options.previous_original_message?.message_id,
     previous_summary_count: options.previous_summaries?.length ?? 0,
   });
 

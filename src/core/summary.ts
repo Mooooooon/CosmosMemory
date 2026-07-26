@@ -1,4 +1,4 @@
-import { summarizeMessage, type SummaryContextEntry } from '@/api/ai';
+import { summarizeMessage, type OriginalMessageContextEntry, type SummaryContextEntry } from '@/api/ai';
 import {
   CharacterOperationsResponse,
   applyCharacterOperations,
@@ -104,13 +104,52 @@ function getRegexedAiContent(message: ChatMessage): string {
   return regexed_content;
 }
 
-function getPreviousSummaryContext(message_id: number, count: number): SummaryContextEntry[] {
+function getPreviousOriginalMessage(message_id: number): OriginalMessageContextEntry | undefined {
+  if (message_id <= OPENING_MESSAGE_ID) {
+    return undefined;
+  }
+
+  const message = window.TavernHelper.getChatMessages(message_id - 1, { include_swipes: false })[0];
+  if (!message) {
+    return undefined;
+  }
+
+  const content =
+    message.role === 'system'
+      ? message.message.trim()
+      : window.TavernHelper.formatAsTavernRegexedString(
+          message.message,
+          message.role === 'user' ? 'user_input' : 'ai_output',
+          'prompt',
+          { depth: 1 },
+        ).trim();
+
+  if (!content) {
+    console.info('[CosmosMemory] 上一楼正则过滤后的内容为空，跳过发送原文', {
+      message_id: message.message_id,
+    });
+    return undefined;
+  }
+
+  return {
+    message_id: message.message_id,
+    name: message.name,
+    role: message.role,
+    content,
+  };
+}
+
+function getPreviousSummaryContext(
+  message_id: number,
+  count: number,
+  excluded_message_ids: ReadonlySet<number> = new Set(),
+): SummaryContextEntry[] {
   if (count <= 0) {
     return [];
   }
 
   return getStoredMessageSummaries()
-    .filter(summary => summary.message_id < message_id)
+    .filter(summary => summary.message_id < message_id && !excluded_message_ids.has(summary.message_id))
     .slice(-count)
     .map(summary => ({
       message_id: summary.message_id,
@@ -290,11 +329,18 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
     locations_enabled: settings.locations.enabled,
     current_info_enabled: settings.current_info.enabled,
     send_descriptions_and_world_info: settings.summary.send_descriptions_and_world_info,
+    send_previous_message_original: settings.summary.send_previous_message_original,
     send_summary_context: settings.summary.send_summary_context,
     summary_context_count: settings.summary.summary_context_count,
   });
+  const previous_original_message = settings.summary.send_previous_message_original
+    ? getPreviousOriginalMessage(message_id)
+    : undefined;
+  const original_message_ids = previous_original_message
+    ? new Set([previous_original_message.message_id])
+    : new Set<number>();
   const previous_summaries = settings.summary.send_summary_context
-    ? getPreviousSummaryContext(message_id, settings.summary.summary_context_count)
+    ? getPreviousSummaryContext(message_id, settings.summary.summary_context_count, original_message_ids)
     : [];
   const result = await summarizeMessage(settings.ai, source, {
     characters_enabled: settings.characters.enabled,
@@ -309,6 +355,7 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
     world_info_scan_messages: settings.summary.send_descriptions_and_world_info
       ? [{ role: message.role, content: source }]
       : undefined,
+    previous_original_message,
     previous_summaries,
     generation_id,
     should_cancel: () => cancelled_message_ids.has(message_id),
