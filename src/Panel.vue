@@ -180,11 +180,21 @@
               v-model="settings.summary.send_previous_message_original"
               type="checkbox"
             />
-            <label for="cosmos_memory_send_previous_message_original">{{ t`发送上一楼原文` }}</label>
+            <label for="cosmos_memory_send_previous_message_original">{{ t`发送上一条 AI 原文` }}</label>
           </div>
 
           <div class="cosmos-memory-hint">
-            {{ t`开启后，总结请求会附带紧邻上一楼的原文；若与已有总结重合，则只发送原文。` }}
+            {{ t`开启后，总结请求会附带当前回复之前最近一条 AI 回复的原文；若与已有总结重合，则只发送原文。` }}
+          </div>
+
+          <div class="cosmos-memory-row cosmos-memory-sub-option flex-container">
+            <input
+              id="cosmos_memory_include_opening_message_original"
+              v-model="settings.summary.include_opening_message_original"
+              type="checkbox"
+              :disabled="!settings.summary.send_previous_message_original"
+            />
+            <label for="cosmos_memory_include_opening_message_original">{{ t`包括开场白` }}</label>
           </div>
 
           <div class="cosmos-memory-row flex-container">
@@ -787,6 +797,10 @@ function sorted_location_rooms(scene: StoredLocationScene): StoredLocationRoom[]
   align-items: center;
   gap: 8px;
   margin: 8px 0;
+}
+
+.cosmos-memory-sub-option {
+  margin-left: 24px;
 }
 
 .cosmos-memory-field {
