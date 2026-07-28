@@ -245,10 +245,51 @@
             {{ t`开启后会在总结时维护当前时间、地点和角色状态，并注入到人物信息上方。` }}
           </div>
 
-          <div class="cosmos-memory-current-info">
+          <div v-if="editing_current_info" class="cosmos-memory-edit-form">
+            <label class="cosmos-memory-field">
+              <span>{{ t`当前时间` }}</span>
+              <input v-model.trim="editing_current_info.current_time" class="text_pole" type="text" />
+            </label>
+
+            <label class="cosmos-memory-field">
+              <span>{{ t`当前地点` }}</span>
+              <input v-model.trim="editing_current_info.location" class="text_pole" type="text" />
+            </label>
+
+            <div v-for="(character, index) in editing_current_info.characters" :key="index" class="cosmos-memory-edit-form">
+              <label class="cosmos-memory-field">
+                <span>{{ t`角色名` }}</span>
+                <input v-model.trim="character.name" class="text_pole" type="text" />
+              </label>
+              <label class="cosmos-memory-field">
+                <span>{{ t`角色服装` }}</span>
+                <input v-model.trim="character.clothing" class="text_pole" type="text" />
+              </label>
+              <label class="cosmos-memory-field">
+                <span>{{ t`角色状态` }}</span>
+                <input v-model.trim="character.status" class="text_pole" type="text" />
+              </label>
+              <div class="cosmos-memory-entity-actions">
+                <button class="menu_button" type="button" @click="editing_current_info.characters.splice(index, 1)">
+                  {{ t`移除该角色` }}
+                </button>
+              </div>
+            </div>
+
+            <div class="cosmos-memory-entity-actions">
+              <button class="menu_button" type="button" @click="handle_add_current_character">
+                {{ t`添加角色` }}
+              </button>
+              <button class="menu_button" type="button" @click="handle_save_current_info">{{ t`保存` }}</button>
+              <button class="menu_button" type="button" @click="editing_current_info = null">{{ t`取消` }}</button>
+            </div>
+          </div>
+
+          <div v-else class="cosmos-memory-current-info">
             <div class="cosmos-memory-row flex-container">
               <span>{{ t`当前时间` }}：{{ stored_current_info.current_time || t`尚未记录` }}</span>
               <input class="menu_button" type="button" :value="t`刷新`" @click="handle_refresh_current_info" />
+              <input class="menu_button" type="button" :value="t`编辑`" @click="handle_edit_current_info" />
             </div>
             <div class="cosmos-memory-row flex-container">
               <span>{{ t`当前地点` }}：{{ stored_current_info.location || t`尚未记录` }}</span>
@@ -349,117 +390,9 @@
       </div>
     </dialog>
 
-    <dialog ref="item_dialog" class="cosmos-memory-dialog">
-      <div class="cosmos-memory-dialog-header">
-        <b>{{ t`当前聊天物品信息` }}</b>
-        <button class="menu_button" type="button" @click="handle_close_items">{{ t`关闭` }}</button>
-      </div>
-
-      <div v-if="stored_items.length === 0" class="cosmos-memory-empty">
-        {{ t`当前聊天记录还没有物品信息。` }}
-      </div>
-
-      <div v-else class="cosmos-memory-summary-list">
-        <article v-for="item in stored_items" :key="item.name" class="cosmos-memory-summary-item">
-          <div class="cosmos-memory-summary-meta">
-            <b>{{ item.name }}</b>
-          </div>
-          <p>{{ item.brief }}</p>
-        </article>
-      </div>
-    </dialog>
-
-    <dialog ref="location_dialog" class="cosmos-memory-dialog">
-      <div class="cosmos-memory-dialog-header">
-        <b>{{ t`当前聊天地点信息` }}</b>
-        <button class="menu_button" type="button" @click="handle_close_locations">{{ t`关闭` }}</button>
-      </div>
-
-      <div v-if="stored_locations.length === 0" class="cosmos-memory-empty">
-        {{ t`当前聊天记录还没有地点信息。` }}
-      </div>
-
-      <div v-else class="cosmos-memory-summary-list">
-        <article
-          v-for="world in stored_locations"
-          :key="world.name"
-          class="cosmos-memory-summary-item cosmos-memory-location-item"
-        >
-          <div class="cosmos-memory-summary-meta">
-            <b>{{ t`世界/大陆` }}：{{ world.name }}</b>
-          </div>
-          <p v-if="world.brief">{{ world.brief }}</p>
-
-          <section v-for="country in sorted_location_countries(world)" :key="country.name">
-            <h4>{{ t`国家/地区` }}：{{ country.name }}</h4>
-            <p v-if="country.brief">{{ country.brief }}</p>
-
-            <section v-for="city in sorted_location_cities(country)" :key="city.name">
-              <h5>{{ t`城市/城镇` }}：{{ city.name }}</h5>
-              <p v-if="city.brief">{{ city.brief }}</p>
-
-              <section v-for="scene in sorted_location_scenes(city)" :key="scene.name">
-                <h6>{{ t`场景/建筑` }}：{{ scene.name }}</h6>
-                <p v-if="scene.brief">{{ scene.brief }}</p>
-
-                <dl v-if="sorted_location_rooms(scene).length > 0" class="cosmos-memory-location-rooms">
-                  <template v-for="room in sorted_location_rooms(scene)" :key="room.name">
-                    <dt>{{ t`房间/具体地点` }}：{{ room.name }}</dt>
-                    <dd v-if="room.brief">{{ room.brief }}</dd>
-                  </template>
-                </dl>
-              </section>
-            </section>
-          </section>
-        </article>
-      </div>
-    </dialog>
-
-    <dialog ref="character_dialog" class="cosmos-memory-dialog">
-      <div class="cosmos-memory-dialog-header">
-        <b>{{ t`当前聊天人物信息` }}</b>
-        <button class="menu_button" type="button" @click="handle_close_characters">{{ t`关闭` }}</button>
-      </div>
-
-      <div v-if="stored_characters.length === 0" class="cosmos-memory-empty">
-        {{ t`当前聊天记录还没有人物信息。` }}
-      </div>
-
-      <div v-else class="cosmos-memory-summary-list">
-        <section v-if="primary_characters.length > 0">
-          <h4>{{ t`主要角色` }}</h4>
-          <article v-for="character in primary_characters" :key="character.name" class="cosmos-memory-summary-item">
-            <div class="cosmos-memory-summary-meta">
-              <b>{{ character.name }}</b>
-            </div>
-            <dl class="cosmos-memory-character-fields">
-              <template v-if="character.background">
-                <dt>{{ t`背景介绍` }}</dt>
-                <dd>{{ character.background }}</dd>
-              </template>
-              <template v-if="character.appearance">
-                <dt>{{ t`外貌描写` }}</dt>
-                <dd>{{ character.appearance }}</dd>
-              </template>
-              <template v-if="character.personality">
-                <dt>{{ t`性格描写` }}</dt>
-                <dd>{{ character.personality }}</dd>
-              </template>
-            </dl>
-          </article>
-        </section>
-
-        <section v-if="secondary_characters.length > 0">
-          <h4>{{ t`次要角色` }}</h4>
-          <article v-for="character in secondary_characters" :key="character.name" class="cosmos-memory-summary-item">
-            <div class="cosmos-memory-summary-meta">
-              <b>{{ character.name }}</b>
-            </div>
-            <p>{{ character.brief }}</p>
-          </article>
-        </section>
-      </div>
-    </dialog>
+    <ItemDialog ref="item_dialog" />
+    <LocationDialog ref="location_dialog" />
+    <CharacterDialog ref="character_dialog" />
   </div>
 </template>
 
@@ -468,29 +401,21 @@ import { fetchCustomModelNames, sendPing } from '@/api/ai';
 import { regenerateCharactersFromChat } from '@/core/character-regeneration';
 import { applySummaryCompressionForNextGeneration } from '@/core/compression';
 import {
-  getStoredCharacters,
-  type PrimaryCharacter,
-  type SecondaryCharacter,
-  type StoredCharacter,
-} from '@/core/characters';
-import { getStoredItems, type StoredItem } from '@/core/items';
-import {
   getStoredMessageSummaries,
   runMemoryBacktrackCheck,
   stopSummarizeTasks,
   type MemoryBacktrackCheckResult,
   type MessageSummary,
 } from '@/core/summary';
-import { getStoredCurrentInfo, type CurrentInfo } from '@/core/current-info';
 import {
-  getStoredLocations,
-  type StoredLocationCity,
-  type StoredLocationCountry,
-  type StoredLocationRoom,
-  type StoredLocationScene,
-  type StoredLocationWorld,
-} from '@/core/locations';
+  getStoredCurrentInfo,
+  manualSaveCurrentInfo,
+  type CurrentInfo,
+} from '@/core/current-info';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
+import CharacterDialog from '@/panel/CharacterDialog.vue';
+import ItemDialog from '@/panel/ItemDialog.vue';
+import LocationDialog from '@/panel/LocationDialog.vue';
 import VectorRecallTab from '@/panel/VectorRecallTab.vue';
 import { useSettingsStore } from '@/store/settings';
 import { CUSTOM_API_SOURCE_OPTIONS, DEFAULT_MAX_OUTPUT_TOKENS } from '@/type/settings';
@@ -501,6 +426,13 @@ const custom_api_source_options = CUSTOM_API_SOURCE_OPTIONS.filter(option => opt
 type TestResult = {
   type: 'success' | 'error';
   message: string;
+};
+
+/** 当前信息编辑表单：characters 由 Record 展平为数组便于 v-for 编辑 */
+type EditingCurrentInfo = {
+  current_time: string;
+  location: string;
+  characters: Array<{ name: string; clothing: string; status: string }>;
 };
 
 const { settings } = storeToRefs(useSettingsStore());
@@ -522,18 +454,16 @@ const is_checking_memory = ref(false);
 const is_regenerating_characters = ref(false);
 const test_result = ref<TestResult | null>(null);
 const stored_summaries = ref<MessageSummary[]>([]);
-const stored_characters = ref<StoredCharacter[]>([]);
-const stored_items = ref<StoredItem[]>([]);
-const stored_locations = ref<StoredLocationWorld[]>([]);
 const stored_current_info = ref<CurrentInfo>({
   current_time: '',
   location: '',
   characters: {},
 });
+const editing_current_info = ref<EditingCurrentInfo | null>(null);
 const summary_dialog = ref<HTMLDialogElement | null>(null);
-const character_dialog = ref<HTMLDialogElement | null>(null);
-const item_dialog = ref<HTMLDialogElement | null>(null);
-const location_dialog = ref<HTMLDialogElement | null>(null);
+const character_dialog = ref<InstanceType<typeof CharacterDialog> | null>(null);
+const item_dialog = ref<InstanceType<typeof ItemDialog> | null>(null);
+const location_dialog = ref<InstanceType<typeof LocationDialog> | null>(null);
 
 const model_options = computed(() => {
   return [...new Set([settings.value.ai.selected_model, ...settings.value.ai.available_models])]
@@ -559,14 +489,6 @@ const is_ai_request_disabled = computed(() => {
 
 const is_regenerate_characters_disabled = computed(() => {
   return is_regenerating_characters.value || is_ai_request_disabled.value;
-});
-
-const primary_characters = computed(() => {
-  return stored_characters.value.filter((character): character is PrimaryCharacter => character.type === 'primary');
-});
-
-const secondary_characters = computed(() => {
-  return stored_characters.value.filter((character): character is SecondaryCharacter => character.type === 'secondary');
 });
 
 const current_character_entries = computed(() => {
@@ -623,34 +545,61 @@ function handle_close_summaries() {
 }
 
 function handle_show_characters() {
-  stored_characters.value = getStoredCharacters();
-  character_dialog.value?.showModal();
-}
-
-function handle_close_characters() {
-  character_dialog.value?.close();
+  character_dialog.value?.open();
 }
 
 function handle_show_items() {
-  stored_items.value = getStoredItems();
-  item_dialog.value?.showModal();
-}
-
-function handle_close_items() {
-  item_dialog.value?.close();
+  item_dialog.value?.open();
 }
 
 function handle_show_locations() {
-  stored_locations.value = getStoredLocations();
-  location_dialog.value?.showModal();
-}
-
-function handle_close_locations() {
-  location_dialog.value?.close();
+  location_dialog.value?.open();
 }
 
 function handle_refresh_current_info() {
   refresh_stored_current_info();
+}
+
+function handle_edit_current_info() {
+  refresh_stored_current_info();
+  editing_current_info.value = {
+    current_time: stored_current_info.value.current_time,
+    location: stored_current_info.value.location,
+    characters: Object.entries(stored_current_info.value.characters).map(([name, character]) => ({
+      name,
+      clothing: character.clothing,
+      status: character.status,
+    })),
+  };
+}
+
+function handle_add_current_character() {
+  editing_current_info.value?.characters.push({ name: '', clothing: '', status: '' });
+}
+
+function handle_save_current_info() {
+  const form = editing_current_info.value;
+  if (!form) {
+    return;
+  }
+
+  try {
+    stored_current_info.value = manualSaveCurrentInfo({
+      current_time: form.current_time,
+      location: form.location,
+      characters: Object.fromEntries(
+        form.characters
+          .filter(character => character.name.trim())
+          .map(character => [character.name.trim(), { clothing: character.clothing, status: character.status }]),
+      ),
+    });
+    editing_current_info.value = null;
+    triggerUpdateStatusBar();
+    toastr.success(t`当前信息已保存。`, 'Cosmos Memory');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    toastr.error(message, t`Cosmos Memory 保存当前信息失败`);
+  }
 }
 
 function refresh_stored_current_info() {
@@ -668,9 +617,6 @@ function refresh_stored_current_info() {
 
 function refresh_stored_memory() {
   stored_summaries.value = getStoredMessageSummaries();
-  stored_characters.value = getStoredCharacters();
-  stored_items.value = getStoredItems();
-  stored_locations.value = getStoredLocations();
   refresh_stored_current_info();
 }
 
@@ -722,7 +668,7 @@ async function handle_regenerate_characters() {
   is_regenerating_characters.value = true;
 
   try {
-    stored_characters.value = await regenerateCharactersFromChat(settings.value.ai);
+    await regenerateCharactersFromChat(settings.value.ai);
     toastr.success(t`人物信息重新生成成功。`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -780,22 +726,6 @@ function handle_status_bar_toggle() {
     // 关闭时移除已有状态栏
     $('#chat .cosmos-memory-status-bar', window.parent.document).remove();
   }
-}
-
-function sorted_location_countries(world: StoredLocationWorld): StoredLocationCountry[] {
-  return Object.values(world.countries).sort((left, right) => left.name.localeCompare(right.name));
-}
-
-function sorted_location_cities(country: StoredLocationCountry): StoredLocationCity[] {
-  return Object.values(country.cities).sort((left, right) => left.name.localeCompare(right.name));
-}
-
-function sorted_location_scenes(city: StoredLocationCity): StoredLocationScene[] {
-  return Object.values(city.scenes).sort((left, right) => left.name.localeCompare(right.name));
-}
-
-function sorted_location_rooms(scene: StoredLocationScene): StoredLocationRoom[] {
-  return Object.values(scene.rooms).sort((left, right) => left.name.localeCompare(right.name));
 }
 </script>
 
@@ -871,94 +801,7 @@ function sorted_location_rooms(scene: StoredLocationScene): StoredLocationRoom[]
   border: 1px solid #c62828;
 }
 
-.cosmos-memory-dialog {
-  background: var(--SmartThemeBlurTintColor);
-  border: 1px solid var(--SmartThemeBorderColor);
-  border-radius: 8px;
-  color: var(--SmartThemeBodyColor);
-  max-height: min(720px, 80vh);
-  max-width: min(720px, 90vw);
-  padding: 12px;
-  width: 720px;
-}
-
-.cosmos-memory-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.45);
-}
-
-.cosmos-memory-dialog-header,
-.cosmos-memory-summary-meta {
-  align-items: center;
-  display: flex;
-  gap: 12px;
-  justify-content: space-between;
-}
-
-.cosmos-memory-empty {
-  margin-top: 12px;
-  opacity: 0.85;
-}
-
-.cosmos-memory-summary-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 12px;
-  overflow-y: auto;
-}
-
-.cosmos-memory-summary-item {
-  border: 1px solid var(--SmartThemeBorderColor);
-  border-radius: 8px;
-  padding: 10px;
-}
-
-.cosmos-memory-summary-item p {
-  margin: 8px 0 0;
-  white-space: pre-wrap;
-}
-
-.cosmos-memory-summary-meta span {
-  font-size: 0.9em;
-  opacity: 0.75;
-}
-
-.cosmos-memory-character-fields {
-  margin: 8px 0 0;
-}
-
-.cosmos-memory-character-fields dt {
-  font-weight: 700;
-  margin-top: 8px;
-}
-
-.cosmos-memory-character-fields dd {
-  margin: 4px 0 0;
-  white-space: pre-wrap;
-}
-
-.cosmos-memory-location-item section {
-  margin: 10px 0 0 12px;
-}
-
-.cosmos-memory-location-item h4,
-.cosmos-memory-location-item h5 {
-  margin: 8px 0 0;
-}
-
-.cosmos-memory-location-rooms {
-  margin: 8px 0 0 12px;
-}
-
-.cosmos-memory-location-rooms dt {
-  font-weight: 700;
-  margin-top: 6px;
-}
-
-.cosmos-memory-location-rooms dd {
-  margin: 4px 0 0 12px;
-  white-space: pre-wrap;
-}
+/* 弹窗、编辑表单等公共样式在 global.css 中（scoped 样式对子组件 dialog 不生效） */
 
 /* 扩展设置面板 Tab 样式 */
 .cosmos-settings-tabs {

@@ -3,9 +3,10 @@ import { getStoredCurrentInfo } from '@/core/current-info';
 import { getStoredCharacters } from '@/core/characters';
 import { getStoredItems } from '@/core/items';
 import { getStoredLocations } from '@/core/locations';
+import { getLastRecallInfo } from '@/core/vector-recall';
 import { useSettingsStore } from '@/store/settings';
 
-let activeTab: 'current' | 'characters' | 'items' | 'locations' = 'current';
+let activeTab: 'current' | 'characters' | 'items' | 'locations' | 'recall' = 'current';
 let updateTimeout: any = null;
 
 /**
@@ -206,6 +207,37 @@ function renderTabContent($container: JQuery<HTMLElement>) {
         $container.append($tree);
         break;
       }
+
+      case 'recall': {
+        const recall_info = getLastRecallInfo();
+        if (!recall_info || recall_info.fragments.length === 0) {
+          $container.append($('<div class="cosmos-empty">').text(t`上次生成没有召回历史剧情。`));
+          break;
+        }
+
+        const $list = $('<div class="cosmos-info-list">');
+        const recalled_at = new Date(recall_info.recalled_at);
+        const time_text = Number.isNaN(recalled_at.getTime()) ? '' : recalled_at.toLocaleString();
+        const summary_text = t`召回了 {count} 条历史片段`.replace('{count}', String(recall_info.fragments.length));
+        const method_text = recall_info.rerank_used ? t`（已精排）` : '';
+        $list.append(
+          $('<div class="cosmos-info-item">')
+            .append($('<strong>').text(`${summary_text}${method_text}`))
+            .append($('<span>').text(time_text)),
+        );
+
+        for (const fragment of recall_info.fragments) {
+          const $card = $('<div class="cosmos-item-card">');
+          const score_text =
+            fragment.relevance_score !== undefined ? `（${t`相关度`} ${fragment.relevance_score.toFixed(2)}）` : '';
+          $card.append($('<div class="cosmos-item-name">').text(`${t`楼层`} #${fragment.message_id}${score_text}`));
+          $card.append($('<div class="cosmos-item-detail">').text(`${fragment.text_preview}…`));
+          $list.append($card);
+        }
+
+        $container.append($list);
+        break;
+      }
     }
   } catch (error) {
     console.error('[CosmosMemory] 渲染状态栏 Tab 内容失败', error);
@@ -236,6 +268,7 @@ export function updateStatusBar(): boolean {
     { id: 'characters' as const, name: t`人物信息`, enabled: settings.characters.enabled },
     { id: 'items' as const, name: t`物品信息`, enabled: settings.items.enabled },
     { id: 'locations' as const, name: t`地点信息`, enabled: settings.locations.enabled },
+    { id: 'recall' as const, name: t`召回`, enabled: settings.vector_recall.enabled },
   ];
 
   const enabledTabs = allTabsConfig.filter(tab => tab.enabled);

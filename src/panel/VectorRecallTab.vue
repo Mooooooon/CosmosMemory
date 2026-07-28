@@ -143,6 +143,51 @@
     <hr class="sysHR" />
 
     <div class="cosmos-memory-row flex-container">
+      <input id="cosmos_memory_rerank_enabled" v-model="settings.vector_recall.rerank_enabled" type="checkbox" />
+      <label for="cosmos_memory_rerank_enabled">{{ t`启用 Rerank 精排` }}</label>
+    </div>
+
+    <div class="cosmos-memory-hint">
+      {{ t`对向量检索候选用交叉编码器重排，显著提升召回准确度；与 Embedding 共用 API Key，失败时自动降级为向量排序。` }}
+    </div>
+
+    <template v-if="settings.vector_recall.rerank_enabled">
+      <div class="cosmos-memory-row flex-container">
+        <input
+          class="menu_button"
+          type="button"
+          :value="is_fetching_rerank_models ? t`获取中...` : t`获取 Rerank 模型列表`"
+          :disabled="is_fetching_rerank_models || !settings.vector_recall.api_key.trim()"
+          @click="handle_fetch_rerank_models"
+        />
+      </div>
+
+      <label class="cosmos-memory-field">
+        <span>{{ t`Rerank 模型` }}</span>
+        <select v-model="settings.vector_recall.rerank_model" class="text_pole">
+          <option v-for="model in rerank_model_options" :key="model" :value="model">
+            {{ model }}
+          </option>
+        </select>
+      </label>
+
+      <label class="cosmos-memory-field">
+        <span>{{ t`Rerank 相关度阈值` }}</span>
+        <input
+          v-model.number="settings.vector_recall.rerank_score_threshold"
+          class="text_pole"
+          type="number"
+          min="0"
+          max="1"
+          step="0.05"
+          @change="normalize_rerank_score_threshold"
+        />
+      </label>
+    </template>
+
+    <hr class="sysHR" />
+
+    <div class="cosmos-memory-row flex-container">
       <span>{{ t`已入库片段` }}：{{ stored_count === null ? t`未知` : stored_count }}</span>
       <input class="menu_button" type="button" :value="t`刷新`" @click="handle_refresh_status" />
     </div>
@@ -175,6 +220,7 @@
 
 <script setup lang="ts">
 import { fetchEmbeddingModelNames, pingEmbeddingService } from '@/api/embedding';
+import { fetchSiliconFlowModelNames } from '@/api/siliconflow';
 import { getVectorIndexStatus, purgeVectorIndex, rebuildVectorIndex, syncChatVectors } from '@/core/vector-recall';
 import { useSettingsStore } from '@/store/settings';
 import { DEFAULT_VECTOR_RECALL_INJECTION_DEPTH, DEFAULT_VECTOR_RECALL_MAX_CHARS } from '@/type/settings';
@@ -188,6 +234,7 @@ type TestResult = {
 const { settings } = storeToRefs(useSettingsStore());
 
 const is_fetching_models = ref(false);
+const is_fetching_rerank_models = ref(false);
 const is_testing = ref(false);
 const is_syncing = ref(false);
 const is_rebuilding = ref(false);
@@ -199,6 +246,14 @@ const is_busy = computed(() => is_syncing.value || is_rebuilding.value || is_pur
 
 const model_options = computed(() => {
   return [...new Set([settings.value.vector_recall.model, ...settings.value.vector_recall.available_models])]
+    .map(model => model.trim())
+    .filter(Boolean);
+});
+
+const rerank_model_options = computed(() => {
+  return [
+    ...new Set([settings.value.vector_recall.rerank_model, ...settings.value.vector_recall.rerank_available_models]),
+  ]
     .map(model => model.trim())
     .filter(Boolean);
 });
@@ -236,6 +291,26 @@ async function handle_fetch_embedding_models() {
     test_result.value = { type: 'error', message };
   } finally {
     is_fetching_models.value = false;
+  }
+}
+
+async function handle_fetch_rerank_models() {
+  is_fetching_rerank_models.value = true;
+
+  try {
+    const models = await fetchSiliconFlowModelNames(settings.value.vector_recall.api_key.trim(), 'reranker');
+    settings.value.vector_recall.rerank_available_models = models;
+
+    if (!settings.value.vector_recall.rerank_model && models.length > 0) {
+      settings.value.vector_recall.rerank_model = models[0]!;
+    }
+
+    toastr.success(t`Rerank 模型列表获取成功。`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    toastr.error(message);
+  } finally {
+    is_fetching_rerank_models.value = false;
   }
 }
 
@@ -344,6 +419,11 @@ function normalize_top_k() {
 function normalize_score_threshold() {
   const value = settings.value.vector_recall.score_threshold;
   settings.value.vector_recall.score_threshold = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0.35;
+}
+
+function normalize_rerank_score_threshold() {
+  const value = settings.value.vector_recall.rerank_score_threshold;
+  settings.value.vector_recall.rerank_score_threshold = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0.3;
 }
 
 function normalize_protect_count() {

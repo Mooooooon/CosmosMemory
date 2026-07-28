@@ -82,6 +82,7 @@ export const StatusBarSettings = z
   .prefault({});
 
 export const DEFAULT_EMBEDDING_MODEL = 'Qwen/Qwen3-Embedding-0.6B';
+export const DEFAULT_RERANK_MODEL = 'BAAI/bge-reranker-v2-m3';
 /** 向量召回注入深度：低于运行时记忆注入（9999-10002），高于全部聊天正文 */
 export const DEFAULT_VECTOR_RECALL_INJECTION_DEPTH = 9998;
 export const DEFAULT_VECTOR_RECALL_MAX_CHARS = 8000;
@@ -107,6 +108,12 @@ export const VectorRecallSettings = z
     injection_depth: z.number().int().min(0).default(DEFAULT_VECTOR_RECALL_INJECTION_DEPTH),
     /** 单楼层入库前的截断字符数，hash 按截断后文本计算以保证增量同步幂等 */
     max_chars_per_message: z.number().int().min(200).default(DEFAULT_VECTOR_RECALL_MAX_CHARS),
+    /** 对向量检索候选做 rerank 精排（与 embedding 共用 API Key） */
+    rerank_enabled: z.boolean().default(false),
+    rerank_model: z.string().default(DEFAULT_RERANK_MODEL),
+    rerank_available_models: z.array(z.string()).default([]),
+    /** rerank 相关度阈值，低于该分数的候选不注入 */
+    rerank_score_threshold: z.number().min(0).max(1).default(0.3),
   })
   .prefault({});
 

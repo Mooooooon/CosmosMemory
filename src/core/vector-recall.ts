@@ -5,6 +5,7 @@
  * 与压缩摘要互补：摘要提供全局脉络，向量召回找回相关原文细节。
  */
 import { fetchEmbeddings, type EmbeddingConfig } from '@/api/embedding';
+import { rerankDocuments, type RerankConfig } from '@/api/rerank';
 import {
   deleteVectorItems,
   insertVectorItems,
@@ -14,6 +15,7 @@ import {
   type VectorItem,
   type VectorQueryHit,
 } from '@/api/vector-storage';
+import { STORAGE_ROOT } from '@/core/entity-store';
 import { isCosmosMemoryMessage } from '@/core/message-flags';
 import { getRegexedAiContent, OPENING_MESSAGE_ID } from '@/core/summary';
 import { useSettingsStore } from '@/store/settings';
@@ -22,6 +24,8 @@ import { getCurrentChatId } from '@sillytavern/script';
 import { getStringHash } from '@sillytavern/scripts/utils';
 
 export const VECTOR_RECALL_PROMPT_ID = 'cosmos_memory_vector_recall';
+/** 上次召回详情在聊天变量中的存储路径（随聊天走，供状态栏透明化展示） */
+const LAST_RECALL_STORAGE_PATH = `${STORAGE_ROOT}.last_recall`;
 
 /** 同步防抖间隔：等编辑/删除等连续操作稳定后再统一 diff，避免频繁请求 */
 const SYNC_DEBOUNCE_MS = 3000;
@@ -270,6 +274,82 @@ function buildRecallPromptContent(hits: VectorQueryHit[]): string {
   ].join('\n');
 }
 
+/** 单条被召回片段的透明化记录 */
+export type RecalledFragment = {
+  message_id: number;
+  /** 片段开头预览，供状态栏展示 */
+  text_preview: string;
+  /** rerank 相关度分数；未启用 rerank 时为 undefined */
+  relevance_score?: number;
+};
+
+/** 上次召回的完整记录，供状态栏展示「AI 这次记起了什么」 */
+export type LastRecallInfo = {
+  /** ISO 时间戳 */
+  recalled_at: string;
+  /** 查询文本预览 */
+  query_preview: string;
+  /** 是否经过 rerank 精排 */
+  rerank_used: boolean;
+  fragments: RecalledFragment[];
+};
+
+const FRAGMENT_PREVIEW_CHARS = 120;
+
+function isLastRecallInfo(value: unknown): value is LastRecallInfo {
+  return _.isPlainObject(value) && Array.isArray((value as Partial<LastRecallInfo>).fragments);
+}
+
+export function getLastRecallInfo(): LastRecallInfo | null {
+  const variables = window.TavernHelper.getVariables({ type: 'chat' });
+  const value = _.get(variables, LAST_RECALL_STORAGE_PATH);
+  return isLastRecallInfo(value) ? value : null;
+}
+
+function saveLastRecallInfo(info: LastRecallInfo) {
+  window.TavernHelper.updateVariablesWith(
+    variables => {
+      _.set(variables, LAST_RECALL_STORAGE_PATH, info);
+      return variables;
+    },
+    { type: 'chat' },
+  );
+}
+
+function getRerankConfig(settings: VectorRecallSettings): RerankConfig | null {
+  const api_key = settings.api_key.trim();
+  const model = settings.rerank_model.trim();
+  if (!settings.rerank_enabled || !api_key || !model) {
+    return null;
+  }
+
+  return { api_key, model };
+}
+
+/**
+ * 用 rerank 交叉编码器对候选精排：
+ * 返回按相关度过滤并截断到 top_k 的命中及其分数。
+ * rerank 失败时抛错，由调用方降级回纯向量排序。
+ */
+async function rerankHits(
+  search_text: string,
+  candidates: VectorQueryHit[],
+  settings: VectorRecallSettings,
+  config: RerankConfig,
+): Promise<Array<{ hit: VectorQueryHit; score: number }>> {
+  const results = await rerankDocuments(
+    search_text,
+    candidates.map(candidate => candidate.text),
+    settings.top_k,
+    config,
+  );
+
+  return results
+    .filter(result => result.relevance_score >= settings.rerank_score_threshold)
+    .map(result => ({ hit: candidates[result.index]!, score: result.relevance_score }))
+    .filter(entry => entry.hit !== undefined);
+}
+
 /**
  * 生成前召回注入。必须在压缩流程之后调用，
  * 此时楼层的 is_hidden 已是本次生成的最终状态。
@@ -308,7 +388,8 @@ export async function applyVectorRecallForNextGeneration(): Promise<number[]> {
 
   const protected_threshold = getProtectedFloorThreshold(settings);
   const message_by_id = new Map(getOriginalAssistantMessages().map(message => [message.message_id, message]));
-  const hits = raw_hits
+  // 服务端已按相似度降序返回，过滤后仍保持相关度顺序
+  const candidates = raw_hits
     .filter(hit => hit.index < protected_threshold)
     .filter(hit => {
       const message = message_by_id.get(hit.index);
@@ -319,11 +400,39 @@ export async function applyVectorRecallForNextGeneration(): Promise<number[]> {
 
       // 未隐藏楼层的原文本就在上下文中，默认不重复注入
       return !settings.only_recall_hidden || message.is_hidden;
-    })
-    .sort((left, right) => left.index - right.index)
-    .slice(0, settings.top_k);
+    });
 
-  if (hits.length === 0) {
+  // rerank 精排：交叉编码器逐对打分，比向量余弦相似度准得多；失败时降级回向量顺序
+  const rerank_config = getRerankConfig(settings);
+  let scored_hits: Array<{ hit: VectorQueryHit; score?: number }>;
+  let rerank_used = false;
+  if (rerank_config && candidates.length > 0) {
+    try {
+      scored_hits = await rerankHits(search_text, candidates, settings, rerank_config);
+      rerank_used = true;
+    } catch (error) {
+      console.error('[CosmosMemory] Rerank 失败，降级为向量相似度排序', error);
+      scored_hits = candidates.slice(0, settings.top_k).map(hit => ({ hit }));
+    }
+  } else {
+    scored_hits = candidates.slice(0, settings.top_k).map(hit => ({ hit }));
+  }
+
+  // 注入按楼层时间线升序，保持剧情阅读顺序
+  const ordered_hits = [...scored_hits].sort((left, right) => left.hit.index - right.hit.index);
+
+  saveLastRecallInfo({
+    recalled_at: new Date().toISOString(),
+    query_preview: search_text.slice(-FRAGMENT_PREVIEW_CHARS),
+    rerank_used,
+    fragments: ordered_hits.map(entry => ({
+      message_id: entry.hit.index,
+      text_preview: entry.hit.text.slice(0, FRAGMENT_PREVIEW_CHARS),
+      relevance_score: entry.score,
+    })),
+  });
+
+  if (ordered_hits.length === 0) {
     return [];
   }
 
@@ -334,15 +443,16 @@ export async function applyVectorRecallForNextGeneration(): Promise<number[]> {
         position: 'in_chat' as const,
         depth: settings.injection_depth,
         role: 'system' as const,
-        content: buildRecallPromptContent(hits),
+        content: buildRecallPromptContent(ordered_hits.map(entry => entry.hit)),
       },
     ],
     { once: true },
   );
 
-  const recalled_ids = hits.map(hit => hit.index);
+  const recalled_ids = ordered_hits.map(entry => entry.hit.index);
   console.info('[CosmosMemory] 已注入向量召回内容', {
     recalled_message_ids: recalled_ids,
+    rerank_used,
     query_length: search_text.length,
   });
   return recalled_ids;

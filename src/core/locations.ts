@@ -336,6 +336,15 @@ export function rebuildStoredLocationsFromSummaries(summaries: SummaryWithLocati
   return locationStore.rebuildFromSummaries(summaries);
 }
 
+/**
+ * 手动应用一条地点操作（编辑各层级 brief 或删除节点）。
+ * LocationOperation 本身支持任意层级的 set/delete，直接复用；
+ * 操作进入手动日志，rebuild 时重放，用户修正不被回滚冲掉。
+ */
+export function manualApplyLocationOperation(operation: LocationOperation): StoredLocationWorld[] {
+  return locationStore.applyManualOperation(operation);
+}
+
 export function formatLocationsForPrompt(locations: StoredLocationWorld[] = getStoredLocations()): string {
   if (locations.length === 0) {
     return '';

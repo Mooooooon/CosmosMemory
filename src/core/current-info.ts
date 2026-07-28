@@ -121,6 +121,18 @@ export function applyCurrentInfoUpdate(update: CurrentInfoUpdate | null | undefi
   return next_info;
 }
 
+/**
+ * 手动整体覆盖当前信息。
+ * 当前信息是快照型数据，随每次总结自然演进，手动修正会作为下一次演进的基线；
+ * 不需要手动操作日志——rebuild 场景下按摘要重放出的快照本就是期望结果。
+ */
+export function manualSaveCurrentInfo(current_info: CurrentInfo): CurrentInfo {
+  const normalized_info = normalizeCurrentInfo(current_info);
+  saveStoredCurrentInfo(normalized_info);
+  console.info('[CosmosMemory] 已手动更新当前信息');
+  return normalized_info;
+}
+
 export function rebuildStoredCurrentInfoFromSummaries(summaries: SummaryWithCurrentInfoUpdate[]): CurrentInfo {
   const current_info = summaries.reduce<CurrentInfo>((info, summary) => {
     const next_info = normalizeCurrentInfo(summary.current_info_update);

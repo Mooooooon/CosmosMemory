@@ -181,3 +181,150 @@
   font-size: 0.95em;
   line-height: 1.4;
 }
+
+/* ===== 设置面板弹窗与编辑表单公共样式（Panel.vue 与 src/panel/ 子组件共用） ===== */
+
+.cosmos-memory-dialog {
+  background: var(--SmartThemeBlurTintColor);
+  border: 1px solid var(--SmartThemeBorderColor);
+  border-radius: 8px;
+  color: var(--SmartThemeBodyColor);
+  max-height: min(720px, 80vh);
+  max-width: min(720px, 90vw);
+  padding: 12px;
+  width: 720px;
+}
+
+.cosmos-memory-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.cosmos-memory-dialog-header,
+.cosmos-memory-summary-meta {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.cosmos-memory-dialog-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.cosmos-memory-empty {
+  margin-top: 12px;
+  opacity: 0.85;
+}
+
+.cosmos-memory-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  overflow-y: auto;
+}
+
+.cosmos-memory-summary-item {
+  border: 1px solid var(--SmartThemeBorderColor);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.cosmos-memory-summary-item p {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+}
+
+.cosmos-memory-summary-meta span {
+  font-size: 0.9em;
+  opacity: 0.75;
+}
+
+.cosmos-memory-character-fields {
+  margin: 8px 0 0;
+}
+
+.cosmos-memory-character-fields dt {
+  font-weight: 700;
+  margin-top: 8px;
+}
+
+.cosmos-memory-character-fields dd {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+}
+
+.cosmos-memory-location-item section {
+  margin: 10px 0 0 12px;
+}
+
+.cosmos-memory-location-item h4,
+.cosmos-memory-location-item h5 {
+  margin: 8px 0 0;
+}
+
+.cosmos-memory-location-rooms {
+  margin: 8px 0 0 12px;
+}
+
+.cosmos-memory-location-rooms dt {
+  font-weight: 700;
+  margin-top: 6px;
+}
+
+.cosmos-memory-location-rooms dd {
+  margin: 4px 0 0 12px;
+  white-space: pre-wrap;
+}
+
+.cosmos-memory-row {
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.cosmos-memory-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.cosmos-memory-field > span,
+.cosmos-memory-hint {
+  opacity: 0.85;
+}
+
+.cosmos-memory-edit-form {
+  border: 1px solid var(--SmartThemeBorderColor);
+  border-radius: 8px;
+  margin-top: 12px;
+  padding: 10px;
+}
+
+.cosmos-memory-edit-form textarea {
+  min-height: 60px;
+  resize: vertical;
+  width: 100%;
+}
+
+.cosmos-memory-entity-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.cosmos-memory-inline-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.cosmos-memory-inline-actions .menu_button {
+  font-size: 0.82em;
+  margin: 0;
+  padding: 2px 8px;
+}

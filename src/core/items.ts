@@ -102,6 +102,22 @@ export function rebuildStoredItemsFromSummaries(summaries: SummaryWithItemOperat
   return itemStore.rebuildFromSummaries(summaries);
 }
 
+/**
+ * 手动保存一个物品（新建或整体覆盖编辑）。
+ * 先 delete 再 set 实现干净替换；original_name 用于改名场景下删除旧键记录。
+ * 操作进入手动日志，rebuild 时重放。
+ */
+export function manualSaveItem(item: Pick<StoredItem, 'name' | 'brief'>, original_name?: string): StoredItem[] {
+  const delete_name = normalizeText(original_name) || item.name;
+  itemStore.applyManualOperation({ type: 'delete', name: delete_name });
+  return itemStore.applyManualOperation({ type: 'set', name: item.name, brief: item.brief });
+}
+
+/** 手动删除一个物品（进入手动操作日志，rebuild 后依然保持删除） */
+export function manualDeleteItem(name: string): StoredItem[] {
+  return itemStore.applyManualOperation({ type: 'delete', name });
+}
+
 export function formatItemsForPrompt(items: StoredItem[] = getStoredItems()): string {
   if (items.length === 0) {
     return '';

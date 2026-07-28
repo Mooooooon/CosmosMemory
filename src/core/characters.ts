@@ -192,6 +192,43 @@ export function replaceStoredCharacters(characters: StoredCharacter[]): StoredCh
   return characterStore.replaceAll(characters, { updated_at: new Date().toISOString() });
 }
 
+/**
+ * 手动保存一个人物（新建或整体覆盖编辑）。
+ * 先 delete 再 set 实现干净替换：set 语义只覆盖非空字段，无法清空既有字段；
+ * original_name 用于改名场景下删除旧键记录。
+ * 所有操作都会进入手动操作日志，rebuild 时按序重放，用户修正不被回滚冲掉。
+ */
+export function manualSaveCharacter(character: StoredCharacter, original_name?: string): StoredCharacter[] {
+  const delete_name = normalizeText(original_name) || character.name;
+  characterStore.applyManualOperation({
+    type: 'delete',
+    character_type: character.type,
+    name: delete_name,
+  });
+  const operation: CharacterOperation =
+    character.type === 'primary'
+      ? {
+          type: 'set',
+          character_type: 'primary',
+          name: character.name,
+          background: character.background,
+          appearance: character.appearance,
+          personality: character.personality,
+        }
+      : {
+          type: 'set',
+          character_type: 'secondary',
+          name: character.name,
+          brief: character.brief,
+        };
+  return characterStore.applyManualOperation(operation);
+}
+
+/** 手动删除一个人物（进入手动操作日志，rebuild 后依然保持删除） */
+export function manualDeleteCharacter(name: string, character_type: CharacterKind): StoredCharacter[] {
+  return characterStore.applyManualOperation({ type: 'delete', character_type, name });
+}
+
 export function formatCharactersForPrompt(characters: StoredCharacter[] = getStoredCharacters()): string {
   const primary_characters = characters.filter(
     (character): character is PrimaryCharacter => character.type === 'primary',
