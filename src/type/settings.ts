@@ -35,6 +35,17 @@ export const CompressionSettings = z
   })
   .prefault({});
 
+export type SummaryRollupSettings = z.infer<typeof SummaryRollupSettings>;
+export const SummaryRollupSettings = z
+  .object({
+    enabled: z.boolean().default(false),
+    /** 未合并的旧摘要达到该条数时，触发二次总结并入前情文章 */
+    trigger_summary_count: z.number().int().min(2).default(30),
+    /** 最近 N 条摘要不参与合并，保留逐楼细节 */
+    retained_recent_summary_count: z.number().int().min(0).default(10),
+  })
+  .prefault({});
+
 export type SummarySettings = z.infer<typeof SummarySettings>;
 export const SummarySettings = z
   .object({
@@ -123,6 +134,7 @@ export const Settings = z
     ai: AiSettings,
     compression: CompressionSettings,
     summary: SummarySettings,
+    summary_rollup: SummaryRollupSettings,
     characters: CharacterSettings,
     current_info: CurrentInfoSettings,
     items: ItemSettings,

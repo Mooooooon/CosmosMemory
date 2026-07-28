@@ -183,5 +183,19 @@
   "添加角色": "Add character",
   "移除该角色": "Remove this character",
   "当前信息已保存。": "Current information saved.",
-  "Cosmos Memory 保存当前信息失败": "Cosmos Memory failed to save current information"
+  "Cosmos Memory 保存当前信息失败": "Cosmos Memory failed to save current information",
+  "启用二次压缩": "Enable second-pass compression",
+  "开启后，当未合并的总结达到触发条数时，会自动将旧总结二次总结成一篇连贯的前情文章，替代逐楼摘要注入。": "When enabled, once unmerged summaries reach the trigger count, older summaries are automatically condensed into a single coherent recap article, which replaces per-message summaries during injection.",
+  "触发条数": "Trigger count",
+  "保留最近总结条数": "Recent summaries to keep",
+  "最近的总结不参与合并，保留逐楼细节；只有更早的总结会被并入前情文章。": "The most recent summaries are excluded from merging to keep per-message detail; only older summaries are merged into the recap article.",
+  "二次总结中...": "Condensing...",
+  "立即二次总结": "Condense now",
+  "前情文章": "Recap article",
+  "已合并 {count} 条总结": "{count} summaries merged",
+  "已并入前情文章": "merged into recap article",
+  "二次总结完成，已合并 {count} 条总结。": "Second-pass summary finished; {count} summaries merged.",
+  "没有可合并的总结。": "No summaries available to merge.",
+  "Cosmos Memory 二次总结失败": "Cosmos Memory second-pass summary failed",
+  "二次总结请求返回了非文本结果。": "The second-pass summary request returned a non-text result."
 }

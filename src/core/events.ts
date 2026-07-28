@@ -9,6 +9,7 @@ import {
   wasSummarizeTaskCancelled,
 } from '@/core/summary';
 import { useSettingsStore } from '@/store/settings';
+import { stopSummaryRollupTask, triggerSummaryRollupIfNeeded } from '@/core/summary-rollup';
 import { event_types, eventSource } from '@sillytavern/script';
 import { initStatusBar, triggerUpdateStatusBar } from '@/core/status-bar';
 import { applyRuntimeMemoryPromptInjection } from '@/core/runtime-memory';
@@ -66,6 +67,8 @@ function handleMessageReceived(message_id: number, type: string) {
         ),
       });
       triggerUpdateStatusBar();
+      // 新摘要落库后检查未合并数量，达到阈值则自动二次总结
+      triggerSummaryRollupIfNeeded();
     })
     .catch(error => {
       if (wasSummarizeTaskCancelled(message_id)) {
@@ -139,6 +142,9 @@ async function handleMessageSent(message_id: number) {
         summarized_message_ids: result.summarized_summaries.map(summary => summary.message_id),
       });
     }
+
+    // 补全或清理后未合并摘要数量可能已达阈值，检查是否需要自动二次总结
+    triggerSummaryRollupIfNeeded();
   } catch (error) {
     // 回溯检查失败不应阻断用户的发送流程，仅提示并继续
     const message = error instanceof Error ? error.message : String(error);
@@ -194,6 +200,7 @@ export function registerSummaryEvents() {
   eventSource.on(event_types.MESSAGE_SENT, handleMessageSent);
   eventSource.on(event_types.GENERATION_AFTER_COMMANDS, handleGenerationAfterCommands);
   eventSource.on(event_types.CHAT_CHANGED, cancelSummarizationForChatChange);
+  eventSource.on(event_types.CHAT_CHANGED, stopSummaryRollupTask);
   eventSource.on(event_types.CHAT_CHANGED, handleChatChangedForVectorSync);
   initStatusBar();
   is_summary_listener_registered = true;

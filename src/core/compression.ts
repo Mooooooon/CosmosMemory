@@ -1,4 +1,5 @@
 import { HIDDEN_BY_COMPRESSION_PATH, isCosmosMemoryMessage, isHiddenByCompression } from '@/core/message-flags';
+import { getValidSummaryRollup, type SummaryRollup } from '@/core/summary-rollup';
 import { getStoredMessageSummaries, type MessageSummary } from '@/core/summary';
 import { useSettingsStore } from '@/store/settings';
 
@@ -46,12 +47,19 @@ function clearInjectedSummaryPrompts() {
 /**
  * 将全部摘要合并为一条注入内容：
  * - 只在开头说明一次这是总结内容，避免每个楼层重复一遍提示；
- * - 摘要按楼层顺序排列，保持剧情的时间线。
+ * - 已被前情文章覆盖的楼层用文章整体替代（文章覆盖的必然是最早的楼层，排在最前），
+ *   其余摘要按楼层顺序排列，保持剧情的时间线。
  */
-function buildCombinedSummaryPromptContent(summaries: MessageSummary[]): string {
+function buildCombinedSummaryPromptContent(summaries: MessageSummary[], rollup: SummaryRollup | null): string {
+  const covered_ids = new Set(rollup?.sources.map(source => source.message_id) ?? []);
+  const sections = [
+    ...(rollup ? [rollup.article] : []),
+    ...summaries.filter(summary => !covered_ids.has(summary.message_id)).map(summary => summary.summary),
+  ];
+
   return [
     '[CosmosMemory 前情摘要] 以下是对此前被压缩隐藏的早期剧情的总结，属于前情提要而非当前对话内容：',
-    summaries.map(summary => summary.summary).join('\n\n'),
+    sections.join('\n\n'),
     '[/CosmosMemory 前情摘要]',
   ].join('\n');
 }
@@ -67,6 +75,13 @@ function injectSummariesForHiddenMessages(messages: ChatMessage[], summaries: Ma
     return [];
   }
 
+  // 前情文章只在其覆盖的楼层全部处于注入集合内时使用：
+  // 任一覆盖楼层的原文仍在上下文中（未隐藏）时，注入文章会与原文重复，退回逐楼摘要
+  const stored_rollup = getValidSummaryRollup();
+  const injected_ids = new Set(ordered_summaries.map(summary => summary.message_id));
+  const rollup =
+    stored_rollup && stored_rollup.sources.every(source => injected_ids.has(source.message_id)) ? stored_rollup : null;
+
   // 合并为一条提示词，注入到最旧一条摘要所在楼层的深度，让前情摘要整体出现在保留楼层原文之前
   const last_message_id = window.TavernHelper.getLastMessageId();
   const depth = Math.max(0, last_message_id - ordered_summaries[0].message_id);
@@ -79,7 +94,7 @@ function injectSummariesForHiddenMessages(messages: ChatMessage[], summaries: Ma
         position: 'in_chat' as const,
         depth,
         role: 'system' as const,
-        content: buildCombinedSummaryPromptContent(ordered_summaries),
+        content: buildCombinedSummaryPromptContent(ordered_summaries, rollup),
       },
     ],
     { once: true },

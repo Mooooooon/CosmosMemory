@@ -223,6 +223,63 @@
             />
           </label>
 
+          <hr class="sysHR" />
+
+          <div class="cosmos-memory-row flex-container">
+            <input
+              id="cosmos_memory_summary_rollup_enabled"
+              v-model="settings.summary_rollup.enabled"
+              type="checkbox"
+            />
+            <label for="cosmos_memory_summary_rollup_enabled">{{ t`启用二次压缩` }}</label>
+          </div>
+
+          <div class="cosmos-memory-hint">
+            {{
+              t`开启后，当未合并的总结达到触发条数时，会自动将旧总结二次总结成一篇连贯的前情文章，替代逐楼摘要注入。`
+            }}
+          </div>
+
+          <label class="cosmos-memory-field">
+            <span>{{ t`触发条数` }}</span>
+            <input
+              v-model.number="settings.summary_rollup.trigger_summary_count"
+              class="text_pole"
+              type="number"
+              min="2"
+              step="1"
+              :disabled="!settings.summary_rollup.enabled"
+              @change="normalize_rollup_trigger_count"
+            />
+          </label>
+
+          <label class="cosmos-memory-field">
+            <span>{{ t`保留最近总结条数` }}</span>
+            <input
+              v-model.number="settings.summary_rollup.retained_recent_summary_count"
+              class="text_pole"
+              type="number"
+              min="0"
+              step="1"
+              :disabled="!settings.summary_rollup.enabled"
+              @change="normalize_rollup_retained_count"
+            />
+          </label>
+
+          <div class="cosmos-memory-hint">
+            {{ t`最近的总结不参与合并，保留逐楼细节；只有更早的总结会被并入前情文章。` }}
+          </div>
+
+          <div class="cosmos-memory-row flex-container">
+            <input
+              class="menu_button"
+              type="button"
+              :value="is_rolling_up ? t`二次总结中...` : t`立即二次总结`"
+              :disabled="is_rolling_up || is_ai_request_disabled"
+              @click="handle_run_rollup"
+            />
+          </div>
+
           <div class="cosmos-memory-row flex-container">
             <input class="menu_button" type="button" :value="t`查看已有总结`" @click="handle_show_summaries" />
             <input
@@ -379,14 +436,28 @@
         <button class="menu_button" type="button" @click="handle_close_summaries">{{ t`关闭` }}</button>
       </div>
 
-      <div v-if="stored_summaries.length === 0" class="cosmos-memory-empty">
+      <div v-if="stored_summaries.length === 0 && !stored_rollup" class="cosmos-memory-empty">
         {{ t`当前聊天记录还没有总结。` }}
       </div>
 
       <div v-else class="cosmos-memory-summary-list">
+        <article v-if="stored_rollup" class="cosmos-memory-summary-item">
+          <div class="cosmos-memory-summary-meta">
+            <b>
+              {{ t`前情文章` }}（{{
+                t`已合并 {count} 条总结`.replace('{count}', String(stored_rollup.sources.length))
+              }}）
+            </b>
+            <span>{{ format_time(stored_rollup.updated_at) }}</span>
+          </div>
+          <p>{{ stored_rollup.article }}</p>
+        </article>
         <article v-for="summary in stored_summaries" :key="summary.message_id" class="cosmos-memory-summary-item">
           <div class="cosmos-memory-summary-meta">
-            <b>{{ t`楼层` }} #{{ summary.message_id }}</b>
+            <b>
+              {{ t`楼层` }} #{{ summary.message_id }}
+              <template v-if="rollup_covered_ids.has(summary.message_id)">（{{ t`已并入前情文章` }}）</template>
+            </b>
             <span>{{ format_time(summary.updated_at) }}</span>
           </div>
           <p>{{ summary.summary }}</p>
@@ -412,6 +483,7 @@ import {
   type MessageSummary,
 } from '@/core/summary';
 import { getStoredCurrentInfo, manualSaveCurrentInfo, type CurrentInfo } from '@/core/current-info';
+import { getValidSummaryRollup, runSummaryRollup, type SummaryRollup } from '@/core/summary-rollup';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
 import CharacterDialog from '@/panel/CharacterDialog.vue';
 import ItemDialog from '@/panel/ItemDialog.vue';
@@ -452,8 +524,10 @@ const is_fetching_models = ref(false);
 const is_testing = ref(false);
 const is_checking_memory = ref(false);
 const is_regenerating_characters = ref(false);
+const is_rolling_up = ref(false);
 const test_result = ref<TestResult | null>(null);
 const stored_summaries = ref<MessageSummary[]>([]);
+const stored_rollup = ref<SummaryRollup | null>(null);
 const stored_current_info = ref<CurrentInfo>({
   current_time: '',
   location: '',
@@ -493,6 +567,10 @@ const is_regenerate_characters_disabled = computed(() => {
 
 const current_character_entries = computed(() => {
   return Object.entries(stored_current_info.value.characters).sort(([left], [right]) => left.localeCompare(right));
+});
+
+const rollup_covered_ids = computed(() => {
+  return new Set(stored_rollup.value?.sources.map(source => source.message_id) ?? []);
 });
 
 async function handle_fetch_models() {
@@ -617,7 +695,35 @@ function refresh_stored_current_info() {
 
 function refresh_stored_memory() {
   stored_summaries.value = getStoredMessageSummaries();
+  try {
+    stored_rollup.value = getValidSummaryRollup();
+  } catch (error) {
+    console.warn('[CosmosMemory] 读取前情文章失败', error);
+    stored_rollup.value = null;
+  }
   refresh_stored_current_info();
+}
+
+async function handle_run_rollup() {
+  is_rolling_up.value = true;
+
+  try {
+    const rollup = await runSummaryRollup();
+    refresh_stored_memory();
+    if (rollup) {
+      toastr.success(
+        t`二次总结完成，已合并 {count} 条总结。`.replace('{count}', String(rollup.sources.length)),
+        'Cosmos Memory',
+      );
+    } else {
+      toastr.info(t`没有可合并的总结。`, 'Cosmos Memory');
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    toastr.error(message, t`Cosmos Memory 二次总结失败`);
+  } finally {
+    is_rolling_up.value = false;
+  }
 }
 
 function handle_memory_check_button() {
@@ -717,6 +823,18 @@ function normalize_max_output_tokens() {
 function normalize_summary_context_count() {
   const count = settings.value.summary.summary_context_count;
   settings.value.summary.summary_context_count = Number.isFinite(count) ? Math.max(1, Math.floor(count)) : 5;
+}
+
+function normalize_rollup_trigger_count() {
+  const count = settings.value.summary_rollup.trigger_summary_count;
+  settings.value.summary_rollup.trigger_summary_count = Number.isFinite(count) ? Math.max(2, Math.floor(count)) : 30;
+}
+
+function normalize_rollup_retained_count() {
+  const count = settings.value.summary_rollup.retained_recent_summary_count;
+  settings.value.summary_rollup.retained_recent_summary_count = Number.isFinite(count)
+    ? Math.max(0, Math.floor(count))
+    : 10;
 }
 
 function handle_status_bar_toggle() {
