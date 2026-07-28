@@ -44,11 +44,7 @@
       {{ t`更换模型后索引会自动按模型隔离重建，旧模型的索引不受影响。` }}
     </div>
 
-    <div
-      v-if="test_result"
-      class="cosmos-memory-test-result"
-      :class="`cosmos-memory-test-result--${test_result.type}`"
-    >
+    <div v-if="test_result" class="cosmos-memory-test-result" :class="`cosmos-memory-test-result--${test_result.type}`">
       {{ test_result.message }}
     </div>
 
@@ -179,17 +175,9 @@
 
 <script setup lang="ts">
 import { fetchEmbeddingModelNames, pingEmbeddingService } from '@/api/embedding';
-import {
-  getVectorIndexStatus,
-  purgeVectorIndex,
-  rebuildVectorIndex,
-  syncChatVectors,
-} from '@/core/vector-recall';
+import { getVectorIndexStatus, purgeVectorIndex, rebuildVectorIndex, syncChatVectors } from '@/core/vector-recall';
 import { useSettingsStore } from '@/store/settings';
-import {
-  DEFAULT_VECTOR_RECALL_INJECTION_DEPTH,
-  DEFAULT_VECTOR_RECALL_MAX_CHARS,
-} from '@/type/settings';
+import { DEFAULT_VECTOR_RECALL_INJECTION_DEPTH, DEFAULT_VECTOR_RECALL_MAX_CHARS } from '@/type/settings';
 import { storeToRefs } from 'pinia';
 
 type TestResult = {

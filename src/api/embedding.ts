@@ -84,9 +84,7 @@ export async function fetchEmbeddingModelNames(api_key: string): Promise<string[
   }
 
   const data = (await response.json()) as { data?: Array<{ id?: string }> };
-  const models = (data.data ?? [])
-    .map(model => model.id?.trim())
-    .filter((id): id is string => Boolean(id));
+  const models = (data.data ?? []).map(model => model.id?.trim()).filter((id): id is string => Boolean(id));
   return [...new Set(models)].sort();
 }
 

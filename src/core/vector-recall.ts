@@ -243,9 +243,7 @@ function buildQuerySearchText(settings: VectorRecallSettings): string {
     .slice(-settings.query_recent_message_count);
 
   const search_text = recent_messages
-    .map(message =>
-      message.role === 'assistant' ? getRegexedAiContent(message) : message.message.trim(),
-    )
+    .map(message => (message.role === 'assistant' ? getRegexedAiContent(message) : message.message.trim()))
     .filter(Boolean)
     .join('\n');
 
