@@ -302,67 +302,8 @@
             {{ t`开启后会在总结时维护当前时间、地点和角色状态，并注入到人物信息上方。` }}
           </div>
 
-          <div v-if="editing_current_info" class="cosmos-memory-edit-form">
-            <label class="cosmos-memory-field">
-              <span>{{ t`当前时间` }}</span>
-              <input v-model.trim="editing_current_info.current_time" class="text_pole" type="text" />
-            </label>
-
-            <label class="cosmos-memory-field">
-              <span>{{ t`当前地点` }}</span>
-              <input v-model.trim="editing_current_info.location" class="text_pole" type="text" />
-            </label>
-
-            <div
-              v-for="(character, index) in editing_current_info.characters"
-              :key="index"
-              class="cosmos-memory-edit-form"
-            >
-              <label class="cosmos-memory-field">
-                <span>{{ t`角色名` }}</span>
-                <input v-model.trim="character.name" class="text_pole" type="text" />
-              </label>
-              <label class="cosmos-memory-field">
-                <span>{{ t`角色服装` }}</span>
-                <input v-model.trim="character.clothing" class="text_pole" type="text" />
-              </label>
-              <label class="cosmos-memory-field">
-                <span>{{ t`角色状态` }}</span>
-                <input v-model.trim="character.status" class="text_pole" type="text" />
-              </label>
-              <div class="cosmos-memory-entity-actions">
-                <button class="menu_button" type="button" @click="editing_current_info.characters.splice(index, 1)">
-                  {{ t`移除该角色` }}
-                </button>
-              </div>
-            </div>
-
-            <div class="cosmos-memory-entity-actions">
-              <button class="menu_button" type="button" @click="handle_add_current_character">
-                {{ t`添加角色` }}
-              </button>
-              <button class="menu_button" type="button" @click="handle_save_current_info">{{ t`保存` }}</button>
-              <button class="menu_button" type="button" @click="editing_current_info = null">{{ t`取消` }}</button>
-            </div>
-          </div>
-
-          <div v-else class="cosmos-memory-current-info">
-            <div class="cosmos-memory-row flex-container">
-              <span>{{ t`当前时间` }}：{{ stored_current_info.current_time || t`尚未记录` }}</span>
-              <input class="menu_button" type="button" :value="t`刷新`" @click="handle_refresh_current_info" />
-              <input class="menu_button" type="button" :value="t`编辑`" @click="handle_edit_current_info" />
-            </div>
-            <div class="cosmos-memory-row flex-container">
-              <span>{{ t`当前地点` }}：{{ stored_current_info.location || t`尚未记录` }}</span>
-            </div>
-            <div v-if="current_character_entries.length > 0" class="cosmos-memory-current-characters">
-              <div class="cosmos-memory-current-characters-title">{{ t`当前角色列表` }}</div>
-              <dl v-for="[name, character] in current_character_entries" :key="name">
-                <dt>{{ name }}</dt>
-                <dd v-if="character.clothing">{{ t`角色服装` }}：{{ character.clothing }}</dd>
-                <dd v-if="character.status">{{ t`角色状态` }}：{{ character.status }}</dd>
-              </dl>
-            </div>
+          <div class="cosmos-memory-row flex-container">
+            <input class="menu_button" type="button" :value="t`查看当前信息`" @click="handle_show_current_info" />
           </div>
         </div>
 
@@ -430,41 +371,8 @@
       </div>
     </div>
 
-    <dialog ref="summary_dialog" class="cosmos-memory-dialog">
-      <div class="cosmos-memory-dialog-header">
-        <b>{{ t`当前聊天总结` }}</b>
-        <button class="menu_button" type="button" @click="handle_close_summaries">{{ t`关闭` }}</button>
-      </div>
-
-      <div v-if="stored_summaries.length === 0 && !stored_rollup" class="cosmos-memory-empty">
-        {{ t`当前聊天记录还没有总结。` }}
-      </div>
-
-      <div v-else class="cosmos-memory-summary-list">
-        <article v-if="stored_rollup" class="cosmos-memory-summary-item">
-          <div class="cosmos-memory-summary-meta">
-            <b>
-              {{ t`前情文章` }}（{{
-                t`已合并 {count} 条总结`.replace('{count}', String(stored_rollup.sources.length))
-              }}）
-            </b>
-            <span>{{ format_time(stored_rollup.updated_at) }}</span>
-          </div>
-          <p>{{ stored_rollup.article }}</p>
-        </article>
-        <article v-for="summary in stored_summaries" :key="summary.message_id" class="cosmos-memory-summary-item">
-          <div class="cosmos-memory-summary-meta">
-            <b>
-              {{ t`楼层` }} #{{ summary.message_id }}
-              <template v-if="rollup_covered_ids.has(summary.message_id)">（{{ t`已并入前情文章` }}）</template>
-            </b>
-            <span>{{ format_time(summary.updated_at) }}</span>
-          </div>
-          <p>{{ summary.summary }}</p>
-        </article>
-      </div>
-    </dialog>
-
+    <SummaryDialog ref="summary_dialog" />
+    <CurrentInfoDialog ref="current_info_dialog" />
     <ItemDialog ref="item_dialog" />
     <LocationDialog ref="location_dialog" />
     <CharacterDialog ref="character_dialog" />
@@ -475,19 +383,14 @@
 import { fetchCustomModelNames, sendPing } from '@/api/ai';
 import { regenerateCharactersFromChat } from '@/core/character-regeneration';
 import { applySummaryCompressionForNextGeneration } from '@/core/compression';
-import {
-  getStoredMessageSummaries,
-  runMemoryBacktrackCheck,
-  stopSummarizeTasks,
-  type MemoryBacktrackCheckResult,
-  type MessageSummary,
-} from '@/core/summary';
-import { getStoredCurrentInfo, manualSaveCurrentInfo, type CurrentInfo } from '@/core/current-info';
-import { getValidSummaryRollup, runSummaryRollup, type SummaryRollup } from '@/core/summary-rollup';
+import { runMemoryBacktrackCheck, stopSummarizeTasks, type MemoryBacktrackCheckResult } from '@/core/summary';
+import { runSummaryRollup } from '@/core/summary-rollup';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
 import CharacterDialog from '@/panel/CharacterDialog.vue';
+import CurrentInfoDialog from '@/panel/CurrentInfoDialog.vue';
 import ItemDialog from '@/panel/ItemDialog.vue';
 import LocationDialog from '@/panel/LocationDialog.vue';
+import SummaryDialog from '@/panel/SummaryDialog.vue';
 import VectorRecallTab from '@/panel/VectorRecallTab.vue';
 import { useSettingsStore } from '@/store/settings';
 import { CUSTOM_API_SOURCE_OPTIONS, DEFAULT_MAX_OUTPUT_TOKENS } from '@/type/settings';
@@ -498,13 +401,6 @@ const custom_api_source_options = CUSTOM_API_SOURCE_OPTIONS.filter(option => opt
 type TestResult = {
   type: 'success' | 'error';
   message: string;
-};
-
-/** 当前信息编辑表单：characters 由 Record 展平为数组便于 v-for 编辑 */
-type EditingCurrentInfo = {
-  current_time: string;
-  location: string;
-  characters: Array<{ name: string; clothing: string; status: string }>;
 };
 
 const { settings } = storeToRefs(useSettingsStore());
@@ -526,15 +422,8 @@ const is_checking_memory = ref(false);
 const is_regenerating_characters = ref(false);
 const is_rolling_up = ref(false);
 const test_result = ref<TestResult | null>(null);
-const stored_summaries = ref<MessageSummary[]>([]);
-const stored_rollup = ref<SummaryRollup | null>(null);
-const stored_current_info = ref<CurrentInfo>({
-  current_time: '',
-  location: '',
-  characters: {},
-});
-const editing_current_info = ref<EditingCurrentInfo | null>(null);
-const summary_dialog = ref<HTMLDialogElement | null>(null);
+const summary_dialog = ref<InstanceType<typeof SummaryDialog> | null>(null);
+const current_info_dialog = ref<InstanceType<typeof CurrentInfoDialog> | null>(null);
 const character_dialog = ref<InstanceType<typeof CharacterDialog> | null>(null);
 const item_dialog = ref<InstanceType<typeof ItemDialog> | null>(null);
 const location_dialog = ref<InstanceType<typeof LocationDialog> | null>(null);
@@ -563,14 +452,6 @@ const is_ai_request_disabled = computed(() => {
 
 const is_regenerate_characters_disabled = computed(() => {
   return is_regenerating_characters.value || is_ai_request_disabled.value;
-});
-
-const current_character_entries = computed(() => {
-  return Object.entries(stored_current_info.value.characters).sort(([left], [right]) => left.localeCompare(right));
-});
-
-const rollup_covered_ids = computed(() => {
-  return new Set(stored_rollup.value?.sources.map(source => source.message_id) ?? []);
 });
 
 async function handle_fetch_models() {
@@ -614,12 +495,11 @@ async function handle_send_test_message() {
 }
 
 function handle_show_summaries() {
-  refresh_stored_memory();
-  summary_dialog.value?.showModal();
+  summary_dialog.value?.open();
 }
 
-function handle_close_summaries() {
-  summary_dialog.value?.close();
+function handle_show_current_info() {
+  current_info_dialog.value?.open();
 }
 
 function handle_show_characters() {
@@ -634,82 +514,11 @@ function handle_show_locations() {
   location_dialog.value?.open();
 }
 
-function handle_refresh_current_info() {
-  refresh_stored_current_info();
-}
-
-function handle_edit_current_info() {
-  refresh_stored_current_info();
-  editing_current_info.value = {
-    current_time: stored_current_info.value.current_time,
-    location: stored_current_info.value.location,
-    characters: Object.entries(stored_current_info.value.characters).map(([name, character]) => ({
-      name,
-      clothing: character.clothing,
-      status: character.status,
-    })),
-  };
-}
-
-function handle_add_current_character() {
-  editing_current_info.value?.characters.push({ name: '', clothing: '', status: '' });
-}
-
-function handle_save_current_info() {
-  const form = editing_current_info.value;
-  if (!form) {
-    return;
-  }
-
-  try {
-    stored_current_info.value = manualSaveCurrentInfo({
-      current_time: form.current_time,
-      location: form.location,
-      characters: Object.fromEntries(
-        form.characters
-          .filter(character => character.name.trim())
-          .map(character => [character.name.trim(), { clothing: character.clothing, status: character.status }]),
-      ),
-    });
-    editing_current_info.value = null;
-    triggerUpdateStatusBar();
-    toastr.success(t`当前信息已保存。`, 'Cosmos Memory');
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    toastr.error(message, t`Cosmos Memory 保存当前信息失败`);
-  }
-}
-
-function refresh_stored_current_info() {
-  try {
-    stored_current_info.value = getStoredCurrentInfo();
-  } catch (error) {
-    console.warn('[CosmosMemory] 读取当前信息失败', error);
-    stored_current_info.value = {
-      current_time: '',
-      location: '',
-      characters: {},
-    };
-  }
-}
-
-function refresh_stored_memory() {
-  stored_summaries.value = getStoredMessageSummaries();
-  try {
-    stored_rollup.value = getValidSummaryRollup();
-  } catch (error) {
-    console.warn('[CosmosMemory] 读取前情文章失败', error);
-    stored_rollup.value = null;
-  }
-  refresh_stored_current_info();
-}
-
 async function handle_run_rollup() {
   is_rolling_up.value = true;
 
   try {
     const rollup = await runSummaryRollup();
-    refresh_stored_memory();
     if (rollup) {
       toastr.success(
         t`二次总结完成，已合并 {count} 条总结。`.replace('{count}', String(rollup.sources.length)),
@@ -741,7 +550,6 @@ async function handle_check_memory() {
 
   try {
     const result = await runMemoryBacktrackCheck();
-    refresh_stored_memory();
     if (result.removed_summaries.length > 0 || result.summarized_summaries.length > 0) {
       triggerUpdateStatusBar();
     }
@@ -782,19 +590,6 @@ async function handle_regenerate_characters() {
   } finally {
     is_regenerating_characters.value = false;
   }
-}
-
-function format_time(value: string) {
-  if (!value) {
-    return '';
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString();
 }
 
 function handle_compression_toggle() {
@@ -874,32 +669,6 @@ function handle_status_bar_toggle() {
   border-bottom: 1px solid var(--SmartThemeBorderColor);
   margin: 12px 0 8px;
   padding-bottom: 4px;
-}
-
-.cosmos-memory-current-info {
-  margin: 8px 0;
-}
-
-.cosmos-memory-current-characters {
-  margin-top: 8px;
-}
-
-.cosmos-memory-current-characters-title {
-  font-weight: 700;
-  margin-bottom: 4px;
-}
-
-.cosmos-memory-current-characters dl {
-  margin: 6px 0;
-}
-
-.cosmos-memory-current-characters dt {
-  font-weight: 700;
-}
-
-.cosmos-memory-current-characters dd {
-  margin: 2px 0 0 12px;
-  white-space: pre-wrap;
 }
 
 .cosmos-memory-test-result {

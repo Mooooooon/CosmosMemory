@@ -184,6 +184,13 @@
 
 /* ===== 设置面板弹窗与编辑表单公共样式（Panel.vue 与 src/panel/ 子组件共用） ===== */
 
+/* 弹窗内按钮禁止被 flex 挤压：宽度不足时中文会逐字竖排 */
+.cosmos-memory-dialog .menu_button {
+  flex-shrink: 0;
+  white-space: nowrap;
+  width: fit-content;
+}
+
 .cosmos-memory-dialog {
   background: var(--SmartThemeBlurTintColor);
   border: 1px solid var(--SmartThemeBorderColor);
@@ -243,6 +250,15 @@
 
 .cosmos-memory-character-fields {
   margin: 8px 0 0;
+}
+
+/* 当前信息弹窗：时间/地点行 */
+.cosmos-memory-current-info-line {
+  margin: 4px 0;
+}
+
+.cosmos-memory-current-info-line b {
+  margin-right: 8px;
 }
 
 .cosmos-memory-character-fields dt {

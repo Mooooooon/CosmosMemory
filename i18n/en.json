@@ -197,5 +197,7 @@
   "二次总结完成，已合并 {count} 条总结。": "Second-pass summary finished; {count} summaries merged.",
   "没有可合并的总结。": "No summaries available to merge.",
   "Cosmos Memory 二次总结失败": "Cosmos Memory second-pass summary failed",
-  "二次总结请求返回了非文本结果。": "The second-pass summary request returned a non-text result."
+  "二次总结请求返回了非文本结果。": "The second-pass summary request returned a non-text result.",
+  "查看当前信息": "View current information",
+  "当前聊天记录还没有角色状态。": "The current chat has no character states yet."
 }
