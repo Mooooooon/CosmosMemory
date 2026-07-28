@@ -256,7 +256,11 @@
               <input v-model.trim="editing_current_info.location" class="text_pole" type="text" />
             </label>
 
-            <div v-for="(character, index) in editing_current_info.characters" :key="index" class="cosmos-memory-edit-form">
+            <div
+              v-for="(character, index) in editing_current_info.characters"
+              :key="index"
+              class="cosmos-memory-edit-form"
+            >
               <label class="cosmos-memory-field">
                 <span>{{ t`角色名` }}</span>
                 <input v-model.trim="character.name" class="text_pole" type="text" />
@@ -407,11 +411,7 @@ import {
   type MemoryBacktrackCheckResult,
   type MessageSummary,
 } from '@/core/summary';
-import {
-  getStoredCurrentInfo,
-  manualSaveCurrentInfo,
-  type CurrentInfo,
-} from '@/core/current-info';
+import { getStoredCurrentInfo, manualSaveCurrentInfo, type CurrentInfo } from '@/core/current-info';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
 import CharacterDialog from '@/panel/CharacterDialog.vue';
 import ItemDialog from '@/panel/ItemDialog.vue';

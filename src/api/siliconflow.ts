@@ -20,7 +20,10 @@ export async function throwSiliconFlowResponseError(response: Response, context:
 }
 
 /** 拉取指定子类型的文本模型列表（embedding / reranker），供设置面板下拉选择 */
-export async function fetchSiliconFlowModelNames(api_key: string, sub_type: 'embedding' | 'reranker'): Promise<string[]> {
+export async function fetchSiliconFlowModelNames(
+  api_key: string,
+  sub_type: 'embedding' | 'reranker',
+): Promise<string[]> {
   const response = await fetch(`${SILICONFLOW_BASE_URL}/models?type=text&sub_type=${sub_type}`, {
     method: 'GET',
     headers: buildSiliconFlowHeaders(api_key),
