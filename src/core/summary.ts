@@ -37,7 +37,7 @@ const SUMMARY_BACKFILL_CONCURRENCY = 2;
  * 开场白所在楼层：first_message 事件始终以楼层 0 触发。
  * 开场白属于角色卡自带内容且始终保留在上下文中，不参与总结，也不计入缺失补全。
  */
-const OPENING_MESSAGE_ID = 0;
+export const OPENING_MESSAGE_ID = 0;
 
 type SummarizingTask = {
   promise: Promise<MessageSummary | null>;
@@ -90,7 +90,7 @@ function getAssistantMessage(message_id: number): ChatMessage | null {
   return message;
 }
 
-function getRegexedAiContent(message: ChatMessage): string {
+export function getRegexedAiContent(message: ChatMessage): string {
   const regexed_content = window.TavernHelper.formatAsTavernRegexedString(message.message, 'ai_output', 'prompt', {
     depth: 0,
   }).trim();

@@ -12,6 +12,11 @@ import { useSettingsStore } from '@/store/settings';
 import { event_types, eventSource } from '@sillytavern/script';
 import { initStatusBar, triggerUpdateStatusBar } from '@/core/status-bar';
 import { applyRuntimeMemoryPromptInjection } from '@/core/runtime-memory';
+import {
+  applyVectorRecallForNextGeneration,
+  cancelVectorSyncForChatChange,
+  triggerVectorSyncDebounced,
+} from '@/core/vector-recall';
 
 const SUMMARIZABLE_MESSAGE_TYPES = new Set(['normal', 'regenerate', 'swipe', 'append', 'appendFinal', 'continue']);
 
@@ -31,6 +36,9 @@ function handleMessageReceived(message_id: number, type: string) {
     console.warn('[CosmosMemory] TavernHelper 尚未初始化，跳过本次楼层总结', { message_id, type });
     return;
   }
+
+  // 向量同步与总结互不依赖，收到新回复后即触发防抖同步
+  triggerVectorSyncDebounced();
 
   if (type === 'normal' && getStoredMessageSummaries().some(summary => summary.message_id === message_id)) {
     console.info('[CosmosMemory] 普通回复楼层已有总结，跳过重复请求', { message_id, type });
@@ -78,6 +86,9 @@ function handleMessageEdited(message_id: number) {
     return;
   }
 
+  // 编辑楼层后触发防抖同步：增量 diff 会自动删除旧文本向量并写入新文本向量
+  triggerVectorSyncDebounced();
+
   void invalidateAndResummarizeMessage(message_id)
     .then(summary => {
       if (summary) {
@@ -106,6 +117,9 @@ function handleMessageDeleted(new_chat_length: number) {
   // 重新生成会先删除旧楼层、再于同楼层写入新内容（此时 MESSAGE_RECEIVED 的 type 为 normal）：
   // 提前回滚被删楼层的摘要，随后的 MESSAGE_RECEIVED 才不会被「已有总结」守卫跳过
   rollbackSummariesFromMessage(new_chat_length);
+
+  // 删除楼层后触发防抖同步：增量 diff 会清理已不存在楼层的向量
+  triggerVectorSyncDebounced();
 }
 
 async function handleMessageSent(message_id: number) {
@@ -154,6 +168,15 @@ async function handleGenerationAfterCommands(
     console.error('[CosmosMemory] 生成前应用记忆注入失败', error);
     toastr.error(message, t`Cosmos Memory 生成前记忆注入失败`);
   }
+
+  try {
+    // 必须在压缩流程之后执行：此时楼层 is_hidden 已是本次生成的最终状态，
+    // 被压缩隐藏的楼层恰好可被召回原文，与摘要形成互补
+    await applyVectorRecallForNextGeneration();
+  } catch (error) {
+    // 向量召回同为优化项，失败仅记录日志，绝不阻断生成
+    console.error('[CosmosMemory] 生成前向量召回失败', error);
+  }
 }
 
 export function registerSummaryEvents() {
@@ -171,6 +194,13 @@ export function registerSummaryEvents() {
   eventSource.on(event_types.MESSAGE_SENT, handleMessageSent);
   eventSource.on(event_types.GENERATION_AFTER_COMMANDS, handleGenerationAfterCommands);
   eventSource.on(event_types.CHAT_CHANGED, cancelSummarizationForChatChange);
+  eventSource.on(event_types.CHAT_CHANGED, handleChatChangedForVectorSync);
   initStatusBar();
   is_summary_listener_registered = true;
+}
+
+function handleChatChangedForVectorSync() {
+  // 取消上一个聊天的待执行同步并重置告警标志，再为新聊天补一次索引
+  cancelVectorSyncForChatChange();
+  triggerVectorSyncDebounced();
 }

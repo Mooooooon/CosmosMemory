@@ -319,6 +319,11 @@
           </div>
         </div>
 
+        <!-- Vector Recall Tab -->
+        <div v-show="active_tab === 'vector_recall'" class="cosmos-settings-tab-panel">
+          <VectorRecallTab />
+        </div>
+
         <hr class="sysHR" />
       </div>
     </div>
@@ -486,6 +491,7 @@ import {
   type StoredLocationWorld,
 } from '@/core/locations';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
+import VectorRecallTab from '@/panel/VectorRecallTab.vue';
 import { useSettingsStore } from '@/store/settings';
 import { CUSTOM_API_SOURCE_OPTIONS, DEFAULT_MAX_OUTPUT_TOKENS } from '@/type/settings';
 import { storeToRefs } from 'pinia';
@@ -507,6 +513,7 @@ const tabs = computed(() => [
   { id: 'characters', name: t`人物` },
   { id: 'locations', name: t`地点` },
   { id: 'items', name: t`物品` },
+  { id: 'vector_recall', name: t`向量召回` },
 ]);
 
 const is_fetching_models = ref(false);

@@ -1,9 +1,8 @@
-import { STORAGE_ROOT } from '@/core/entity-store';
+import { HIDDEN_BY_COMPRESSION_PATH, isCosmosMemoryMessage, isHiddenByCompression } from '@/core/message-flags';
 import { getStoredMessageSummaries, type MessageSummary } from '@/core/summary';
 import { useSettingsStore } from '@/store/settings';
 
 const SUMMARY_PROMPT_ID = 'cosmos_memory_summary';
-const HIDDEN_BY_COMPRESSION_PATH = `${STORAGE_ROOT}.hidden_by_compression`;
 
 let injected_summary_prompt_ids: string[] = [];
 
@@ -13,14 +12,6 @@ type CompressionResult = {
   injected_summary_ids: number[];
   skipped_without_summary_ids: number[];
 };
-
-function isCosmosMemoryMessage(message: ChatMessage): boolean {
-  return _.get(message.data, `${STORAGE_ROOT}.kind`) === 'summary';
-}
-
-function isHiddenByCompression(message: ChatMessage): boolean {
-  return _.get(message.data, HIDDEN_BY_COMPRESSION_PATH) === true;
-}
 
 function cloneMessageData(message: ChatMessage): Record<string, any> {
   return _.cloneDeep(message.data ?? {});

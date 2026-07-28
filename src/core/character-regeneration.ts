@@ -1,11 +1,7 @@
 import { extractCharactersFromChatContent } from '@/api/ai';
 import { replaceStoredCharacters, type StoredCharacter } from '@/core/characters';
-import { STORAGE_ROOT } from '@/core/entity-store';
+import { isCosmosMemoryMessage } from '@/core/message-flags';
 import type { AiSettings } from '@/type/settings';
-
-function isCosmosMemoryMessage(message: ChatMessage): boolean {
-  return _.get(message.data, `${STORAGE_ROOT}.kind`) === 'summary';
-}
 
 function getAssistantChatContent(): string {
   const messages = window.TavernHelper.getChatMessages('0-{{lastMessageId}}', {
