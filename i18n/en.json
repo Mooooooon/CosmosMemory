@@ -202,7 +202,7 @@
   "当前聊天记录还没有角色状态。": "The current chat has no character states yet.",
   "设定变更": "Setting changes",
   "启用设定变更": "Enable setting changes",
-  "记录角色成长后与原始人设不同的当前事实；生成时会提醒 AI 优先采用这些新设定，避免退回旧状态。": "Record current facts that differ from the original character setup after a character grows or changes. During generation, the AI will prioritize these updates instead of reverting to an old state.",
+  "开启后会在总结时自动识别角色成长造成的长期设定变化，也可手动修正；生成时会提醒 AI 优先采用新设定，避免退回旧状态。": "When enabled, long-term setting changes caused by character growth are detected automatically during summarization and can also be corrected manually. During generation, the AI will prioritize these updates instead of reverting to an old state.",
   "管理设定变更": "Manage setting changes",
   "当前聊天设定变更": "Setting changes for the current chat",
   "新增记录": "Add entry",

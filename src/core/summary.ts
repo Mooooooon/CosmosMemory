@@ -27,6 +27,13 @@ import {
   rebuildStoredCurrentInfoFromSummaries,
   type CurrentInfoUpdate,
 } from '@/core/current-info';
+import {
+  SettingChangeOperationsResponse,
+  applySettingChangeOperations,
+  getSettingChanges,
+  rebuildSettingChangesFromSummaries,
+  type SettingChangeOperation,
+} from '@/core/setting-changes';
 import { STORAGE_ROOT } from '@/core/entity-store';
 import { useSettingsStore } from '@/store/settings';
 import { getCurrentChatId } from '@sillytavern/script';
@@ -54,6 +61,7 @@ export type MessageSummary = {
   character_operations?: CharacterOperation[];
   item_operations?: ItemOperation[];
   location_operations?: LocationOperation[];
+  setting_change_operations?: SettingChangeOperation[];
   current_info_update?: CurrentInfoUpdate | null;
   updated_at: string;
 };
@@ -224,6 +232,7 @@ export function getStoredMessageSummaries(): MessageSummary[] {
       const character_operations = CharacterOperationsResponse.safeParse(summary.character_operations);
       const item_operations = ItemOperationsResponse.safeParse(summary.item_operations);
       const location_operations = LocationOperationsResponse.safeParse(summary.location_operations);
+      const setting_change_operations = SettingChangeOperationsResponse.safeParse(summary.setting_change_operations);
       const current_info_update = CurrentInfoUpdateResponse.nullable()
         .optional()
         .safeParse(summary.current_info_update);
@@ -232,6 +241,7 @@ export function getStoredMessageSummaries(): MessageSummary[] {
         character_operations: character_operations.success ? character_operations.data : [],
         item_operations: item_operations.success ? item_operations.data : [],
         location_operations: location_operations.success ? location_operations.data : [],
+        setting_change_operations: setting_change_operations.success ? setting_change_operations.data : [],
         current_info_update: current_info_update.success ? current_info_update.data : null,
       };
     })
@@ -242,6 +252,7 @@ function rebuildMemoryFromSummaries(summaries: MessageSummary[]) {
   rebuildStoredCharactersFromSummaries(summaries);
   rebuildStoredItemsFromSummaries(summaries);
   rebuildStoredLocationsFromSummaries(summaries);
+  rebuildSettingChangesFromSummaries(summaries);
   rebuildStoredCurrentInfoFromSummaries(summaries);
 }
 
@@ -335,6 +346,7 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
     characters_enabled: settings.characters.enabled,
     items_enabled: settings.items.enabled,
     locations_enabled: settings.locations.enabled,
+    setting_changes_enabled: settings.setting_changes.enabled,
     current_info_enabled: settings.current_info.enabled,
     send_descriptions_and_world_info: settings.summary.send_descriptions_and_world_info,
     send_previous_message_original: settings.summary.send_previous_message_original,
@@ -356,6 +368,8 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
     stored_items: settings.items.enabled ? getStoredItems() : [],
     locations_enabled: settings.locations.enabled,
     stored_locations: settings.locations.enabled ? getStoredLocations() : [],
+    setting_changes_enabled: settings.setting_changes.enabled,
+    setting_changes: settings.setting_changes.enabled ? getSettingChanges() : [],
     current_info_enabled: settings.current_info.enabled,
     current_info: settings.current_info.enabled ? getStoredCurrentInfo() : undefined,
     send_descriptions_and_world_info: settings.summary.send_descriptions_and_world_info,
@@ -386,6 +400,7 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
     character_operations: settings.characters.enabled ? result.characters : [],
     item_operations: settings.items.enabled ? result.item_operations : [],
     location_operations: settings.locations.enabled ? result.location_operations : [],
+    setting_change_operations: settings.setting_changes.enabled ? result.setting_change_operations : [],
     current_info_update: settings.current_info.enabled ? (result.current_info_update ?? null) : null,
     updated_at: new Date().toISOString(),
   };
@@ -407,6 +422,13 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
     }
     if (settings.locations.enabled && summary.location_operations && summary.location_operations.length > 0) {
       applyLocationOperations(summary.location_operations, entity_meta);
+    }
+    if (
+      settings.setting_changes.enabled &&
+      summary.setting_change_operations &&
+      summary.setting_change_operations.length > 0
+    ) {
+      applySettingChangeOperations(summary.setting_change_operations, entity_meta);
     }
     if (settings.current_info.enabled) {
       applyCurrentInfoUpdate(summary.current_info_update);

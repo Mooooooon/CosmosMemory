@@ -320,7 +320,9 @@
           </div>
 
           <div class="cosmos-memory-hint">
-            {{ t`记录角色成长后与原始人设不同的当前事实；生成时会提醒 AI 优先采用这些新设定，避免退回旧状态。` }}
+            {{
+              t`开启后会在总结时自动识别角色成长造成的长期设定变化，也可手动修正；生成时会提醒 AI 优先采用新设定，避免退回旧状态。`
+            }}
           </div>
 
           <div class="cosmos-memory-row flex-container">

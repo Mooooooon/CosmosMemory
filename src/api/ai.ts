@@ -19,6 +19,12 @@ import {
   type LocationOperation,
   type StoredLocationWorld,
 } from '@/core/locations';
+import {
+  SettingChangeOperationsResponse,
+  formatSettingChangesForSummaryRequest,
+  type SettingChange,
+  type SettingChangeOperation,
+} from '@/core/setting-changes';
 import { parsePrettified } from '@/util/zod';
 
 const TEST_MESSAGE = '!ping';
@@ -43,6 +49,7 @@ const SummaryWithMemoryResponse = z.object({
   characters: CharacterOperationsResponse.optional().default([]),
   item_operations: ItemOperationsResponse.optional().default([]),
   location_operations: LocationOperationsResponse.optional().default([]),
+  setting_change_operations: SettingChangeOperationsResponse.optional().default([]),
   current_info_update: CurrentInfoUpdateResponse.nullable().optional(),
 });
 
@@ -59,6 +66,7 @@ export type SummaryGenerationResult = {
   characters: CharacterOperation[];
   item_operations: ItemOperation[];
   location_operations: LocationOperation[];
+  setting_change_operations: SettingChangeOperation[];
   current_info_update?: CurrentInfoUpdate | null;
 };
 
@@ -81,6 +89,8 @@ export type SummaryGenerationOptions = {
   stored_items?: StoredItem[];
   locations_enabled?: boolean;
   stored_locations?: StoredLocationWorld[];
+  setting_changes_enabled?: boolean;
+  setting_changes?: SettingChange[];
   current_info_enabled?: boolean;
   current_info?: CurrentInfo;
   send_descriptions_and_world_info?: boolean;
@@ -118,6 +128,24 @@ const MEMORY_EXTRACTION_OVERVIEW = [
   '- 记忆条目按名称匹配：set/delete 操作的名称必须与已记录条目的名称完全一致（一字不差），否则会产生重复条目或删除失败。',
   '- 不要因为称呼不同（简称、别称、译名差异）为同一实体重复建档；发现重复时按对应小节的合并规则清理。',
   '- 任何字段都禁止填写"未明确""未知""未描写""原文未提及"等占位文字：能根据上下文合理推断的就写出具体内容，完全无法推断的返回空字符串。',
+].join('\n');
+
+const SETTING_CHANGE_EXTRACTION_INSTRUCTION = [
+  '【设定变更】维护角色或主角经过剧情发展后、与初始固定人设不同的长期当前事实，返回 setting_change_operations 数组；没有明确变化时返回空数组。',
+  '',
+  '应该记录的变化：年龄或生日阶段、学校与年级、职业或职位、修炼境界/等级/阶位、长期身份与阵营、婚姻或亲属身份、永久能力变化，以及其他通常写在角色卡中但已被剧情明确改变的稳定设定。',
+  '',
+  '不应记录：短期动作、服装、情绪、伤势、所在地点、临时任务状态、普通物品得失、关系中的短暂气氛；这些信息应交给当前信息、物品、人物或剧情摘要维护。不要把本楼层首次揭露但从一开始就成立的旧背景误判为“变化”，也不要仅凭时间流逝自行推算年龄、年级、境界或职位。',
+  '',
+  '每条记录使用稳定 key，格式为“主体/属性”，例如“林秋/年级”“沈砚/修为境界”“苏青/职业”。content 必须是一句简短、可脱离上下文理解的当前事实，例如“林秋已经升学到高中二年级。”，直接写名字，不使用“他/她”。',
+  '',
+  '更新规则：',
+  '- 已有相同属性再次变化时，必须对已有 key 使用 set，并用完整的新当前事实替换旧内容；例如从筑基期突破至金丹期时，不得同时保留两条境界。',
+  '- 新的长期变化使用 add。若模型选择的 key 与已有记录仅有措辞差异，应沿用已有 key，不得另建近义重复项。已有 key 可能以“manual:”开头，这类手动记录的 key 也必须原样沿用。',
+  '- 当某项变化明确恢复为原始固定设定、被证明无效或不再成立时，对已有 key 使用 delete，content 返回空字符串。',
+  '- add/set 的 content 只写当前结果，不写推理、依据、旧状态或时间线；每条不超过500字。',
+  '',
+  '「已有设定变更」中的记录是当前维护基线，只用于比对和选择 key；不要因为它们出现在请求中就重复输出 set。本楼层未改变对应事实时不输出任何操作。',
 ].join('\n');
 
 const SUMMARY_JSON_INSTRUCTION =
@@ -184,6 +212,9 @@ const CURRENT_INFO_EXTRACTION_INSTRUCTION = [
 
 const CURRENT_INFO_JSON_FIELD_INSTRUCTION =
   '"current_info_update":{"current_time":"本楼层结束后的当前故事时间，必须精确到分钟；现实背景如\\"2026年6月20日 21:16\\"，架空背景如\\"银历3年 霜月·月望日 申时二刻（约21:16）\\"","location":"本楼层结束后的当前地点","characters":{"角色名":{"clothing":"角色当前服装，原文未逐项描写时结合身份场景推断出具体描述，禁止填\\"未明确\\"等占位文字，完全无法推断才为空字符串","status":"角色当前状态，包含动作、姿势、身体状况和情绪，可合理推断，禁止填占位文字，完全无法推断才为空字符串"}},"elapsed_time":"本楼层消耗的剧情时间，必须严格对应原文描写，不得凭生活常识随意推断：吃饭≈30~60分钟、短途行走≈15~30分钟、一场战斗≈5~30分钟、一夜休眠≈6~8小时，原文无线索则填\\"约0分钟（无明确时间流逝）\\"","reason":"更新当前信息的依据，没有则为空字符串"}';
+
+const SETTING_CHANGE_JSON_FIELD_INSTRUCTION =
+  '"setting_change_operations":[{"type":"add|set|delete","key":"稳定的主体/属性键；set/delete 必须使用已有 key","content":"一句简短的当前有效事实；delete 时为空字符串"}]';
 
 const DESCRIPTION_AND_WORLD_INFO_INSTRUCTION =
   '请求中以「角色卡固定设定」标签包裹的世界书、玩家描述和角色描述，是角色卡的预设背景资料，属于只读内容。这些内容不是本楼层新发生的剧情，不得写进 summary，也不应从中提取任何 add/set/delete 变更操作，仅用于消解称呼、理解设定和人物关系。';
@@ -313,6 +344,7 @@ function parseSummaryJson(raw: string, options: SummaryGenerationOptions = {}): 
       characters: [],
       item_operations: [],
       location_operations: [],
+      setting_change_operations: [],
     };
   }
 
@@ -322,6 +354,7 @@ function parseSummaryJson(raw: string, options: SummaryGenerationOptions = {}): 
     characters: options.characters_enabled ? result.characters : [],
     item_operations: options.items_enabled ? result.item_operations : [],
     location_operations: options.locations_enabled ? result.location_operations : [],
+    setting_change_operations: options.setting_changes_enabled ? result.setting_change_operations : [],
     current_info_update: options.current_info_enabled ? (result.current_info_update ?? null) : null,
   };
 }
@@ -331,6 +364,7 @@ function hasMemoryExtraction(options: SummaryGenerationOptions): boolean {
     options.characters_enabled === true ||
     options.items_enabled === true ||
     options.locations_enabled === true ||
+    options.setting_changes_enabled === true ||
     options.current_info_enabled === true
   );
 }
@@ -364,6 +398,7 @@ function formatPreviousOriginalMessagesForPrompt(messages: OriginalMessageContex
 
 function buildSummaryContent(content: string, options: SummaryGenerationOptions): string {
   const memory_sections = [
+    options.setting_changes_enabled ? formatSettingChangesForSummaryRequest(options.setting_changes ?? []) : '',
     options.current_info_enabled ? formatCurrentInfoForSummaryRequest(options.current_info) : '',
     options.locations_enabled ? formatLocationsForPrompt(options.stored_locations ?? []) : '',
     options.items_enabled ? formatItemsForPrompt(options.stored_items ?? []) : '',
@@ -396,6 +431,10 @@ function buildSummarySystemPrompt(options: SummaryGenerationOptions): string {
 
   if (hasMemoryExtraction(options)) {
     instructions.push(MEMORY_EXTRACTION_OVERVIEW);
+  }
+
+  if (options.setting_changes_enabled) {
+    instructions.push(SETTING_CHANGE_EXTRACTION_INSTRUCTION);
   }
 
   if (options.current_info_enabled) {
@@ -473,6 +512,9 @@ function buildSummaryJsonInstruction(options: SummaryGenerationOptions): string 
   }
 
   const fields = ['"summary":"连贯的剧情摘要"'];
+  if (options.setting_changes_enabled) {
+    fields.push(SETTING_CHANGE_JSON_FIELD_INSTRUCTION);
+  }
   if (options.current_info_enabled) {
     fields.push(CURRENT_INFO_JSON_FIELD_INSTRUCTION);
   }
@@ -503,6 +545,38 @@ function buildStructuredSummarySchema(options: SummaryGenerationOptions): JsonSc
     },
   };
   const required = ['summary'];
+
+  if (options.setting_changes_enabled) {
+    properties.setting_change_operations = {
+      type: 'array',
+      description:
+        '本楼层明确造成的长期固定设定变化；没有变化时返回空数组。仅记录年龄、年级、职业、境界、长期身份等通常属于角色卡但已被剧情改变的当前事实，不记录临时状态，也不把首次揭露的旧背景误判为变化。',
+      items: {
+        type: 'object',
+        properties: {
+          type: {
+            type: 'string',
+            enum: ['add', 'set', 'delete'],
+            description:
+              'add 新增长期变化；set 用完整新事实替换同一 key 的旧状态；delete 在变化恢复原始设定、无效或不再成立时删除记录。',
+          },
+          key: {
+            type: 'string',
+            description:
+              '稳定的“主体/属性”键，例如“林秋/年级”“沈砚/修为境界”。set/delete 必须逐字使用已有记录的 key（包括 manual: 开头的手动 key）；近义属性不得新建重复 key。',
+          },
+          content: {
+            type: 'string',
+            description:
+              'add/set 时返回一句不超过500字、可脱离上下文理解的当前事实，直接使用角色名；delete 时返回空字符串。',
+          },
+        },
+        required: ['type', 'key', 'content'],
+        additionalProperties: false,
+      },
+    };
+    required.push('setting_change_operations');
+  }
 
   if (options.current_info_enabled) {
     properties.current_info_update = {
@@ -789,6 +863,7 @@ async function summarizeMessageWithStructuredOutput(
     characters_enabled: options.characters_enabled === true,
     items_enabled: options.items_enabled === true,
     locations_enabled: options.locations_enabled === true,
+    setting_changes_enabled: options.setting_changes_enabled === true,
     current_info_enabled: options.current_info_enabled === true,
     send_descriptions_and_world_info: options.send_descriptions_and_world_info === true,
     world_info_scan_message_count: options.world_info_scan_messages?.length ?? 0,

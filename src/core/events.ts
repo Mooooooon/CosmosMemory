@@ -60,6 +60,7 @@ function handleMessageReceived(message_id: number, type: string) {
         character_operation_count: summary.character_operations?.length ?? 0,
         item_operation_count: summary.item_operations?.length ?? 0,
         location_operation_count: summary.location_operations?.length ?? 0,
+        setting_change_operation_count: summary.setting_change_operations?.length ?? 0,
         current_info_updated: Boolean(
           summary.current_info_update?.current_time ||
           summary.current_info_update?.location ||
