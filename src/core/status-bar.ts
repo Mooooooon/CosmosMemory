@@ -3,10 +3,11 @@ import { getStoredCurrentInfo } from '@/core/current-info';
 import { getStoredCharacters } from '@/core/characters';
 import { getStoredItems } from '@/core/items';
 import { getStoredLocations } from '@/core/locations';
+import { getSettingChanges } from '@/core/setting-changes';
 import { getLastRecallInfo } from '@/core/vector-recall';
 import { useSettingsStore } from '@/store/settings';
 
-let activeTab: 'current' | 'characters' | 'items' | 'locations' | 'recall' = 'current';
+let activeTab: 'current' | 'changes' | 'characters' | 'items' | 'locations' | 'recall' = 'current';
 let updateTimeout: any = null;
 
 /**
@@ -124,6 +125,23 @@ function renderTabContent($container: JQuery<HTMLElement>) {
           }
         }
 
+        $container.append($list);
+        break;
+      }
+
+      case 'changes': {
+        const changes = getSettingChanges();
+        if (changes.length === 0) {
+          $container.append($('<div class="cosmos-empty">').text(t`当前聊天记录还没有设定变更。`));
+          break;
+        }
+
+        const $list = $('<div class="cosmos-info-list">');
+        for (const change of changes) {
+          $list.append(
+            $('<div class="cosmos-item-card">').append($('<div class="cosmos-item-detail">').text(change.content)),
+          );
+        }
         $container.append($list);
         break;
       }
@@ -265,6 +283,7 @@ export function updateStatusBar(): boolean {
   // 根据各功能开关过滤可用的 Tab
   const allTabsConfig = [
     { id: 'current' as const, name: t`当前信息`, enabled: settings.current_info.enabled },
+    { id: 'changes' as const, name: t`设定变更`, enabled: settings.setting_changes.enabled },
     { id: 'characters' as const, name: t`人物信息`, enabled: settings.characters.enabled },
     { id: 'items' as const, name: t`物品信息`, enabled: settings.items.enabled },
     { id: 'locations' as const, name: t`地点信息`, enabled: settings.locations.enabled },

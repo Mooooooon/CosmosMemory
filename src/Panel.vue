@@ -307,6 +307,27 @@
           </div>
         </div>
 
+        <!-- Setting Changes Tab -->
+        <div v-show="active_tab === 'setting_changes'" class="cosmos-settings-tab-panel">
+          <div class="cosmos-memory-row flex-container">
+            <input
+              id="cosmos_memory_setting_changes_enabled"
+              v-model="settings.setting_changes.enabled"
+              type="checkbox"
+              @change="handle_setting_changes_toggle"
+            />
+            <label for="cosmos_memory_setting_changes_enabled">{{ t`启用设定变更` }}</label>
+          </div>
+
+          <div class="cosmos-memory-hint">
+            {{ t`记录角色成长后与原始人设不同的当前事实；生成时会提醒 AI 优先采用这些新设定，避免退回旧状态。` }}
+          </div>
+
+          <div class="cosmos-memory-row flex-container">
+            <input class="menu_button" type="button" :value="t`管理设定变更`" @click="handle_show_setting_changes" />
+          </div>
+        </div>
+
         <!-- Locations Tab -->
         <div v-show="active_tab === 'locations'" class="cosmos-settings-tab-panel">
           <div class="cosmos-memory-row flex-container">
@@ -373,6 +394,7 @@
 
     <SummaryDialog ref="summary_dialog" />
     <CurrentInfoDialog ref="current_info_dialog" />
+    <SettingChangeDialog ref="setting_change_dialog" />
     <ItemDialog ref="item_dialog" />
     <LocationDialog ref="location_dialog" />
     <CharacterDialog ref="character_dialog" />
@@ -390,6 +412,7 @@ import CharacterDialog from '@/panel/CharacterDialog.vue';
 import CurrentInfoDialog from '@/panel/CurrentInfoDialog.vue';
 import ItemDialog from '@/panel/ItemDialog.vue';
 import LocationDialog from '@/panel/LocationDialog.vue';
+import SettingChangeDialog from '@/panel/SettingChangeDialog.vue';
 import SummaryDialog from '@/panel/SummaryDialog.vue';
 import VectorRecallTab from '@/panel/VectorRecallTab.vue';
 import { useSettingsStore } from '@/store/settings';
@@ -410,6 +433,7 @@ const tabs = computed(() => [
   { id: 'settings', name: t`设置` },
   { id: 'summary', name: t`总结` },
   { id: 'current_info', name: t`当前信息` },
+  { id: 'setting_changes', name: t`设定变更` },
   { id: 'characters', name: t`人物` },
   { id: 'locations', name: t`地点` },
   { id: 'items', name: t`物品` },
@@ -424,6 +448,7 @@ const is_rolling_up = ref(false);
 const test_result = ref<TestResult | null>(null);
 const summary_dialog = ref<InstanceType<typeof SummaryDialog> | null>(null);
 const current_info_dialog = ref<InstanceType<typeof CurrentInfoDialog> | null>(null);
+const setting_change_dialog = ref<InstanceType<typeof SettingChangeDialog> | null>(null);
 const character_dialog = ref<InstanceType<typeof CharacterDialog> | null>(null);
 const item_dialog = ref<InstanceType<typeof ItemDialog> | null>(null);
 const location_dialog = ref<InstanceType<typeof LocationDialog> | null>(null);
@@ -500,6 +525,10 @@ function handle_show_summaries() {
 
 function handle_show_current_info() {
   current_info_dialog.value?.open();
+}
+
+function handle_show_setting_changes() {
+  setting_change_dialog.value?.open();
 }
 
 function handle_show_characters() {
@@ -639,6 +668,10 @@ function handle_status_bar_toggle() {
     // 关闭时移除已有状态栏
     $('#chat .cosmos-memory-status-bar', window.parent.document).remove();
   }
+}
+
+function handle_setting_changes_toggle() {
+  triggerUpdateStatusBar();
 }
 </script>
 

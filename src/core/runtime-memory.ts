@@ -2,9 +2,20 @@ import { CHARACTER_PROMPT_DEPTH, CHARACTER_PROMPT_ID, formatCharactersForPrompt 
 import { CURRENT_INFO_PROMPT_DEPTH, CURRENT_INFO_PROMPT_ID, formatCurrentInfoForPrompt } from '@/core/current-info';
 import { formatItemsForPrompt, ITEM_PROMPT_DEPTH, ITEM_PROMPT_ID } from '@/core/items';
 import { formatLocationsForPrompt, LOCATION_PROMPT_DEPTH, LOCATION_PROMPT_ID } from '@/core/locations';
+import {
+  formatSettingChangesForPrompt,
+  SETTING_CHANGE_PROMPT_DEPTH,
+  SETTING_CHANGE_PROMPT_ID,
+} from '@/core/setting-changes';
 import type { Settings } from '@/type/settings';
 
-const RUNTIME_MEMORY_PROMPT_IDS = [CURRENT_INFO_PROMPT_ID, LOCATION_PROMPT_ID, ITEM_PROMPT_ID, CHARACTER_PROMPT_ID];
+const RUNTIME_MEMORY_PROMPT_IDS = [
+  SETTING_CHANGE_PROMPT_ID,
+  CURRENT_INFO_PROMPT_ID,
+  LOCATION_PROMPT_ID,
+  ITEM_PROMPT_ID,
+  CHARACTER_PROMPT_ID,
+];
 
 type RuntimeMemoryPromptInfo = {
   id: string;
@@ -15,6 +26,12 @@ type RuntimeMemoryPromptInfo = {
 
 function buildRuntimeMemoryPromptInfos(settings: Settings): RuntimeMemoryPromptInfo[] {
   return [
+    {
+      id: SETTING_CHANGE_PROMPT_ID,
+      enabled: settings.setting_changes.enabled,
+      depth: SETTING_CHANGE_PROMPT_DEPTH,
+      content: settings.setting_changes.enabled ? formatSettingChangesForPrompt() : '',
+    },
     {
       id: CURRENT_INFO_PROMPT_ID,
       enabled: settings.current_info.enabled,
