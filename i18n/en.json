@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "设置": "Settings",
   "启用状态栏": "Enable status bar",
   "启用当前信息": "Enable current info",
@@ -217,4 +218,9 @@
   "要删除的设定变更已不存在。": "The setting change to delete no longer exists.",
   "Cosmos Memory 保存设定变更失败": "Cosmos Memory failed to save the setting change",
   "Cosmos Memory 删除设定变更失败": "Cosmos Memory failed to delete the setting change"
+=======
+  "插件示例": "Plugin Example",
+  "示例按钮": "Example Button",
+  "示例开关": "Example Switch"
+>>>>>>> 594877de3d6ea4230111d3f97f6ef22c7409b0c6
 }
