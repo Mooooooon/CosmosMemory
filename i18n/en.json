@@ -84,6 +84,7 @@
   "重新生成": "Regenerate",
   "人物信息重新生成成功。": "Character information regenerated.",
   "当前聊天总结": "Current chat summaries",
+  "当前聊天总结 共{count}条": "Current chat summaries · {count} total",
   "当前聊天人物信息": "Current chat characters",
   "关闭": "Close",
   "当前聊天记录还没有总结。": "No summaries exist for the current chat yet.",

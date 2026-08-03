@@ -1,7 +1,7 @@
 <template>
   <dialog ref="dialog_element" class="cosmos-memory-dialog">
     <div class="cosmos-memory-dialog-header">
-      <b>{{ t`当前聊天总结` }}</b>
+      <b>{{ t`当前聊天总结 共{count}条`.replace('{count}', String(summaries.length)) }}</b>
       <button class="menu_button" type="button" @click="close">{{ t`关闭` }}</button>
     </div>
 
@@ -21,10 +21,10 @@
         </div>
         <p>{{ rollup.article }}</p>
       </article>
-      <article v-for="summary in summaries" :key="summary.message_id" class="cosmos-memory-summary-item">
+      <article v-for="(summary, index) in summaries" :key="summary.message_id" class="cosmos-memory-summary-item">
         <div class="cosmos-memory-summary-meta">
           <b>
-            {{ t`楼层` }} #{{ summary.message_id }}
+            {{ t`楼层` }} #{{ summary.message_id }} No.{{ index + 1 }}
             <template v-if="rollup_covered_ids.has(summary.message_id)">
               （{{ t`已由二次总结分段替代注入` }}）
             </template>
