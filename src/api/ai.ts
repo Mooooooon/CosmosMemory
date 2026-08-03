@@ -38,8 +38,6 @@ const DESCRIPTION_AND_WORLD_INFO_PROMPTS: PlaceholderPrompt[] = [
 ];
 
 type CustomApi = NonNullable<GenerateConfig['custom_api']>;
-type SummaryPromptMode = 'structured_output' | 'json_prompt';
-
 const SummaryResponse = z.object({
   summary: z.string().trim().min(1),
 });
@@ -148,9 +146,6 @@ const SETTING_CHANGE_EXTRACTION_INSTRUCTION = [
   '「已有设定变更」中的记录是当前维护基线，只用于比对和选择 key；不要因为它们出现在请求中就重复输出 set。本楼层未改变对应事实时不输出任何操作。',
 ].join('\n');
 
-const SUMMARY_JSON_INSTRUCTION =
-  '请总结以下剧情内容，只返回 JSON。格式：{"summary":"连贯的剧情摘要"}。不要使用 Markdown 代码块，不要返回额外解释。';
-
 const CHARACTER_EXTRACTION_INSTRUCTION = [
   '【人物记忆】提取本楼层明确新增、更新或删除的人物信息，返回 characters 数组；没有变化时返回空数组。',
   '',
@@ -209,12 +204,6 @@ const CURRENT_INFO_EXTRACTION_INSTRUCTION = [
   '',
   '只记录当前场景中实际在场的角色（包括主角）；已经离场的角色应从列表中移除。characters 返回的是完整的替换列表而非增量。',
 ].join('\n');
-
-const CURRENT_INFO_JSON_FIELD_INSTRUCTION =
-  '"current_info_update":{"current_time":"本楼层结束后的当前故事时间，必须精确到分钟；现实背景如\\"2026年6月20日 21:16\\"，架空背景如\\"银历3年 霜月·月望日 申时二刻（约21:16）\\"","location":"本楼层结束后的当前地点","characters":{"角色名":{"clothing":"角色当前服装，原文未逐项描写时结合身份场景推断出具体描述，禁止填\\"未明确\\"等占位文字，完全无法推断才为空字符串","status":"角色当前状态，包含动作、姿势、身体状况和情绪，可合理推断，禁止填占位文字，完全无法推断才为空字符串"}},"elapsed_time":"本楼层消耗的剧情时间，必须严格对应原文描写，不得凭生活常识随意推断：吃饭≈30~60分钟、短途行走≈15~30分钟、一场战斗≈5~30分钟、一夜休眠≈6~8小时，原文无线索则填\\"约0分钟（无明确时间流逝）\\"","reason":"更新当前信息的依据，没有则为空字符串"}';
-
-const SETTING_CHANGE_JSON_FIELD_INSTRUCTION =
-  '"setting_change_operations":[{"type":"add|set|delete","key":"稳定的主体/属性键；set/delete 必须使用已有 key","content":"一句简短的当前有效事实；delete 时为空字符串"}]';
 
 const DESCRIPTION_AND_WORLD_INFO_INSTRUCTION =
   '请求中以「角色卡固定设定」标签包裹的世界书、玩家描述和角色描述，是角色卡的预设背景资料，属于只读内容。这些内容不是本楼层新发生的剧情，不得写进 summary，也不应从中提取任何 add/set/delete 变更操作，仅用于消解称呼、理解设定和人物关系。';
@@ -459,12 +448,8 @@ function buildSummarySystemPrompt(options: SummaryGenerationOptions): string {
 function buildSummaryOrderedPrompts(
   content: string,
   options: SummaryGenerationOptions,
-  mode: SummaryPromptMode,
 ): (PlaceholderPrompt | RolePrompt)[] {
-  const user_content =
-    mode === 'structured_output'
-      ? `请总结以下剧情内容：\n\n${buildSummaryContent(content, options)}`
-      : `${buildSummaryJsonInstruction(options)}\n\n${buildSummaryContent(content, options)}`;
+  const user_content = `${buildSummaryJsonInstruction(options)}\n\n${buildSummaryContent(content, options)}`;
 
   return [
     {
@@ -507,34 +492,91 @@ function buildSummaryOverrides(options: SummaryGenerationOptions): Overrides | u
 }
 
 function buildSummaryJsonInstruction(options: SummaryGenerationOptions): string {
-  if (!hasMemoryExtraction(options)) {
-    return SUMMARY_JSON_INSTRUCTION;
-  }
+  const example: Record<string, unknown> = {
+    summary: '连贯的剧情摘要',
+  };
 
-  const fields = ['"summary":"连贯的剧情摘要"'];
   if (options.setting_changes_enabled) {
-    fields.push(SETTING_CHANGE_JSON_FIELD_INSTRUCTION);
+    example.setting_change_operations = [
+      {
+        type: 'add',
+        key: '稳定的主体/属性键；set/delete 必须使用已有 key',
+        content: '一句简短的当前有效事实；delete 时为空字符串',
+      },
+    ];
   }
   if (options.current_info_enabled) {
-    fields.push(CURRENT_INFO_JSON_FIELD_INSTRUCTION);
+    example.current_info_update = {
+      current_time:
+        '本楼层结束后的当前故事时间，必须精确到分钟；现实背景如“2026年6月20日 21:16”，架空背景如“银历3年 霜月·月望日 申时二刻（约21:16）”',
+      location: '本楼层结束后的当前地点',
+      characters: {
+        角色名: {
+          clothing: '角色当前服装；原文未逐项描写时结合身份和场景推断具体描述，完全无法推断才为空字符串',
+          status: '角色当前状态，包含动作、姿势、身体状况和情绪；完全无法推断才为空字符串',
+        },
+      },
+      elapsed_time: '本楼层消耗的剧情时间；原文无线索时填“约0分钟（无明确时间流逝）”',
+      reason: '更新当前信息的依据；没有则为空字符串',
+    };
   }
   if (options.items_enabled) {
-    fields.push(
-      '"item_operations":[{"type":"add|set|delete","name":"物品名","brief":"物品简介或当前状态，没有则为空字符串"}]',
-    );
+    example.item_operations = [
+      {
+        type: 'add',
+        name: '物品名',
+        brief: '物品简介或当前状态；没有则为空字符串',
+      },
+    ];
   }
   if (options.locations_enabled) {
-    fields.push(
-      '"location_operations":[{"type":"add|set|delete","world":"世界或大陆名","world_brief":"世界/大陆简介，没有则为空字符串","country":"国家或地区名，没有则为空字符串","country_brief":"国家简介，没有则为空字符串","city":"城市或城镇名，没有则为空字符串","city_brief":"城市简介，没有则为空字符串","scene":"场景或建筑名，没有则为空字符串","scene_brief":"场景简介，没有则为空字符串","room":"房间或具体地点名，没有则为空字符串","room_brief":"房间简介，没有则为空字符串"}]',
-    );
+    example.location_operations = [
+      {
+        type: 'add',
+        world: '世界或大陆名',
+        world_brief: '世界/大陆简介；没有则为空字符串',
+        country: '国家或地区名；没有则为空字符串',
+        country_brief: '国家简介；没有则为空字符串',
+        city: '城市或城镇名；没有则为空字符串',
+        city_brief: '城市简介；没有则为空字符串',
+        scene: '场景或建筑名；没有则为空字符串',
+        scene_brief: '场景简介；没有则为空字符串',
+        room: '房间或具体地点名；没有则为空字符串',
+        room_brief: '房间简介；没有则为空字符串',
+      },
+    ];
   }
   if (options.characters_enabled) {
-    fields.push(
-      '"characters":[{"type":"add|set|delete（更名须先delete旧名再add新名；合并重复须先delete多余条目；死亡/永久离场须delete）","character_type":"primary|secondary","name":"姓名或身份","background":"主要角色背景：身份地位、种族、职业、家庭关系、重要经历，没有则为空字符串","appearance":"主要角色外貌：身高体型、发色发型、瞳色肤色、面部特征、标志性穿着，没有则为空字符串","personality":"主要角色性格：核心特质、说话方式、行为习惯、价值观，没有则为空字符串","brief":"次要角色简介，没有则为空字符串"}]',
-    );
+    example.characters = [
+      {
+        type: 'add',
+        character_type: 'primary',
+        name: '姓名或身份',
+        background: '主要角色背景；没有或不适用时为空字符串',
+        appearance: '主要角色外貌；没有或不适用时为空字符串',
+        personality: '主要角色性格；没有或不适用时为空字符串',
+        brief: '次要角色简介；没有或不适用时为空字符串',
+      },
+    ];
   }
 
-  return `请总结以下剧情内容，只返回 JSON。格式：{${fields.join(',')}}。不要使用 Markdown 代码块，不要返回额外解释。`;
+  return [
+    '请总结以下剧情内容，并严格按照下面的完整 JSON 结构返回结果。',
+    '',
+    '输出规则：',
+    '- 只输出一个合法的 JSON 根对象，所有已启用字段都必须是该根对象的同级属性。',
+    '- 禁止把 summary 与其他字段拆成多个 JSON 对象，禁止输出 JSONL，禁止在根对象前后添加任何文字。',
+    '- 下面的代码块只用于展示结构；最终回答不得包含 Markdown 代码块标记。',
+    '- 结构示例中的说明文字表示字段应填写的内容，不得原样复制到结果中。',
+    '- 操作对象的 type 只能是 add、set 或 delete；人物的 character_type 只能是 primary 或 secondary。',
+    '- 操作数组中的对象只是字段示例；本楼层没有对应变更时必须返回空数组 []。',
+    '- 所有字符串必须正确进行 JSON 转义，不得在字符串中插入未转义的换行。',
+    '',
+    '完整 JSON 结构示例：',
+    '```json',
+    JSON.stringify(example, null, 2),
+    '```',
+  ].join('\n');
 }
 
 function buildStructuredSummarySchema(options: SummaryGenerationOptions): JsonSchema {
@@ -876,7 +918,7 @@ async function summarizeMessageWithStructuredOutput(
     generation_id: options.generation_id,
     custom_api: buildCustomApi(settings),
     overrides: buildSummaryOverrides(options),
-    ordered_prompts: buildSummaryOrderedPrompts(content, options, 'structured_output'),
+    ordered_prompts: buildSummaryOrderedPrompts(content, options),
     json_schema: buildStructuredSummarySchema(options),
   });
 
@@ -897,7 +939,7 @@ async function summarizeMessageWithJsonPrompt(
     generation_id: options.generation_id,
     custom_api: buildCustomApi(settings),
     overrides: buildSummaryOverrides(options),
-    ordered_prompts: buildSummaryOrderedPrompts(content, options, 'json_prompt'),
+    ordered_prompts: buildSummaryOrderedPrompts(content, options),
   });
 
   if (typeof result !== 'string') {
