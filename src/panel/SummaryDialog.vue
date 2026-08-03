@@ -5,14 +5,18 @@
       <button class="menu_button" type="button" @click="close">{{ t`关闭` }}</button>
     </div>
 
-    <div v-if="summaries.length === 0 && !rollup" class="cosmos-memory-empty">
+    <div v-if="summaries.length === 0 && rollups.length === 0" class="cosmos-memory-empty">
       {{ t`当前聊天记录还没有总结。` }}
     </div>
 
     <div v-else class="cosmos-memory-summary-list">
-      <article v-if="rollup" class="cosmos-memory-summary-item">
+      <article v-for="(rollup, index) in rollups" :key="rollup.updated_at" class="cosmos-memory-summary-item">
         <div class="cosmos-memory-summary-meta">
-          <b> {{ t`前情文章` }}（{{ t`已合并 {count} 条总结`.replace('{count}', String(rollup.sources.length)) }}） </b>
+          <b>
+            {{ t`前情分段` }} {{ index + 1 }} · {{ format_rollup_range(rollup) }}（{{
+              t`已合并 {count} 条总结`.replace('{count}', String(rollup.sources.length))
+            }}）
+          </b>
           <span>{{ format_time(rollup.updated_at) }}</span>
         </div>
         <p>{{ rollup.article }}</p>
@@ -21,7 +25,9 @@
         <div class="cosmos-memory-summary-meta">
           <b>
             {{ t`楼层` }} #{{ summary.message_id }}
-            <template v-if="rollup_covered_ids.has(summary.message_id)">（{{ t`已并入前情文章` }}）</template>
+            <template v-if="rollup_covered_ids.has(summary.message_id)">
+              （{{ t`已由二次总结分段替代注入` }}）
+            </template>
           </b>
           <span>{{ format_time(summary.updated_at) }}</span>
         </div>
@@ -33,23 +39,23 @@
 
 <script setup lang="ts">
 import { getStoredMessageSummaries, type MessageSummary } from '@/core/summary';
-import { getValidSummaryRollup, type SummaryRollup } from '@/core/summary-rollup';
+import { getValidSummaryRollups, type SummaryRollupSegment } from '@/core/summary-rollup';
 
 const dialog_element = ref<HTMLDialogElement | null>(null);
 const summaries = ref<MessageSummary[]>([]);
-const rollup = ref<SummaryRollup | null>(null);
+const rollups = ref<SummaryRollupSegment[]>([]);
 
 const rollup_covered_ids = computed(() => {
-  return new Set(rollup.value?.sources.map(source => source.message_id) ?? []);
+  return new Set(rollups.value.flatMap(rollup => rollup.sources.map(source => source.message_id)));
 });
 
 function open() {
   summaries.value = getStoredMessageSummaries();
   try {
-    rollup.value = getValidSummaryRollup();
+    rollups.value = getValidSummaryRollups();
   } catch (error) {
-    console.warn('[CosmosMemory] 读取前情文章失败', error);
-    rollup.value = null;
+    console.warn('[CosmosMemory] 读取前情分段失败', error);
+    rollups.value = [];
   }
   dialog_element.value?.showModal();
 }
@@ -59,6 +65,10 @@ function close() {
 }
 
 defineExpose({ open });
+
+function format_rollup_range(rollup: SummaryRollupSegment): string {
+  return `#${rollup.sources[0]!.message_id}–#${rollup.sources.at(-1)!.message_id}`;
+}
 
 function format_time(value: string) {
   if (!value) {

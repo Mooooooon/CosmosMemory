@@ -1,9 +1,9 @@
 /**
- * 摘要二次压缩（前情文章）：
- * - 当未合并的旧摘要累计到设定条数时，把它们（连同已有前情文章）二次总结成一篇连贯文章；
- * - 逐楼摘要仍原样保留（实体重放与回滚依赖它们），前情文章只是提示词注入层的合并表示；
- * - 文章记录覆盖楼层及其来源摘要的 updated_at，读取时校验：任一来源摘要被编辑、
- *   删除或回滚后校验失败，文章自动作废，下次触发时基于现存摘要重新生成。
+ * 摘要二次压缩（分段前情）：
+ * - 每个分段只基于一批逐楼摘要生成，后续分段不会再次改写旧分段；
+ * - 逐楼摘要始终原样保留，分段只负责在提示词注入时替代其覆盖的逐楼摘要；
+ * - 每段记录来源摘要的 updated_at。来源被编辑、删除或回滚后，只作废受影响的分段；
+ * - 自动任务只生成完整分段，不足一段的摘要继续以逐楼摘要形式注入。
  */
 import { rollupSummariesToArticle } from '@/api/ai';
 import { STORAGE_ROOT } from '@/core/entity-store';
@@ -15,56 +15,94 @@ const ROLLUP_STORAGE_PATH = `${STORAGE_ROOT}.summary_rollup`;
 
 export type SummaryRollupSource = {
   message_id: number;
-  /** 来源摘要生成时间；与现存摘要不一致说明摘要已被覆盖，文章作废 */
+  /** 来源摘要生成时间；与现存摘要不一致说明该分段已失效 */
   updated_at: string;
 };
 
-export type SummaryRollup = {
+export type SummaryRollupSegment = {
   article: string;
   sources: SummaryRollupSource[];
   updated_at: string;
 };
 
+type StoredSummaryRollups = {
+  segments: SummaryRollupSegment[];
+  updated_at: string;
+};
+
+export type SummaryRollupRunResult = {
+  segments: SummaryRollupSegment[];
+  generated_segment_count: number;
+  generated_source_count: number;
+};
+
 type RollupTask = {
-  promise: Promise<SummaryRollup | null>;
+  promise: Promise<SummaryRollupRunResult>;
   generation_id: string;
 };
 
 let running_task: RollupTask | null = null;
 let is_task_cancelled = false;
 
-function readStoredRollup(): SummaryRollup | null {
-  const variables = window.TavernHelper.getVariables({ type: 'chat' });
-  const rollup = _.get(variables, ROLLUP_STORAGE_PATH) as SummaryRollup | undefined;
+function parseRollupSource(value: unknown): SummaryRollupSource | null {
   if (
-    typeof rollup !== 'object' ||
-    rollup === null ||
-    typeof rollup.article !== 'string' ||
-    !rollup.article.trim() ||
-    !Array.isArray(rollup.sources)
+    typeof value !== 'object' ||
+    value === null ||
+    typeof (value as SummaryRollupSource).message_id !== 'number' ||
+    typeof (value as SummaryRollupSource).updated_at !== 'string'
   ) {
     return null;
   }
 
-  const sources = rollup.sources.filter(
-    (source): source is SummaryRollupSource =>
-      typeof source === 'object' &&
-      source !== null &&
-      typeof source.message_id === 'number' &&
-      typeof source.updated_at === 'string',
-  );
+  return value as SummaryRollupSource;
+}
+
+function parseRollupSegment(value: unknown): SummaryRollupSegment | null {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    typeof (value as SummaryRollupSegment).article !== 'string' ||
+    !(value as SummaryRollupSegment).article.trim() ||
+    !Array.isArray((value as SummaryRollupSegment).sources) ||
+    typeof (value as SummaryRollupSegment).updated_at !== 'string'
+  ) {
+    return null;
+  }
+
+  const sources = (value as SummaryRollupSegment).sources
+    .map(parseRollupSource)
+    .filter((source): source is SummaryRollupSource => source !== null)
+    .sort((left, right) => left.message_id - right.message_id);
   if (sources.length === 0) {
     return null;
   }
 
-  return { ...rollup, sources };
+  return { ...(value as SummaryRollupSegment), sources };
 }
 
-function saveRollup(rollup: SummaryRollup | null) {
+function readStoredRollups(): SummaryRollupSegment[] {
+  const variables = window.TavernHelper.getVariables({ type: 'chat' });
+  const stored = _.get(variables, ROLLUP_STORAGE_PATH) as StoredSummaryRollups | undefined;
+  if (typeof stored !== 'object' || stored === null || !Array.isArray(stored.segments)) {
+    // 旧版单篇文章不再参与注入；逐楼摘要仍完整保留，可通过“重新生成二次总结”重建分段。
+    return [];
+  }
+
+  return stored.segments
+    .map(parseRollupSegment)
+    .filter((segment): segment is SummaryRollupSegment => segment !== null)
+    .sort((left, right) => left.sources[0]!.message_id - right.sources[0]!.message_id);
+}
+
+function saveRollups(segments: SummaryRollupSegment[]) {
   window.TavernHelper.updateVariablesWith(
     variables => {
-      if (rollup) {
-        _.set(variables, ROLLUP_STORAGE_PATH, rollup);
+      if (segments.length > 0) {
+        const stored: StoredSummaryRollups = {
+          segments,
+          updated_at: new Date().toISOString(),
+        };
+        _.set(variables, ROLLUP_STORAGE_PATH, stored);
       } else {
         _.unset(variables, ROLLUP_STORAGE_PATH);
       }
@@ -75,30 +113,34 @@ function saveRollup(rollup: SummaryRollup | null) {
 }
 
 /**
- * 读取当前有效的前情文章：校验每条来源摘要仍然存在且未被覆盖（updated_at 一致）。
- * 校验失败说明部分剧情已被删楼/编辑/回滚改写，文章内容不再可信，立即作废。
+ * 读取当前有效的全部前情分段。单个分段来源失效时只移除该段，其他分段继续使用。
  */
-export function getValidSummaryRollup(): SummaryRollup | null {
-  const rollup = readStoredRollup();
-  if (!rollup) {
-    return null;
+export function getValidSummaryRollups(): SummaryRollupSegment[] {
+  const segments = readStoredRollups();
+  if (segments.length === 0) {
+    return [];
   }
 
-  const summaries_by_id = new Map(getStoredMessageSummaries().map(summary => [summary.message_id, summary]));
-  const is_valid = rollup.sources.every(source => {
-    const summary = summaries_by_id.get(source.message_id);
-    return summary !== undefined && summary.updated_at === source.updated_at;
-  });
+  const { settings } = useSettingsStore();
+  const canonical_batches = getCanonicalBatches(
+    settings.summary_rollup.retained_recent_summary_count,
+    settings.summary_rollup.trigger_summary_count,
+  );
+  const valid_segments = segments.filter(segment =>
+    canonical_batches.some(batch => doesSegmentMatchBatch(segment, batch)),
+  );
 
-  if (!is_valid) {
-    console.info('[CosmosMemory] 前情文章的来源摘要已变更，作废旧文章', {
-      source_message_ids: rollup.sources.map(source => source.message_id),
+  if (valid_segments.length !== segments.length) {
+    const valid_segment_set = new Set(valid_segments);
+    console.info('[CosmosMemory] 部分前情分段的来源摘要已变更，作废受影响分段', {
+      invalid_source_message_ids: segments
+        .filter(segment => !valid_segment_set.has(segment))
+        .flatMap(segment => segment.sources.map(source => source.message_id)),
     });
-    saveRollup(null);
-    return null;
+    saveRollups(valid_segments);
   }
 
-  return rollup;
+  return valid_segments;
 }
 
 function safeGetCurrentChatId(): string | null {
@@ -110,89 +152,150 @@ function safeGetCurrentChatId(): string | null {
   }
 }
 
-/**
- * 计算本次合并的输入：已有文章之外、且不在保留窗口内的摘要。
- * 摘要按楼层升序排列，保留窗口取最近 retained 条。
- */
-function getPendingRollupSummaries(retained_recent_summary_count: number): {
-  rollup: SummaryRollup | null;
-  pending: MessageSummary[];
-} {
-  const rollup = getValidSummaryRollup();
-  const covered_ids = new Set(rollup?.sources.map(source => source.message_id) ?? []);
+function getMergeableSummaries(retained_recent_summary_count: number): MessageSummary[] {
   const summaries = getStoredMessageSummaries();
-  const mergeable = retained_recent_summary_count > 0 ? summaries.slice(0, -retained_recent_summary_count) : summaries;
+  return retained_recent_summary_count > 0 ? summaries.slice(0, -retained_recent_summary_count) : summaries;
+}
+
+function splitIntoCompleteSegments(summaries: MessageSummary[], segment_size: number): MessageSummary[][] {
+  const complete_count = Math.floor(summaries.length / segment_size) * segment_size;
+  const batches: MessageSummary[][] = [];
+  for (let index = 0; index < complete_count; index += segment_size) {
+    batches.push(summaries.slice(index, index + segment_size));
+  }
+  return batches;
+}
+
+function getCanonicalBatches(retained_recent_summary_count: number, segment_size: number): MessageSummary[][] {
+  return splitIntoCompleteSegments(getMergeableSummaries(retained_recent_summary_count), segment_size);
+}
+
+function doesSegmentMatchBatch(segment: SummaryRollupSegment, batch: MessageSummary[]): boolean {
+  return (
+    segment.sources.length === batch.length &&
+    segment.sources.every(
+      (source, index) =>
+        source.message_id === batch[index]!.message_id && source.updated_at === batch[index]!.updated_at,
+    )
+  );
+}
+
+function getPendingRollupBatches(
+  retained_recent_summary_count: number,
+  segment_size: number,
+): {
+  segments: SummaryRollupSegment[];
+  batches: MessageSummary[][];
+} {
+  const segments = getValidSummaryRollups();
+  const canonical_batches = getCanonicalBatches(retained_recent_summary_count, segment_size);
   return {
-    rollup,
-    pending: mergeable.filter(summary => !covered_ids.has(summary.message_id)),
+    segments,
+    batches: canonical_batches.filter(batch => !segments.some(segment => doesSegmentMatchBatch(segment, batch))),
   };
 }
 
-async function rollupCore(generation_id: string): Promise<SummaryRollup | null> {
-  const chat_id = safeGetCurrentChatId();
-  const { settings } = useSettingsStore();
-  const { rollup, pending } = getPendingRollupSummaries(settings.summary_rollup.retained_recent_summary_count);
+function wasTaskCancelled(generation_id: string): boolean {
+  return is_task_cancelled || running_task?.generation_id !== generation_id;
+}
 
-  if (pending.length === 0) {
-    console.info('[CosmosMemory] 没有待合并的摘要，跳过二次总结');
-    return rollup;
+function assertTaskCanSave(chat_id: string | null, batch: MessageSummary[], generation_id: string) {
+  if (wasTaskCancelled(generation_id)) {
+    throw new Error(t`二次总结任务已取消。`);
+  }
+  if (safeGetCurrentChatId() !== chat_id) {
+    throw new Error(t`二次总结完成时聊天已切换，结果未保存。`);
   }
 
-  console.info('[CosmosMemory] 开始二次总结', {
-    pending_message_ids: pending.map(summary => summary.message_id),
-    has_previous_article: rollup !== null,
+  const summaries_by_id = new Map(getStoredMessageSummaries().map(summary => [summary.message_id, summary]));
+  const has_changed_source = batch.some(
+    summary => summaries_by_id.get(summary.message_id)?.updated_at !== summary.updated_at,
+  );
+  if (has_changed_source) {
+    throw new Error(t`二次总结期间来源摘要发生变化，结果未保存，请重试。`);
+  }
+}
+
+async function generateSegment(
+  batch: MessageSummary[],
+  generation_id: string,
+  chat_id: string | null,
+): Promise<SummaryRollupSegment> {
+  console.info('[CosmosMemory] 开始生成前情分段', {
+    source_message_ids: batch.map(summary => summary.message_id),
   });
 
+  const { settings } = useSettingsStore();
   const article = await rollupSummariesToArticle(
     settings.ai,
-    pending.map(summary => ({ message_id: summary.message_id, summary: summary.summary })),
+    batch.map(summary => ({ message_id: summary.message_id, summary: summary.summary })),
     {
-      previous_article: rollup?.article,
       generation_id,
-      should_cancel: () => is_task_cancelled,
+      should_cancel: () => wasTaskCancelled(generation_id),
     },
   );
+  assertTaskCanSave(chat_id, batch, generation_id);
 
-  if (is_task_cancelled) {
-    console.info('[CosmosMemory] 二次总结任务已被取消，丢弃结果');
-    return null;
-  }
-
-  // 异步请求期间用户可能切换了聊天：写入会污染新聊天的变量，直接丢弃结果
-  if (safeGetCurrentChatId() !== chat_id) {
-    console.warn('[CosmosMemory] 二次总结完成时聊天已切换，丢弃结果', { chat_id });
-    return null;
-  }
-
-  // 请求期间摘要可能又发生了变化（删楼/编辑/新增）：以完成时刻的现存摘要重新校验来源，
-  // 已失效的来源不写入，避免文章覆盖标记与实际摘要脱节
-  const summaries_by_id = new Map(getStoredMessageSummaries().map(summary => [summary.message_id, summary]));
-  const sources = [
-    ...(rollup?.sources ?? []),
-    ...pending.map(summary => ({ message_id: summary.message_id, updated_at: summary.updated_at })),
-  ]
-    .filter(source => summaries_by_id.get(source.message_id)?.updated_at === source.updated_at)
-    .sort((left, right) => left.message_id - right.message_id);
-  if (sources.length === 0) {
-    console.warn('[CosmosMemory] 二次总结完成时来源摘要已全部失效，丢弃结果');
-    return null;
-  }
-
-  const new_rollup: SummaryRollup = {
+  return {
     article,
-    sources,
+    sources: batch.map(summary => ({ message_id: summary.message_id, updated_at: summary.updated_at })),
     updated_at: new Date().toISOString(),
   };
-  saveRollup(new_rollup);
-  console.info('[CosmosMemory] 二次总结完成', {
-    article_length: article.length,
-    covered_message_ids: sources.map(source => source.message_id),
-  });
-  return new_rollup;
 }
 
-/** 执行一次二次总结（手动触发按钮使用；无待合并摘要时返回现有文章） */
-export function runSummaryRollup(): Promise<SummaryRollup | null> {
+async function rollupCore(generation_id: string, regenerate: boolean): Promise<SummaryRollupRunResult> {
+  const chat_id = safeGetCurrentChatId();
+  const { settings } = useSettingsStore();
+  const segment_size = settings.summary_rollup.trigger_summary_count;
+  const retained_count = settings.summary_rollup.retained_recent_summary_count;
+  const existing_segments = regenerate ? [] : getValidSummaryRollups();
+  const batches = regenerate
+    ? getCanonicalBatches(retained_count, segment_size)
+    : getPendingRollupBatches(retained_count, segment_size).batches;
+
+  if (batches.length === 0) {
+    if (regenerate) {
+      saveRollups([]);
+    }
+    console.info('[CosmosMemory] 没有达到完整分段大小的待合并摘要，跳过二次总结', {
+      mergeable_summary_count: getMergeableSummaries(retained_count).length,
+      segment_size,
+    });
+    return {
+      segments: existing_segments,
+      generated_segment_count: 0,
+      generated_source_count: 0,
+    };
+  }
+
+  const generated_segments: SummaryRollupSegment[] = [];
+  for (const batch of batches) {
+    generated_segments.push(await generateSegment(batch, generation_id, chat_id));
+  }
+
+  // 较早分段生成后，后续请求期间其来源仍可能被编辑；保存前统一复核整轮全部来源。
+  assertTaskCanSave(chat_id, batches.flat(), generation_id);
+
+  // 重新生成采用原子替换：全部分段成功后才覆盖旧数据；增量生成同样一次性追加本轮完整结果。
+  const segments = [...existing_segments, ...generated_segments].sort(
+    (left, right) => left.sources[0]!.message_id - right.sources[0]!.message_id,
+  );
+  saveRollups(segments);
+  console.info('[CosmosMemory] 分段式二次总结完成', {
+    regenerate,
+    generated_segment_count: generated_segments.length,
+    generated_source_count: generated_segments.reduce((count, segment) => count + segment.sources.length, 0),
+    ranges: generated_segments.map(segment => [segment.sources[0]!.message_id, segment.sources.at(-1)!.message_id]),
+  });
+
+  return {
+    segments,
+    generated_segment_count: generated_segments.length,
+    generated_source_count: generated_segments.reduce((count, segment) => count + segment.sources.length, 0),
+  };
+}
+
+function runRollupTask(regenerate: boolean): Promise<SummaryRollupRunResult> {
   if (running_task) {
     console.info('[CosmosMemory] 复用正在进行的二次总结任务');
     return running_task.promise;
@@ -200,28 +303,41 @@ export function runSummaryRollup(): Promise<SummaryRollup | null> {
 
   is_task_cancelled = false;
   const generation_id = `cosmos-memory-summary-rollup-${Date.now()}`;
-  const promise = rollupCore(generation_id).finally(() => {
+  const promise = rollupCore(generation_id, regenerate).finally(() => {
     running_task = null;
   });
   running_task = { promise, generation_id };
   return promise;
 }
 
-/** 达到触发条数时自动执行二次总结；失败仅告警，不打断主流程 */
+/** 按当前分段大小生成全部达到完整分段的待合并摘要 */
+export function runSummaryRollup(): Promise<SummaryRollupRunResult> {
+  return runRollupTask(false);
+}
+
+/** 丢弃现有分段表示，并按当前设置从现存逐楼摘要完整重建 */
+export function regenerateSummaryRollups(): Promise<SummaryRollupRunResult> {
+  return runRollupTask(true);
+}
+
+/** 待合并摘要达到一个完整分段时自动执行；失败仅告警，不打断主流程 */
 export function triggerSummaryRollupIfNeeded() {
   const { settings } = useSettingsStore();
   if (!settings.summary_rollup.enabled || running_task) {
     return;
   }
 
-  const { pending } = getPendingRollupSummaries(settings.summary_rollup.retained_recent_summary_count);
-  if (pending.length < settings.summary_rollup.trigger_summary_count) {
+  const { batches } = getPendingRollupBatches(
+    settings.summary_rollup.retained_recent_summary_count,
+    settings.summary_rollup.trigger_summary_count,
+  );
+  if (batches.length === 0) {
     return;
   }
 
-  console.info('[CosmosMemory] 未合并摘要达到阈值，自动触发二次总结', {
-    pending_count: pending.length,
-    trigger_summary_count: settings.summary_rollup.trigger_summary_count,
+  console.info('[CosmosMemory] 待合并摘要达到完整分段大小，自动触发二次总结', {
+    pending_segment_count: batches.length,
+    segment_size: settings.summary_rollup.trigger_summary_count,
   });
   void runSummaryRollup().catch(error => {
     console.error('[CosmosMemory] 自动二次总结失败', error);

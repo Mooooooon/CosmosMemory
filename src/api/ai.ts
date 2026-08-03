@@ -226,13 +226,13 @@ const PREVIOUS_ORIGINAL_MESSAGES_INSTRUCTION =
   '请求中以「AI 原文上下文」标签包裹的内容，是本楼层之前最近一条 AI 回复的原文，并可能包含角色卡开场白，仅用于理解剧情前因和上下文。最终 summary 仍应只覆盖「本楼层回复」标签内的内容；若原文与之前剧情总结存在冲突或重复，以原文为准。';
 
 const SUMMARY_ROLLUP_SYSTEM_PROMPT = [
-  '你是 AI RPG 剧情记忆整理器。用户会提供一批按时间顺序排列的剧情摘要（可能还附带一篇此前已经合并好的前情文章）。请把它们二次压缩、整合成一篇连贯的前情提要文章。',
+  '你是 AI RPG 剧情记忆整理器。用户会提供一个固定分段内、按时间顺序排列的剧情摘要。请把它们二次压缩、整合成一篇可独立阅读的连贯前情提要文章。',
   '',
   '写法要求：',
   '- 用第三人称、按时间顺序叙述，语言与摘要保持一致（摘要是英文则文章也用英文）。',
   '- 文章会在脱离原文的场合被单独使用：必须直接使用角色名字或明确称呼指代人物，不要使用脱离上下文后无法理解的"他/她/对方/那个人"。',
-  '- 这是二次压缩：合并重复信息、删去已被后续剧情覆盖的过程性内容，把同一事件线的多条摘要归并成连贯段落，总篇幅应明显短于全部摘要之和。',
-  '- 若提供了已有前情文章，新文章必须完整覆盖其内容并与新摘要融合改写，输出一篇完整的新文章，而不是只写新增部分。',
+  '- 这是二次压缩：可以合并重复描述，但必须覆盖本分段从开头到结尾的剧情发展，不得跳过中间阶段。',
+  '- 按时间顺序保留每个摘要中的独立事件；只有同一事件的重复描述或已被明确推翻的旧状态可以合并或删减。',
   '',
   '必须保留的信息：主线与支线的关键事件和转折、角色关系的建立与变化、角色获得或失去的重要能力/身份/物品、重大冲突及其结果、角色做出的重要选择和承诺、尚未回收的伏笔和悬念。',
   '',
@@ -1011,34 +1011,18 @@ export async function extractCharactersFromChatContent(
 }
 
 export type SummaryRollupGenerationOptions = {
-  /** 已有的前情文章；再次合并时新文章需完整覆盖其内容 */
-  previous_article?: string;
   /** 生成请求唯一标识符，可通过 stopGenerationById 停止本次请求 */
   generation_id?: string;
   /** 返回 true 表示任务已被外部取消，失败后不再降级重试 */
   should_cancel?: () => boolean;
 };
 
-function buildSummaryRollupUserContent(
-  summaries: SummaryContextEntry[],
-  options: SummaryRollupGenerationOptions,
-): string {
-  const sections: string[] = [];
-
-  const previous_article = options.previous_article?.trim();
-  if (previous_article) {
-    sections.push(['[已有前情文章，新文章必须完整覆盖其内容]', previous_article, '[已有前情文章结束]'].join('\n'));
-  }
-
-  sections.push(
-    [
-      '[待整合的剧情摘要，按时间顺序排列]',
-      ...summaries.map(summary => `#${summary.message_id}\n${summary.summary}`),
-      '[待整合的剧情摘要结束]',
-    ].join('\n\n'),
-  );
-
-  return sections.join('\n\n');
+function buildSummaryRollupUserContent(summaries: SummaryContextEntry[]): string {
+  return [
+    '[待整合的分段剧情摘要，按时间顺序排列]',
+    ...summaries.map(summary => `#${summary.message_id}\n${summary.summary}`),
+    '[待整合的分段剧情摘要结束]',
+  ].join('\n\n');
 }
 
 function buildSummaryRollupSchema(): JsonSchema {
@@ -1051,7 +1035,7 @@ function buildSummaryRollupSchema(): JsonSchema {
       properties: {
         article: {
           type: 'string',
-          description: '连贯的前情提要文章，覆盖已有前情文章与全部待整合摘要的关键信息',
+          description: '连贯的前情提要文章，按时间顺序覆盖本分段全部待整合摘要的关键信息',
         },
       },
       required: ['article'],
@@ -1078,7 +1062,7 @@ async function rollupSummariesWithStructuredOutput(
     custom_api: buildCustomApi(settings),
     ordered_prompts: [
       { role: 'system', content: SUMMARY_ROLLUP_SYSTEM_PROMPT },
-      { role: 'user', content: `请整合以下剧情摘要：\n\n${buildSummaryRollupUserContent(summaries, options)}` },
+      { role: 'user', content: `请整合以下剧情摘要：\n\n${buildSummaryRollupUserContent(summaries)}` },
     ],
     json_schema: buildSummaryRollupSchema(),
   });
@@ -1103,7 +1087,7 @@ async function rollupSummariesWithJsonPrompt(
       { role: 'system', content: SUMMARY_ROLLUP_SYSTEM_PROMPT },
       {
         role: 'user',
-        content: `${SUMMARY_ROLLUP_JSON_INSTRUCTION}\n\n${buildSummaryRollupUserContent(summaries, options)}`,
+        content: `${SUMMARY_ROLLUP_JSON_INSTRUCTION}\n\n${buildSummaryRollupUserContent(summaries)}`,
       },
     ],
   });
@@ -1115,7 +1099,7 @@ async function rollupSummariesWithJsonPrompt(
   return parseSummaryRollupJson(result);
 }
 
-/** 把多条剧情摘要（及可选的已有前情文章）二次总结为一篇连贯文章 */
+/** 把一个固定分段内的多条剧情摘要二次总结为一篇连贯文章 */
 export async function rollupSummariesToArticle(
   settings: AiSettings,
   summaries: SummaryContextEntry[],

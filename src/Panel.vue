@@ -236,12 +236,12 @@
 
           <div class="cosmos-memory-hint">
             {{
-              t`开启后，当未合并的总结达到触发条数时，会自动将旧总结二次总结成一篇连贯的前情文章，替代逐楼摘要注入。`
+              t`开启后，每当未合并的旧总结达到一个完整分段时，会生成独立的前情分段；旧分段不会被后续二次总结反复改写。`
             }}
           </div>
 
           <label class="cosmos-memory-field">
-            <span>{{ t`触发条数` }}</span>
+            <span>{{ t`每段总结条数` }}</span>
             <input
               v-model.number="settings.summary_rollup.trigger_summary_count"
               class="text_pole"
@@ -267,7 +267,7 @@
           </label>
 
           <div class="cosmos-memory-hint">
-            {{ t`最近的总结不参与合并，保留逐楼细节；只有更早的总结会被并入前情文章。` }}
+            {{ t`最近的总结不参与合并；更早的总结按设置条数依次分段，不足一个完整分段时继续保留逐楼摘要。` }}
           </div>
 
           <div class="cosmos-memory-row flex-container">
@@ -275,8 +275,15 @@
               class="menu_button"
               type="button"
               :value="is_rolling_up ? t`二次总结中...` : t`立即二次总结`"
-              :disabled="is_rolling_up || is_ai_request_disabled"
+              :disabled="is_rollup_request_running || is_ai_request_disabled"
               @click="handle_run_rollup"
+            />
+            <input
+              class="menu_button"
+              type="button"
+              :value="is_regenerating_rollups ? t`重新生成二次总结中...` : t`重新生成二次总结`"
+              :disabled="is_rollup_request_running || is_ai_request_disabled"
+              @click="handle_regenerate_rollups"
             />
           </div>
 
@@ -408,7 +415,7 @@ import { fetchCustomModelNames, sendPing } from '@/api/ai';
 import { regenerateCharactersFromChat } from '@/core/character-regeneration';
 import { applySummaryCompressionForNextGeneration } from '@/core/compression';
 import { runMemoryBacktrackCheck, stopSummarizeTasks, type MemoryBacktrackCheckResult } from '@/core/summary';
-import { runSummaryRollup } from '@/core/summary-rollup';
+import { regenerateSummaryRollups, runSummaryRollup } from '@/core/summary-rollup';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
 import CharacterDialog from '@/panel/CharacterDialog.vue';
 import CurrentInfoDialog from '@/panel/CurrentInfoDialog.vue';
@@ -447,6 +454,7 @@ const is_testing = ref(false);
 const is_checking_memory = ref(false);
 const is_regenerating_characters = ref(false);
 const is_rolling_up = ref(false);
+const is_regenerating_rollups = ref(false);
 const test_result = ref<TestResult | null>(null);
 const summary_dialog = ref<InstanceType<typeof SummaryDialog> | null>(null);
 const current_info_dialog = ref<InstanceType<typeof CurrentInfoDialog> | null>(null);
@@ -480,6 +488,8 @@ const is_ai_request_disabled = computed(() => {
 const is_regenerate_characters_disabled = computed(() => {
   return is_regenerating_characters.value || is_ai_request_disabled.value;
 });
+
+const is_rollup_request_running = computed(() => is_rolling_up.value || is_regenerating_rollups.value);
 
 async function handle_fetch_models() {
   is_fetching_models.value = true;
@@ -549,20 +559,45 @@ async function handle_run_rollup() {
   is_rolling_up.value = true;
 
   try {
-    const rollup = await runSummaryRollup();
-    if (rollup) {
+    const result = await runSummaryRollup();
+    if (result.generated_segment_count > 0) {
       toastr.success(
-        t`二次总结完成，已合并 {count} 条总结。`.replace('{count}', String(rollup.sources.length)),
+        t`二次总结完成，新增 {segments} 个分段，合并 {count} 条总结。`
+          .replace('{segments}', String(result.generated_segment_count))
+          .replace('{count}', String(result.generated_source_count)),
         'Cosmos Memory',
       );
     } else {
-      toastr.info(t`没有可合并的总结。`, 'Cosmos Memory');
+      toastr.info(t`待合并总结还没有达到一个完整分段。`, 'Cosmos Memory');
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     toastr.error(message, t`Cosmos Memory 二次总结失败`);
   } finally {
     is_rolling_up.value = false;
+  }
+}
+
+async function handle_regenerate_rollups() {
+  is_regenerating_rollups.value = true;
+
+  try {
+    const result = await regenerateSummaryRollups();
+    if (result.generated_segment_count > 0) {
+      toastr.success(
+        t`二次总结重新生成完成，共 {segments} 个分段，覆盖 {count} 条总结。`
+          .replace('{segments}', String(result.generated_segment_count))
+          .replace('{count}', String(result.generated_source_count)),
+        'Cosmos Memory',
+      );
+    } else {
+      toastr.info(t`当前总结数量还不能生成完整分段，已恢复为逐楼摘要。`, 'Cosmos Memory');
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    toastr.error(message, t`Cosmos Memory 重新生成二次总结失败`);
+  } finally {
+    is_regenerating_rollups.value = false;
   }
 }
 
