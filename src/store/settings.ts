@@ -3,6 +3,7 @@ import { validateInplace } from '@/util/zod';
 import { saveSettingsDebounced } from '@sillytavern/script';
 import { extension_settings } from '@sillytavern/scripts/extensions';
 
+<<<<<<< HEAD
 function loadSettings(): Settings {
   try {
     return validateInplace(Settings, _.get(extension_settings, setting_field));
@@ -19,6 +20,10 @@ function loadSettings(): Settings {
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref(loadSettings());
+=======
+export const useSettingsStore = defineStore('settings', () => {
+  const settings = ref(validateInplace(Settings, _.get(extension_settings, setting_field)));
+>>>>>>> 8ebf7b943adddbb972ccd0163fdf8a3ff94673c9
 
   watch(
     settings,
