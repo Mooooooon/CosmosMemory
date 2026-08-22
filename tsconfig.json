@@ -24,9 +24,13 @@
     "isolatedModules": true,
     "importHelpers": true,
     "allowUmdGlobalAccess": true,
+<<<<<<< HEAD
     "allowArbitraryExtensions": true,
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
+=======
+    "allowSyntheticDefaultImports": true,
+>>>>>>> c089c330016918a4f48ceacf41f76f19206f9604
     "strictBindCallApply": true,
     "allowJs": true,
     "checkJs": false,
@@ -41,7 +45,10 @@
   },
   "include": [
     "*.d.ts",
+<<<<<<< HEAD
     "@types/**/*.d.ts",
+=======
+>>>>>>> c089c330016918a4f48ceacf41f76f19206f9604
     "src/**/*.ts",
     "../../../../**/*.js" // for intelligence
   ],
