@@ -1,4 +1,4 @@
-import type { AiSettings } from '@/type/settings';
+import type { AiSettings, ReasoningEffortOption } from '@/type/settings';
 import {
   CharacterOperationsResponse,
   StoredCharactersResponse,
@@ -26,6 +26,7 @@ import {
   type SettingChangeOperation,
 } from '@/core/setting-changes';
 import { parsePrettified } from '@/util/zod';
+import { event_types, eventSource } from '@sillytavern/script';
 
 const TEST_MESSAGE = '!ping';
 const DEFAULT_CUSTOM_API_SOURCE = 'openai';
@@ -38,6 +39,18 @@ const DESCRIPTION_AND_WORLD_INFO_PROMPTS: PlaceholderPrompt[] = [
 ];
 
 type CustomApi = NonNullable<GenerateConfig['custom_api']>;
+type GenerateRawOptions = Parameters<typeof window.TavernHelper.generateRaw>[0];
+type ChatCompletionRequestData = {
+  model?: string;
+  chat_completion_source?: string;
+  include_reasoning?: boolean;
+  reasoning_effort?: string;
+};
+
+type ReasoningRequestOverride = {
+  include_reasoning: boolean;
+  reasoning_effort?: string;
+};
 const SummaryResponse = z.object({
   summary: z.string().trim().min(1),
 });
@@ -253,7 +266,7 @@ const FULL_CHARACTER_EXTRACTION_SYSTEM_PROMPT = [
 const FULL_CHARACTER_JSON_INSTRUCTION =
   '请从以下剧情记录中整理所有需要保存的人物，输出去重、去噪后的最终列表，只返回 JSON。规则：同一角色若有更名，只保留最终名称；重复条目须合并；已死亡或永久离场的角色不输出；每个角色只出现一次。格式：{"characters":[{"type":"primary|secondary","name":"姓名或身份（仅最终名称）","background":"主要角色背景：身份地位、种族、职业、家庭关系、重要经历，没有则为空字符串","appearance":"主要角色外貌：身高体型、发色发型、瞳色肤色、面部特征、标志性穿着，没有则为空字符串","personality":"主要角色性格：核心特质、说话方式、行为习惯、价值观，没有则为空字符串","brief":"次要角色简介，没有则为空字符串"}]}。不要使用 Markdown 代码块，不要返回额外解释。';
 
-function resolveCustomApiSource(settings: AiSettings): string {
+export function resolveCustomApiSource(settings: AiSettings): string {
   // 用户手动指定的源优先；自动推断仅作兜底：识别 deepseek，其余一律按 openai 处理
   if (settings.custom_api_source !== 'auto') {
     return settings.custom_api_source;
@@ -265,6 +278,80 @@ function resolveCustomApiSource(settings: AiSettings): string {
   }
 
   return DEFAULT_CUSTOM_API_SOURCE;
+}
+
+function buildReasoningRequestOverride(settings: AiSettings): ReasoningRequestOverride | undefined {
+  if (settings.use_tavern_api || settings.reasoning_effort === 'auto') {
+    return undefined;
+  }
+
+  const source = resolveCustomApiSource(settings);
+  if (source === DEEPSEEK_API_SOURCE) {
+    if (settings.reasoning_effort === 'off') {
+      return { include_reasoning: false };
+    }
+
+    const deepseek_effort: Record<Exclude<ReasoningEffortOption, 'auto' | 'off'>, 'low' | 'high' | 'max'> = {
+      low: 'low',
+      medium: 'high',
+      high: 'high',
+      max: 'max',
+    };
+    return {
+      include_reasoning: true,
+      reasoning_effort: deepseek_effort[settings.reasoning_effort],
+    };
+  }
+
+  if (source === DEFAULT_CUSTOM_API_SOURCE) {
+    if (settings.reasoning_effort === 'off') {
+      return { include_reasoning: false, reasoning_effort: 'none' };
+    }
+
+    return {
+      include_reasoning: true,
+      reasoning_effort: settings.reasoning_effort === 'max' ? 'xhigh' : settings.reasoning_effort,
+    };
+  }
+
+  return undefined;
+}
+
+/**
+ * TavernHelper 暂未在 generateRaw 参数中暴露思考级别，因此在其请求体就绪事件中只覆盖
+ * 当前 CosmosMemory 自定义端点请求。用 source + model 双重匹配，避免影响其他并发生成。
+ */
+async function generateRawWithSettings(settings: AiSettings, config: Omit<GenerateRawOptions, 'custom_api'>) {
+  const custom_api = buildCustomApi(settings);
+  const reasoning_override = buildReasoningRequestOverride(settings);
+
+  if (!custom_api || !reasoning_override) {
+    return window.TavernHelper.generateRaw({ ...config, custom_api });
+  }
+
+  const expected_source = resolveCustomApiSource(settings);
+  const expected_model = settings.selected_model.trim();
+  let override_applied = false;
+  const apply_reasoning_override = (request: ChatCompletionRequestData) => {
+    if (override_applied || request.chat_completion_source !== expected_source || request.model !== expected_model) {
+      return;
+    }
+
+    override_applied = true;
+    request.include_reasoning = reasoning_override.include_reasoning;
+    if (reasoning_override.reasoning_effort) {
+      request.reasoning_effort = reasoning_override.reasoning_effort;
+    } else {
+      delete request.reasoning_effort;
+    }
+  };
+
+  eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, apply_reasoning_override);
+  try {
+    return await window.TavernHelper.generateRaw({ ...config, custom_api });
+  } finally {
+    eventSource.removeListener(event_types.CHAT_COMPLETION_SETTINGS_READY, apply_reasoning_override);
+  }
 }
 
 function buildCustomApi(settings: AiSettings): CustomApi | undefined {
@@ -307,9 +394,8 @@ export async function fetchCustomModelNames(settings: AiSettings): Promise<strin
 }
 
 export async function sendPing(settings: AiSettings): Promise<string> {
-  const result = await window.TavernHelper.generateRaw({
+  const result = await generateRawWithSettings(settings, {
     should_silence: true,
-    custom_api: buildCustomApi(settings),
     ordered_prompts: [{ role: 'user', content: TEST_MESSAGE }],
   });
 
@@ -913,10 +999,9 @@ async function summarizeMessageWithStructuredOutput(
     previous_summary_count: options.previous_summaries?.length ?? 0,
   });
 
-  const result = await window.TavernHelper.generateRaw({
+  const result = await generateRawWithSettings(settings, {
     should_silence: true,
     generation_id: options.generation_id,
-    custom_api: buildCustomApi(settings),
     overrides: buildSummaryOverrides(options),
     ordered_prompts: buildSummaryOrderedPrompts(content, options),
     json_schema: buildStructuredSummarySchema(options),
@@ -934,10 +1019,9 @@ async function summarizeMessageWithJsonPrompt(
   content: string,
   options: SummaryGenerationOptions = {},
 ): Promise<SummaryGenerationResult> {
-  const result = await window.TavernHelper.generateRaw({
+  const result = await generateRawWithSettings(settings, {
     should_silence: true,
     generation_id: options.generation_id,
-    custom_api: buildCustomApi(settings),
     overrides: buildSummaryOverrides(options),
     ordered_prompts: buildSummaryOrderedPrompts(content, options),
   });
@@ -988,9 +1072,8 @@ async function extractCharactersWithStructuredOutput(
   settings: AiSettings,
   content: string,
 ): Promise<StoredCharacter[]> {
-  const result = await window.TavernHelper.generateRaw({
+  const result = await generateRawWithSettings(settings, {
     should_silence: true,
-    custom_api: buildCustomApi(settings),
     ordered_prompts: [
       {
         role: 'system',
@@ -1012,9 +1095,8 @@ async function extractCharactersWithStructuredOutput(
 }
 
 async function extractCharactersWithJsonPrompt(settings: AiSettings, content: string): Promise<StoredCharacter[]> {
-  const result = await window.TavernHelper.generateRaw({
+  const result = await generateRawWithSettings(settings, {
     should_silence: true,
-    custom_api: buildCustomApi(settings),
     ordered_prompts: [
       {
         role: 'system',
@@ -1098,10 +1180,9 @@ async function rollupSummariesWithStructuredOutput(
   summaries: SummaryContextEntry[],
   options: SummaryRollupGenerationOptions,
 ): Promise<string> {
-  const result = await window.TavernHelper.generateRaw({
+  const result = await generateRawWithSettings(settings, {
     should_silence: true,
     generation_id: options.generation_id,
-    custom_api: buildCustomApi(settings),
     ordered_prompts: [
       { role: 'system', content: SUMMARY_ROLLUP_SYSTEM_PROMPT },
       { role: 'user', content: `请整合以下剧情摘要：\n\n${buildSummaryRollupUserContent(summaries)}` },
@@ -1121,10 +1202,9 @@ async function rollupSummariesWithJsonPrompt(
   summaries: SummaryContextEntry[],
   options: SummaryRollupGenerationOptions,
 ): Promise<string> {
-  const result = await window.TavernHelper.generateRaw({
+  const result = await generateRawWithSettings(settings, {
     should_silence: true,
     generation_id: options.generation_id,
-    custom_api: buildCustomApi(settings),
     ordered_prompts: [
       { role: 'system', content: SUMMARY_ROLLUP_SYSTEM_PROMPT },
       {

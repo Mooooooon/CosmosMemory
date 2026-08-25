@@ -329,6 +329,11 @@
   opacity: 0.85;
 }
 
+.cosmos-memory-reasoning-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .cosmos-memory-edit-form {
   border: 1px solid var(--SmartThemeBorderColor);
   border-radius: 8px;

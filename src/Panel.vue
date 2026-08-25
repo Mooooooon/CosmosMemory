@@ -27,7 +27,7 @@
           </div>
 
           <div v-if="settings.ai.use_tavern_api" class="cosmos-memory-hint">
-            {{ t`将使用 SillyTavern 当前启用的 API 设置。` }}
+            {{ t`将使用 SillyTavern 当前启用的 API 与思考级别设置。` }}
           </div>
 
           <template v-else>
@@ -76,6 +76,32 @@
 
             <div class="cosmos-memory-hint">
               {{ t`自定义端点的 API 类型。自动推断只能识别 deepseek，其他端点请求失败时请手动选择。` }}
+            </div>
+
+            <label class="cosmos-memory-field">
+              <span>{{ t`思考级别` }}</span>
+              <select
+                v-model="settings.ai.reasoning_effort"
+                class="text_pole cosmos-memory-reasoning-select"
+                :disabled="!is_reasoning_effort_supported"
+              >
+                <option value="auto">{{ t`跟随 SillyTavern` }}</option>
+                <option value="off">{{ t`关闭` }}</option>
+                <option value="low">{{ t`低` }}</option>
+                <option value="medium">{{ t`中` }}</option>
+                <option value="high">{{ t`高` }}</option>
+                <option value="max">{{ t`最高` }}</option>
+              </select>
+            </label>
+
+            <div v-if="resolved_custom_api_source === 'deepseek'" class="cosmos-memory-hint">
+              {{ t`DeepSeek：关闭会禁用思考；中级会按官方规则映射为高级。` }}
+            </div>
+            <div v-else-if="resolved_custom_api_source === 'openai'" class="cosmos-memory-hint">
+              {{ t`OpenAI：级别会转换为 Chat Completions 的 reasoning_effort 参数。` }}
+            </div>
+            <div v-else class="cosmos-memory-hint">
+              {{ t`思考级别暂支持 OpenAI 和 DeepSeek API 源。` }}
             </div>
 
             <label class="cosmos-memory-field">
@@ -411,7 +437,7 @@
 </template>
 
 <script setup lang="ts">
-import { fetchCustomModelNames, sendPing } from '@/api/ai';
+import { fetchCustomModelNames, resolveCustomApiSource, sendPing } from '@/api/ai';
 import { regenerateCharactersFromChat } from '@/core/character-regeneration';
 import { applySummaryCompressionForNextGeneration } from '@/core/compression';
 import { runMemoryBacktrackCheck, stopSummarizeTasks, type MemoryBacktrackCheckResult } from '@/core/summary';
@@ -468,6 +494,9 @@ const model_options = computed(() => {
     .map(model => model.trim())
     .filter(Boolean);
 });
+
+const resolved_custom_api_source = computed(() => resolveCustomApiSource(settings.value.ai));
+const is_reasoning_effort_supported = computed(() => ['openai', 'deepseek'].includes(resolved_custom_api_source.value));
 
 const is_test_disabled = computed(() => {
   if (is_testing.value) {

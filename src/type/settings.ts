@@ -1,6 +1,10 @@
 export const DEFAULT_CUSTOM_API_URL = 'https://api.deepseek.com/v1';
 export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 
+/** 总结请求的思考级别；auto 保留 SillyTavern 当前请求设置 */
+export const REASONING_EFFORT_OPTIONS = ['auto', 'off', 'low', 'medium', 'high', 'max'] as const;
+export type ReasoningEffortOption = (typeof REASONING_EFFORT_OPTIONS)[number];
+
 /** 自定义端点的 API 源选项；auto 表示按端点/模型名自动推断（仅识别 deepseek，其余按 openai 处理） */
 export const CUSTOM_API_SOURCE_OPTIONS = [
   'auto',
@@ -24,6 +28,7 @@ export const AiSettings = z
     selected_model: z.string().default(''),
     available_models: z.array(z.string()).default([]),
     max_output_tokens: z.number().int().min(1).default(DEFAULT_MAX_OUTPUT_TOKENS),
+    reasoning_effort: z.enum(REASONING_EFFORT_OPTIONS).default('auto'),
   })
   .prefault({});
 
