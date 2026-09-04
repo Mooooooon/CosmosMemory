@@ -1,4 +1,7 @@
+<<<<<<< HEAD
 import { registerSummaryEvents } from '@/core/events';
+=======
+>>>>>>> a0f2d7e74fb108e07d4995dcd3d34e41d8e77f41
 import Panel from '@/Panel.vue';
 import { App } from 'vue';
 
@@ -20,8 +23,13 @@ const i18n = {
 app.use(i18n);
 
 export function initPanel() {
+<<<<<<< HEAD
   console.info('[CosmosMemory] 初始化插件面板');
   const $app = $('<div id="cosmos_memory">').appendTo('#extensions_settings2');
   app.mount($app[0]);
   registerSummaryEvents();
+=======
+  const $app = $('<div id="tavern_extension_example">').appendTo('#extensions_settings2');
+  app.mount($app[0]);
+>>>>>>> a0f2d7e74fb108e07d4995dcd3d34e41d8e77f41
 }
