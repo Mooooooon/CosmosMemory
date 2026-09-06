@@ -40,6 +40,8 @@
   "发送上下文": "Send context",
   "开启后，总结请求会附带最近的已有总结，帮助 AI 理解之前的剧情走向。": "When enabled, summary requests will include recent existing summaries to help the AI understand the previous story direction.",
   "发送总结条数": "Summaries to send",
+  "编辑楼层后重新总结": "Resummarize on message edit",
+  "开启后，当编辑已被总结的 AI 楼层时，会自动废除旧摘要并基于新内容重新请求总结。": "When enabled, editing a summarized AI reply will invalidate its previous summary and request a new summary based on the updated content.",
   "测试中...": "Testing...",
   "发送测试消息": "Send test message",
   "模型列表获取成功。": "Model list fetched.",

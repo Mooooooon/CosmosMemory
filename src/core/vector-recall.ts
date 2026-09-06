@@ -234,7 +234,7 @@ export async function getVectorIndexStatus(): Promise<{ stored_count: number } |
 }
 
 /** 构造查询文本：最近 N 条非隐藏、非插件自建消息（含刚发送的用户消息）的正则后文本 */
-function buildQuerySearchText(settings: VectorRecallSettings): string {
+function buildQuerySearchText(settings: VectorRecallSettings, excluded_message_id?: number): string {
   const last_id = window.TavernHelper.getLastMessageId();
   if (last_id < 0) {
     return '';
@@ -244,6 +244,7 @@ function buildQuerySearchText(settings: VectorRecallSettings): string {
   const range_start = Math.max(0, last_id - 20);
   const recent_messages = window.TavernHelper.getChatMessages(`${range_start}-${last_id}`, { include_swipes: false })
     .filter(message => !message.is_hidden && !isCosmosMemoryMessage(message))
+    .filter(message => excluded_message_id === undefined || message.message_id < excluded_message_id)
     .slice(-settings.query_recent_message_count);
 
   const search_text = recent_messages
@@ -355,7 +356,9 @@ async function rerankHits(
  * 此时楼层的 is_hidden 已是本次生成的最终状态。
  * 返回召回的楼层 id 列表；任何失败都静默降级，绝不阻断生成。
  */
-export async function applyVectorRecallForNextGeneration(): Promise<number[]> {
+export async function applyVectorRecallForNextGeneration(
+  options: { excluded_message_id?: number } = {},
+): Promise<number[]> {
   // once:true 注入理论上生成后自动清除，此处先卸载做双保险
   window.TavernHelper.uninjectPrompts([VECTOR_RECALL_PROMPT_ID]);
 
@@ -366,7 +369,7 @@ export async function applyVectorRecallForNextGeneration(): Promise<number[]> {
     return [];
   }
 
-  const search_text = buildQuerySearchText(settings);
+  const search_text = buildQuerySearchText(settings, options.excluded_message_id);
   if (!search_text) {
     return [];
   }
@@ -391,6 +394,7 @@ export async function applyVectorRecallForNextGeneration(): Promise<number[]> {
   // 服务端已按相似度降序返回，过滤后仍保持相关度顺序
   const candidates = raw_hits
     .filter(hit => hit.index < protected_threshold)
+    .filter(hit => options.excluded_message_id === undefined || hit.index < options.excluded_message_id)
     .filter(hit => {
       const message = message_by_id.get(hit.index);
       if (!message) {

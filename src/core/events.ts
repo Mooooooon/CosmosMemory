@@ -13,6 +13,7 @@ import { stopSummaryRollupTask, triggerSummaryRollupIfNeeded } from '@/core/summ
 import { event_types, eventSource } from '@sillytavern/script';
 import { initStatusBar, triggerUpdateStatusBar } from '@/core/status-bar';
 import { applyRuntimeMemoryPromptInjection } from '@/core/runtime-memory';
+import { migrateStoredLocationsIfNeeded } from '@/core/locations';
 import {
   applyVectorRecallForNextGeneration,
   cancelVectorSyncForChatChange,
@@ -93,6 +94,12 @@ function handleMessageEdited(message_id: number) {
   // 编辑楼层后触发防抖同步：增量 diff 会自动删除旧文本向量并写入新文本向量
   triggerVectorSyncDebounced();
 
+  const { settings } = useSettingsStore();
+  if (!settings.summary.resummarize_on_edit) {
+    console.info('[CosmosMemory] 编辑楼层后重新总结已关闭，跳过重新总结', { message_id });
+    return;
+  }
+
   void invalidateAndResummarizeMessage(message_id)
     .then(summary => {
       if (summary) {
@@ -154,15 +161,41 @@ async function handleMessageSent(message_id: number) {
   }
 }
 
+const REGENERATION_GENERATION_TYPES = new Set(['regenerate', 'swipe']);
+
 async function handleGenerationAfterCommands(
   type: string,
   option: {
+    depth?: number;
     quiet_prompt?: string;
   },
   dry_run: boolean,
 ) {
-  if (dry_run || SKIPPED_COMPRESSION_GENERATION_TYPES.has(type) || option.quiet_prompt) {
+  if (dry_run || SKIPPED_COMPRESSION_GENERATION_TYPES.has(type) || option?.quiet_prompt) {
     return;
+  }
+
+  let excluded_message_id: number | undefined;
+
+  // 重 roll 或生成新 swipe 时，提前回滚被重新生成的楼层及之后的记忆与摘要，
+  // 避免上一条被废弃回复的剧情事实和提取出来的状态污染本次生成的上下文
+  if (REGENERATION_GENERATION_TYPES.has(type) && window.TavernHelper) {
+    const last_message_id = window.TavernHelper.getLastMessageId();
+    const target_message_id =
+      typeof option?.depth === 'number' && option.depth > 0
+        ? Math.max(0, last_message_id - option.depth)
+        : last_message_id;
+
+    if (target_message_id >= 0) {
+      console.info('[CosmosMemory] 检测到重roll/重新生成分支，生成前提前回滚目标楼层记忆', {
+        type,
+        target_message_id,
+        option_depth: option?.depth,
+      });
+      rollbackSummariesFromMessage(target_message_id);
+      triggerUpdateStatusBar();
+      excluded_message_id = target_message_id;
+    }
   }
 
   try {
@@ -179,7 +212,7 @@ async function handleGenerationAfterCommands(
   try {
     // 必须在压缩流程之后执行：此时楼层 is_hidden 已是本次生成的最终状态，
     // 被压缩隐藏的楼层恰好可被召回原文，与摘要形成互补
-    await applyVectorRecallForNextGeneration();
+    await applyVectorRecallForNextGeneration({ excluded_message_id });
   } catch (error) {
     // 向量召回同为优化项，失败仅记录日志，绝不阻断生成
     console.error('[CosmosMemory] 生成前向量召回失败', error);
@@ -203,7 +236,9 @@ export function registerSummaryEvents() {
   eventSource.on(event_types.CHAT_CHANGED, cancelSummarizationForChatChange);
   eventSource.on(event_types.CHAT_CHANGED, stopSummaryRollupTask);
   eventSource.on(event_types.CHAT_CHANGED, handleChatChangedForVectorSync);
+  eventSource.on(event_types.CHAT_CHANGED, migrateLocationStorageForCurrentChat);
   initStatusBar();
+  migrateLocationStorageForCurrentChat();
   is_summary_listener_registered = true;
 }
 
@@ -211,4 +246,19 @@ function handleChatChangedForVectorSync() {
   // 取消上一个聊天的待执行同步并重置告警标志，再为新聊天补一次索引
   cancelVectorSyncForChatChange();
   triggerVectorSyncDebounced();
+}
+
+function migrateLocationStorageForCurrentChat() {
+  if (!window.TavernHelper) {
+    return;
+  }
+
+  try {
+    if (migrateStoredLocationsIfNeeded(getStoredMessageSummaries())) {
+      console.info('[CosmosMemory] 地点存储已升级，已从摘要操作补回缺失的中间层地点');
+      triggerUpdateStatusBar();
+    }
+  } catch (error) {
+    console.warn('[CosmosMemory] 升级地点存储失败，将在下次进入聊天时重试', error);
+  }
 }

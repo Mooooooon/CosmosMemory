@@ -184,7 +184,9 @@ function renderTabContent($container: JQuery<HTMLElement>) {
           const countries = Object.values(world.countries).sort((left, right) => left.name.localeCompare(right.name));
           for (const country of countries) {
             const $countryNode = $('<div class="cosmos-location-node cosmos-location-country">');
-            $countryNode.append(makeLabeledLine('cosmos-loc-header', `${t`国家/地区`}：`, country.name));
+            if (country.name) {
+              $countryNode.append(makeLabeledLine('cosmos-loc-header', `${t`国家/地区`}：`, country.name));
+            }
             if (country.brief) {
               $countryNode.append($('<div class="cosmos-loc-desc">').text(country.brief));
             }
@@ -192,7 +194,9 @@ function renderTabContent($container: JQuery<HTMLElement>) {
             const cities = Object.values(country.cities).sort((left, right) => left.name.localeCompare(right.name));
             for (const city of cities) {
               const $cityNode = $('<div class="cosmos-location-node cosmos-location-city">');
-              $cityNode.append(makeLabeledLine('cosmos-loc-header', `${t`城市/城镇`}：`, city.name));
+              if (city.name) {
+                $cityNode.append(makeLabeledLine('cosmos-loc-header', `${t`城市/城镇`}：`, city.name));
+              }
               if (city.brief) {
                 $cityNode.append($('<div class="cosmos-loc-desc">').text(city.brief));
               }
@@ -200,7 +204,9 @@ function renderTabContent($container: JQuery<HTMLElement>) {
               const scenes = Object.values(city.scenes).sort((left, right) => left.name.localeCompare(right.name));
               for (const scene of scenes) {
                 const $sceneNode = $('<div class="cosmos-location-node cosmos-location-scene">');
-                $sceneNode.append(makeLabeledLine('cosmos-loc-header', `${t`场景/建筑`}：`, scene.name));
+                if (scene.name) {
+                  $sceneNode.append(makeLabeledLine('cosmos-loc-header', `${t`场景/建筑`}：`, scene.name));
+                }
                 if (scene.brief) {
                   $sceneNode.append($('<div class="cosmos-loc-desc">').text(scene.brief));
                 }

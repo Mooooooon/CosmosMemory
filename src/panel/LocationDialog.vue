@@ -44,7 +44,7 @@
         <p v-if="world.brief">{{ world.brief }}</p>
 
         <section v-for="country in sorted_countries(world)" :key="country.name">
-          <h4>
+          <h4 v-if="country.name">
             {{ t`国家/地区` }}：{{ country.name }}
             <span class="cosmos-memory-inline-actions">
               <button class="menu_button" type="button" @click="handle_edit([world.name, country.name], country.brief)">
@@ -58,7 +58,7 @@
           <p v-if="country.brief">{{ country.brief }}</p>
 
           <section v-for="city in sorted_cities(country)" :key="city.name">
-            <h5>
+            <h5 v-if="city.name">
               {{ t`城市/城镇` }}：{{ city.name }}
               <span class="cosmos-memory-inline-actions">
                 <button
@@ -76,7 +76,7 @@
             <p v-if="city.brief">{{ city.brief }}</p>
 
             <section v-for="scene in sorted_scenes(city)" :key="scene.name">
-              <h6>
+              <h6 v-if="scene.name">
                 {{ t`场景/建筑` }}：{{ scene.name }}
                 <span class="cosmos-memory-inline-actions">
                   <button
@@ -195,7 +195,7 @@ function buildOperation(type: 'set' | 'delete', path: LocationPath, brief?: stri
 }
 
 function handle_edit(path: LocationPath, brief: string) {
-  editing.value = { path, display_path: path.join(' / '), brief };
+  editing.value = { path, display_path: path.filter(Boolean).join(' / '), brief };
 }
 
 function handle_save() {
@@ -217,7 +217,7 @@ function handle_save() {
 }
 
 function handle_delete(path: LocationPath) {
-  const display_path = path.join(' / ');
+  const display_path = path.filter(Boolean).join(' / ');
   if (!confirm(t`确定要删除地点「{name}」及其下所有层级吗？`.replace('{name}', display_path))) {
     return;
   }

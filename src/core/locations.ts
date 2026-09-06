@@ -7,6 +7,13 @@ import {
 } from '@/core/entity-store';
 
 const LOCATION_STORAGE_PATH = `${STORAGE_ROOT}.locations`;
+const LOCATION_STORAGE_VERSION_PATH = `${STORAGE_ROOT}.locations_storage_version`;
+const LOCATION_STORAGE_VERSION = 2;
+/**
+ * 存储模型是固定五级树，但现实设定不一定包含每一级（例如架空城市可能没有国家）。
+ * 缺失的中间层使用仅供内部寻址的虚拟节点承接；节点 name 保持为空，展示和注入时跳过该层。
+ */
+const IMPLICIT_LOCATION_KEY = '__cosmos_memory_implicit__';
 export const LOCATION_PROMPT_ID = 'cosmos_memory_locations';
 export const LOCATION_PROMPT_DEPTH = 10001;
 
@@ -150,7 +157,7 @@ function getOrCreateWorld(locations: Record<string, StoredLocationWorld>, world_
 }
 
 function getOrCreateCountry(world: StoredLocationWorld, country_name: string): StoredLocationCountry {
-  const country_key = normalizeLocationKey(country_name);
+  const country_key = country_name ? normalizeLocationKey(country_name) : IMPLICIT_LOCATION_KEY;
   const existing = world.countries[country_key];
   if (existing) {
     return existing;
@@ -166,7 +173,7 @@ function getOrCreateCountry(world: StoredLocationWorld, country_name: string): S
 }
 
 function getOrCreateCity(country: StoredLocationCountry, city_name: string): StoredLocationCity {
-  const city_key = normalizeLocationKey(city_name);
+  const city_key = city_name ? normalizeLocationKey(city_name) : IMPLICIT_LOCATION_KEY;
   const existing = country.cities[city_key];
   if (existing) {
     return existing;
@@ -182,7 +189,7 @@ function getOrCreateCity(country: StoredLocationCountry, city_name: string): Sto
 }
 
 function getOrCreateScene(city: StoredLocationCity, scene_name: string): StoredLocationScene {
-  const scene_key = normalizeLocationKey(scene_name);
+  const scene_key = scene_name ? normalizeLocationKey(scene_name) : IMPLICIT_LOCATION_KEY;
   const existing = city.scenes[scene_key];
   if (existing) {
     return existing;
@@ -213,40 +220,33 @@ function mergeLocationOperation(
   }
 
   if (operation.type === 'delete') {
-    if (room_name && scene_name && city_name && country_name) {
+    const has_country_level = Boolean(country_name || city_name || scene_name || room_name);
+    const has_city_level = Boolean(city_name || scene_name || room_name);
+    const has_scene_level = Boolean(scene_name || room_name);
+    const country_key = country_name ? normalizeLocationKey(country_name) : IMPLICIT_LOCATION_KEY;
+    const city_key = city_name ? normalizeLocationKey(city_name) : IMPLICIT_LOCATION_KEY;
+    const scene_key = scene_name ? normalizeLocationKey(scene_name) : IMPLICIT_LOCATION_KEY;
+
+    if (room_name && has_scene_level && has_city_level && has_country_level) {
       _.unset(locations, [
         world_key,
         'countries',
-        normalizeLocationKey(country_name),
+        country_key,
         'cities',
-        normalizeLocationKey(city_name),
+        city_key,
         'scenes',
-        normalizeLocationKey(scene_name),
+        scene_key,
         'rooms',
         normalizeLocationKey(room_name),
       ]);
       return locations;
     }
-    if (scene_name && city_name && country_name) {
-      _.unset(locations, [
-        world_key,
-        'countries',
-        normalizeLocationKey(country_name),
-        'cities',
-        normalizeLocationKey(city_name),
-        'scenes',
-        normalizeLocationKey(scene_name),
-      ]);
+    if (scene_name && has_city_level && has_country_level) {
+      _.unset(locations, [world_key, 'countries', country_key, 'cities', city_key, 'scenes', scene_key]);
       return locations;
     }
-    if (city_name && country_name) {
-      _.unset(locations, [
-        world_key,
-        'countries',
-        normalizeLocationKey(country_name),
-        'cities',
-        normalizeLocationKey(city_name),
-      ]);
+    if (city_name && has_country_level) {
+      _.unset(locations, [world_key, 'countries', country_key, 'cities', city_key]);
       return locations;
     }
     if (country_name) {
@@ -264,7 +264,8 @@ function mergeLocationOperation(
     world.brief = world_brief;
   }
 
-  if (!country_name) {
+  // 允许跳过缺失的中间层，但不能在没有任何下级信息时凭空创建虚拟节点。
+  if (!country_name && !city_name && !scene_name && !room_name) {
     return locations;
   }
 
@@ -274,7 +275,7 @@ function mergeLocationOperation(
     country.brief = country_brief;
   }
 
-  if (!city_name) {
+  if (!city_name && !scene_name && !room_name) {
     return locations;
   }
 
@@ -284,7 +285,7 @@ function mergeLocationOperation(
     city.brief = city_brief;
   }
 
-  if (!scene_name) {
+  if (!scene_name && !room_name) {
     return locations;
   }
 
@@ -337,6 +338,27 @@ export function rebuildStoredLocationsFromSummaries(summaries: SummaryWithLocati
 }
 
 /**
+ * v2 开始允许省略任意中间层。旧合并逻辑遇到空的中间层会提前返回，
+ * 因此需要从已经保存的摘要操作重放一次，补回此前被丢弃的下级地点。
+ */
+export function migrateStoredLocationsIfNeeded(summaries: SummaryWithLocationOperations[]): boolean {
+  const variables = window.TavernHelper.getVariables({ type: 'chat' });
+  if (_.get(variables, LOCATION_STORAGE_VERSION_PATH) === LOCATION_STORAGE_VERSION) {
+    return false;
+  }
+
+  locationStore.rebuildFromSummaries(summaries);
+  window.TavernHelper.updateVariablesWith(
+    current_variables => {
+      _.set(current_variables, LOCATION_STORAGE_VERSION_PATH, LOCATION_STORAGE_VERSION);
+      return current_variables;
+    },
+    { type: 'chat' },
+  );
+  return true;
+}
+
+/**
  * 手动应用一条地点操作（编辑各层级 brief 或删除节点）。
  * LocationOperation 本身支持任意层级的 set/delete，直接复用；
  * 操作进入手动日志，rebuild 时重放，用户修正不被回滚冲掉。
@@ -362,27 +384,37 @@ export function formatLocationsForPrompt(locations: StoredLocationWorld[] = getS
     }
 
     for (const country of Object.values(world.countries).sort((left, right) => left.name.localeCompare(right.name))) {
-      lines.push(`  - 国家/地区：${country.name}`);
+      const country_depth = 1;
+      if (country.name) {
+        lines.push(`${'  '.repeat(country_depth)}- 国家/地区：${country.name}`);
+      }
       if (country.brief) {
-        lines.push(`    简介：${country.brief}`);
+        lines.push(`${'  '.repeat(country_depth + 1)}简介：${country.brief}`);
       }
 
       for (const city of Object.values(country.cities).sort((left, right) => left.name.localeCompare(right.name))) {
-        lines.push(`    - 城市/城镇：${city.name}`);
+        const city_depth = country.name ? country_depth + 1 : country_depth;
+        if (city.name) {
+          lines.push(`${'  '.repeat(city_depth)}- 城市/城镇：${city.name}`);
+        }
         if (city.brief) {
-          lines.push(`      简介：${city.brief}`);
+          lines.push(`${'  '.repeat(city_depth + 1)}简介：${city.brief}`);
         }
 
         for (const scene of Object.values(city.scenes).sort((left, right) => left.name.localeCompare(right.name))) {
-          lines.push(`      - 场景/建筑：${scene.name}`);
+          const scene_depth = city.name ? city_depth + 1 : city_depth;
+          if (scene.name) {
+            lines.push(`${'  '.repeat(scene_depth)}- 场景/建筑：${scene.name}`);
+          }
           if (scene.brief) {
-            lines.push(`        简介：${scene.brief}`);
+            lines.push(`${'  '.repeat(scene_depth + 1)}简介：${scene.brief}`);
           }
 
           for (const room of Object.values(scene.rooms).sort((left, right) => left.name.localeCompare(right.name))) {
-            lines.push(`        - 房间/具体地点：${room.name}`);
+            const room_depth = scene.name ? scene_depth + 1 : scene_depth;
+            lines.push(`${'  '.repeat(room_depth)}- 房间/具体地点：${room.name}`);
             if (room.brief) {
-              lines.push(`          简介：${room.brief}`);
+              lines.push(`${'  '.repeat(room_depth + 1)}简介：${room.brief}`);
             }
           }
         }

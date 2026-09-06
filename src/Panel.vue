@@ -249,6 +249,19 @@
             />
           </label>
 
+          <div class="cosmos-memory-row flex-container">
+            <input
+              id="cosmos_memory_resummarize_on_edit"
+              v-model="settings.summary.resummarize_on_edit"
+              type="checkbox"
+            />
+            <label for="cosmos_memory_resummarize_on_edit">{{ t`编辑楼层后重新总结` }}</label>
+          </div>
+
+          <div class="cosmos-memory-hint">
+            {{ t`开启后，当编辑已被总结的 AI 楼层时，会自动废除旧摘要并基于新内容重新请求总结。` }}
+          </div>
+
           <hr class="sysHR" />
 
           <div class="cosmos-memory-row flex-container">

@@ -190,7 +190,7 @@ export function formatCurrentInfoForSummaryRequest(current_info: CurrentInfo | u
 
   return [
     '[CosmosMemory 当前信息]',
-    '当前信息尚未记录，请根据本楼层剧情生成符合背景的时间、地点和当前出场角色状态。',
+    '当前信息尚未记录，请根据本楼层剧情生成符合背景的时间（现代作品务必加上星期几以判断是否是工作日）、地点和当前出场角色状态。',
     '[/CosmosMemory 当前信息]',
   ].join('\n');
 }
