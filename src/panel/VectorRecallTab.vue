@@ -179,7 +179,9 @@
       </div>
 
       <div class="cosmos-memory-hint">
-        {{ t`对向量检索候选用交叉编码器重排，显著提升召回准确度；与 Embedding 共用 API Key，失败时自动降级为向量排序。` }}
+        {{
+          t`对向量检索候选用交叉编码器重排，显著提升召回准确度；与 Embedding 共用 API Key，失败时自动降级为向量排序。`
+        }}
       </div>
 
       <div v-if="settings.vector_recall.rerank_enabled" class="cosmos-sub-card">
