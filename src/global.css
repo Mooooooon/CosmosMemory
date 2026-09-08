@@ -398,3 +398,120 @@
   margin: 0 !important;
   min-width: 0;
 }
+
+/* ===== CosmosMemory 卡片式分组与组件样式 ===== */
+.cosmos-section-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--SmartThemeBorderColor);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.cosmos-section-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.cosmos-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.cosmos-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.95em;
+  color: var(--SmartThemeBodyColor);
+}
+
+.cosmos-section-title i {
+  opacity: 0.8;
+  font-size: 0.9em;
+}
+
+.cosmos-sub-card {
+  background: rgba(0, 0, 0, 0.15);
+  border: 1px dashed var(--SmartThemeBorderColor);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 10px 0;
+}
+
+.cosmos-button-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.cosmos-button-group .menu_button {
+  margin: 0;
+}
+
+/* 全局面版按钮防止 flex 挤压导致文字竖排 */
+.cosmos-memory-settings .menu_button,
+.cosmos-section-card .menu_button {
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  width: auto;
+  min-width: fit-content;
+}
+
+/* 剧情要素卡片样式 */
+.cosmos-entity-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cosmos-entity-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.cosmos-entity-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 0.95em;
+  cursor: pointer;
+  user-select: none;
+  color: var(--SmartThemeBodyColor);
+}
+
+.cosmos-entity-title i {
+  opacity: 0.85;
+  width: 16px;
+  text-align: center;
+}
+
+.cosmos-entity-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.cosmos-entity-actions .menu_button {
+  margin: 0;
+  font-size: 0.85em;
+  padding: 4px 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+

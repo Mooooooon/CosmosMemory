@@ -1,219 +1,259 @@
 <template>
-  <div>
-    <div class="cosmos-memory-row flex-container">
-      <input id="cosmos_memory_vector_recall_enabled" v-model="settings.vector_recall.enabled" type="checkbox" />
-      <label for="cosmos_memory_vector_recall_enabled">{{ t`启用向量召回` }}</label>
-    </div>
+  <div class="cosmos-settings-tab-panel">
+    <!-- 卡片 1: 向量服务与模型 -->
+    <div class="cosmos-section-card">
+      <div class="cosmos-section-header">
+        <span class="cosmos-section-title">
+          <i class="fa-solid fa-brain"></i>
+          {{ t`向量服务与模型` }}
+        </span>
+      </div>
 
-    <div class="cosmos-memory-hint">
-      {{ t`开启后会把 AI 回复原文向量化存入本地索引，生成时召回相关的历史剧情原文注入提示词，与摘要压缩互补。` }}
-    </div>
-
-    <label class="cosmos-memory-field">
-      <span>{{ t`SiliconFlow API Key` }}</span>
-      <input v-model.trim="settings.vector_recall.api_key" class="text_pole" type="password" autocomplete="off" />
-    </label>
-
-    <div class="cosmos-memory-row flex-container">
-      <input
-        class="menu_button"
-        type="button"
-        :value="is_fetching_models ? t`获取中...` : t`获取模型列表`"
-        :disabled="is_fetching_models || !settings.vector_recall.api_key.trim()"
-        @click="handle_fetch_embedding_models"
-      />
-      <input
-        class="menu_button"
-        type="button"
-        :value="is_testing ? t`测试中...` : t`测试连接`"
-        :disabled="is_testing || !settings.vector_recall.api_key.trim() || !settings.vector_recall.model.trim()"
-        @click="handle_test_embedding"
-      />
-    </div>
-
-    <label class="cosmos-memory-field">
-      <span>{{ t`Embedding 模型` }}</span>
-      <select v-model="settings.vector_recall.model" class="text_pole">
-        <option v-for="model in model_options" :key="model" :value="model">
-          {{ model }}
-        </option>
-      </select>
-    </label>
-
-    <div class="cosmos-memory-hint">
-      {{ t`更换模型后索引会自动按模型隔离重建，旧模型的索引不受影响。` }}
-    </div>
-
-    <div v-if="test_result" class="cosmos-memory-test-result" :class="`cosmos-memory-test-result--${test_result.type}`">
-      {{ test_result.message }}
-    </div>
-
-    <hr class="sysHR" />
-
-    <label class="cosmos-memory-field">
-      <span>{{ t`查询使用的最近消息条数` }}</span>
-      <input
-        v-model.number="settings.vector_recall.query_recent_message_count"
-        class="text_pole"
-        type="number"
-        min="1"
-        step="1"
-        @change="normalize_query_recent_message_count"
-      />
-    </label>
-
-    <label class="cosmos-memory-field">
-      <span>{{ t`召回条数上限` }}</span>
-      <input
-        v-model.number="settings.vector_recall.top_k"
-        class="text_pole"
-        type="number"
-        min="1"
-        step="1"
-        @change="normalize_top_k"
-      />
-    </label>
-
-    <label class="cosmos-memory-field">
-      <span>{{ t`相似度阈值` }}</span>
-      <input
-        v-model.number="settings.vector_recall.score_threshold"
-        class="text_pole"
-        type="number"
-        min="0"
-        max="1"
-        step="0.05"
-        @change="normalize_score_threshold"
-      />
-    </label>
-
-    <label class="cosmos-memory-field">
-      <span>{{ t`保护最近 AI 楼层数` }}</span>
-      <input
-        v-model.number="settings.vector_recall.protect_recent_assistant_count"
-        class="text_pole"
-        type="number"
-        min="0"
-        step="1"
-        @change="normalize_protect_count"
-      />
-    </label>
-
-    <div class="cosmos-memory-hint">
-      {{ t`最近 N 条 AI 回复不参与召回，它们的原文通常仍在上下文中。` }}
-    </div>
-
-    <div class="cosmos-memory-row flex-container">
-      <input
-        id="cosmos_memory_vector_recall_only_hidden"
-        v-model="settings.vector_recall.only_recall_hidden"
-        type="checkbox"
-      />
-      <label for="cosmos_memory_vector_recall_only_hidden">{{ t`仅召回已隐藏楼层` }}</label>
-    </div>
-
-    <div class="cosmos-memory-hint">
-      {{ t`未隐藏楼层的原文已在上下文中，关闭本项可能导致内容重复，仅建议配合极小的保留原文数量使用。` }}
-    </div>
-
-    <label class="cosmos-memory-field">
-      <span>{{ t`注入深度` }}</span>
-      <input
-        v-model.number="settings.vector_recall.injection_depth"
-        class="text_pole"
-        type="number"
-        min="0"
-        step="1"
-        @change="normalize_injection_depth"
-      />
-    </label>
-
-    <label class="cosmos-memory-field">
-      <span>{{ t`单楼层截断字符数` }}</span>
-      <input
-        v-model.number="settings.vector_recall.max_chars_per_message"
-        class="text_pole"
-        type="number"
-        min="200"
-        step="100"
-        @change="normalize_max_chars"
-      />
-    </label>
-
-    <hr class="sysHR" />
-
-    <div class="cosmos-memory-row flex-container">
-      <input id="cosmos_memory_rerank_enabled" v-model="settings.vector_recall.rerank_enabled" type="checkbox" />
-      <label for="cosmos_memory_rerank_enabled">{{ t`启用 Rerank 精排` }}</label>
-    </div>
-
-    <div class="cosmos-memory-hint">
-      {{ t`对向量检索候选用交叉编码器重排，显著提升召回准确度；与 Embedding 共用 API Key，失败时自动降级为向量排序。` }}
-    </div>
-
-    <template v-if="settings.vector_recall.rerank_enabled">
       <div class="cosmos-memory-row flex-container">
-        <input
-          class="menu_button"
-          type="button"
-          :value="is_fetching_rerank_models ? t`获取中...` : t`获取 Rerank 模型列表`"
-          :disabled="is_fetching_rerank_models || !settings.vector_recall.api_key.trim()"
-          @click="handle_fetch_rerank_models"
-        />
+        <input id="cosmos_memory_vector_recall_enabled" v-model="settings.vector_recall.enabled" type="checkbox" />
+        <label for="cosmos_memory_vector_recall_enabled">{{ t`启用向量召回` }}</label>
+      </div>
+
+      <div class="cosmos-memory-hint">
+        {{ t`开启后会把 AI 回复原文向量化存入本地索引，生成时召回相关的历史剧情原文注入提示词，与摘要压缩互补。` }}
+      </div>
+
+      <div v-if="settings.vector_recall.enabled" class="cosmos-sub-card">
+        <label class="cosmos-memory-field">
+          <span>{{ t`SiliconFlow API Key` }}</span>
+          <input v-model.trim="settings.vector_recall.api_key" class="text_pole" type="password" autocomplete="off" />
+        </label>
+
+        <div class="cosmos-memory-row flex-container cosmos-button-group">
+          <input
+            class="menu_button"
+            type="button"
+            :value="is_fetching_models ? t`获取中...` : t`获取模型列表`"
+            :disabled="is_fetching_models || !settings.vector_recall.api_key.trim()"
+            @click="handle_fetch_embedding_models"
+          />
+          <input
+            class="menu_button"
+            type="button"
+            :value="is_testing ? t`测试中...` : t`测试连接`"
+            :disabled="is_testing || !settings.vector_recall.api_key.trim() || !settings.vector_recall.model.trim()"
+            @click="handle_test_embedding"
+          />
+        </div>
+
+        <label class="cosmos-memory-field">
+          <span>{{ t`Embedding 模型` }}</span>
+          <select v-model="settings.vector_recall.model" class="text_pole">
+            <option v-for="model in model_options" :key="model" :value="model">
+              {{ model }}
+            </option>
+          </select>
+        </label>
+
+        <div class="cosmos-memory-hint">
+          {{ t`更换模型后索引会自动按模型隔离重建，旧模型的索引不受影响。` }}
+        </div>
+
+        <div
+          v-if="test_result"
+          class="cosmos-memory-test-result"
+          :class="`cosmos-memory-test-result--${test_result.type}`"
+        >
+          {{ test_result.message }}
+        </div>
+      </div>
+    </div>
+
+    <!-- 卡片 2: 检索与召回设置 -->
+    <div class="cosmos-section-card">
+      <div class="cosmos-section-header">
+        <span class="cosmos-section-title">
+          <i class="fa-solid fa-sliders"></i>
+          {{ t`检索与召回设置` }}
+        </span>
       </div>
 
       <label class="cosmos-memory-field">
-        <span>{{ t`Rerank 模型` }}</span>
-        <select v-model="settings.vector_recall.rerank_model" class="text_pole">
-          <option v-for="model in rerank_model_options" :key="model" :value="model">
-            {{ model }}
-          </option>
-        </select>
+        <span>{{ t`查询使用的最近消息条数` }}</span>
+        <input
+          v-model.number="settings.vector_recall.query_recent_message_count"
+          class="text_pole"
+          type="number"
+          min="1"
+          step="1"
+          @change="normalize_query_recent_message_count"
+        />
       </label>
 
       <label class="cosmos-memory-field">
-        <span>{{ t`Rerank 相关度阈值` }}</span>
+        <span>{{ t`召回条数上限` }}</span>
         <input
-          v-model.number="settings.vector_recall.rerank_score_threshold"
+          v-model.number="settings.vector_recall.top_k"
+          class="text_pole"
+          type="number"
+          min="1"
+          step="1"
+          @change="normalize_top_k"
+        />
+      </label>
+
+      <label class="cosmos-memory-field">
+        <span>{{ t`相似度阈值` }}</span>
+        <input
+          v-model.number="settings.vector_recall.score_threshold"
           class="text_pole"
           type="number"
           min="0"
           max="1"
           step="0.05"
-          @change="normalize_rerank_score_threshold"
+          @change="normalize_score_threshold"
         />
       </label>
-    </template>
 
-    <hr class="sysHR" />
+      <label class="cosmos-memory-field">
+        <span>{{ t`保护最近 AI 楼层数` }}</span>
+        <input
+          v-model.number="settings.vector_recall.protect_recent_assistant_count"
+          class="text_pole"
+          type="number"
+          min="0"
+          step="1"
+          @change="normalize_protect_count"
+        />
+      </label>
 
-    <div class="cosmos-memory-row flex-container">
-      <span>{{ t`已入库片段` }}：{{ stored_count === null ? t`未知` : stored_count }}</span>
-      <input class="menu_button" type="button" :value="t`刷新`" @click="handle_refresh_status" />
+      <div class="cosmos-memory-hint">
+        {{ t`最近 N 条 AI 回复不参与召回，它们的原文通常仍在上下文中。` }}
+      </div>
+
+      <div class="cosmos-memory-row flex-container">
+        <input
+          id="cosmos_memory_vector_recall_only_hidden"
+          v-model="settings.vector_recall.only_recall_hidden"
+          type="checkbox"
+        />
+        <label for="cosmos_memory_vector_recall_only_hidden">{{ t`仅召回已隐藏楼层` }}</label>
+      </div>
+
+      <div class="cosmos-memory-hint">
+        {{ t`未隐藏楼层的原文已在上下文中，关闭本项可能导致内容重复，仅建议配合极小的保留原文数量使用。` }}
+      </div>
+
+      <label class="cosmos-memory-field">
+        <span>{{ t`注入深度` }}</span>
+        <input
+          v-model.number="settings.vector_recall.injection_depth"
+          class="text_pole"
+          type="number"
+          min="0"
+          step="1"
+          @change="normalize_injection_depth"
+        />
+      </label>
+
+      <label class="cosmos-memory-field">
+        <span>{{ t`单楼层截断字符数` }}</span>
+        <input
+          v-model.number="settings.vector_recall.max_chars_per_message"
+          class="text_pole"
+          type="number"
+          min="200"
+          step="100"
+          @change="normalize_max_chars"
+        />
+      </label>
     </div>
 
-    <div class="cosmos-memory-row flex-container">
-      <input
-        class="menu_button"
-        type="button"
-        :value="is_syncing ? t`同步中...` : t`立即同步`"
-        :disabled="is_busy"
-        @click="handle_sync_now"
-      />
-      <input
-        class="menu_button"
-        type="button"
-        :value="is_rebuilding ? t`重建中...` : t`全量重建索引`"
-        :disabled="is_busy"
-        @click="handle_rebuild_index"
-      />
-      <input
-        class="menu_button"
-        type="button"
-        :value="is_purging ? t`清空中...` : t`清空索引`"
-        :disabled="is_busy"
-        @click="handle_purge_index"
-      />
+    <!-- 卡片 3: Rerank 重排精排 -->
+    <div class="cosmos-section-card">
+      <div class="cosmos-section-header">
+        <span class="cosmos-section-title">
+          <i class="fa-solid fa-arrow-down-wide-short"></i>
+          {{ t`Rerank 重排精排` }}
+        </span>
+      </div>
+
+      <div class="cosmos-memory-row flex-container">
+        <input id="cosmos_memory_rerank_enabled" v-model="settings.vector_recall.rerank_enabled" type="checkbox" />
+        <label for="cosmos_memory_rerank_enabled">{{ t`启用 Rerank 精排` }}</label>
+      </div>
+
+      <div class="cosmos-memory-hint">
+        {{ t`对向量检索候选用交叉编码器重排，显著提升召回准确度；与 Embedding 共用 API Key，失败时自动降级为向量排序。` }}
+      </div>
+
+      <div v-if="settings.vector_recall.rerank_enabled" class="cosmos-sub-card">
+        <div class="cosmos-memory-row flex-container">
+          <input
+            class="menu_button"
+            type="button"
+            :value="is_fetching_rerank_models ? t`获取中...` : t`获取 Rerank 模型列表`"
+            :disabled="is_fetching_rerank_models || !settings.vector_recall.api_key.trim()"
+            @click="handle_fetch_rerank_models"
+          />
+        </div>
+
+        <label class="cosmos-memory-field">
+          <span>{{ t`Rerank 模型` }}</span>
+          <select v-model="settings.vector_recall.rerank_model" class="text_pole">
+            <option v-for="model in rerank_model_options" :key="model" :value="model">
+              {{ model }}
+            </option>
+          </select>
+        </label>
+
+        <label class="cosmos-memory-field">
+          <span>{{ t`Rerank 相关度阈值` }}</span>
+          <input
+            v-model.number="settings.vector_recall.rerank_score_threshold"
+            class="text_pole"
+            type="number"
+            min="0"
+            max="1"
+            step="0.05"
+            @change="normalize_rerank_score_threshold"
+          />
+        </label>
+      </div>
+    </div>
+
+    <!-- 卡片 4: 索引状态与操作 -->
+    <div class="cosmos-section-card">
+      <div class="cosmos-section-header">
+        <span class="cosmos-section-title">
+          <i class="fa-solid fa-database"></i>
+          {{ t`索引状态与操作` }}
+        </span>
+      </div>
+
+      <div class="cosmos-memory-row flex-container">
+        <span>{{ t`已入库片段` }}：{{ stored_count === null ? t`未知` : stored_count }}</span>
+        <input class="menu_button" type="button" :value="t`刷新`" @click="handle_refresh_status" />
+      </div>
+
+      <div class="cosmos-memory-row flex-container cosmos-button-group">
+        <input
+          class="menu_button"
+          type="button"
+          :value="is_syncing ? t`同步中...` : t`立即同步`"
+          :disabled="is_busy"
+          @click="handle_sync_now"
+        />
+        <input
+          class="menu_button"
+          type="button"
+          :value="is_rebuilding ? t`重建中...` : t`全量重建索引`"
+          :disabled="is_busy"
+          @click="handle_rebuild_index"
+        />
+        <input
+          class="menu_button"
+          type="button"
+          :value="is_purging ? t`清空中...` : t`清空索引`"
+          :disabled="is_busy"
+          @click="handle_purge_index"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -447,41 +487,3 @@ function normalize_max_chars() {
     : DEFAULT_VECTOR_RECALL_MAX_CHARS;
 }
 </script>
-
-<style scoped>
-/* Panel.vue 的同名样式是 scoped 的，子组件需要自带一份 */
-.cosmos-memory-row {
-  align-items: center;
-  gap: 8px;
-  margin: 8px 0;
-}
-
-.cosmos-memory-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 8px 0;
-}
-
-.cosmos-memory-field > span,
-.cosmos-memory-hint {
-  opacity: 0.85;
-}
-
-.cosmos-memory-test-result {
-  border-radius: 8px;
-  margin: 8px 0;
-  padding: 8px 10px;
-  white-space: pre-wrap;
-}
-
-.cosmos-memory-test-result--success {
-  background: rgba(46, 125, 50, 0.22);
-  border: 1px solid #2e7d32;
-}
-
-.cosmos-memory-test-result--error {
-  background: rgba(198, 40, 40, 0.18);
-  border: 1px solid #c62828;
-}
-</style>
