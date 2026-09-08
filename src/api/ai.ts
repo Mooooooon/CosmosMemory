@@ -1,4 +1,5 @@
 import type { AiSettings, ReasoningEffortOption } from '@/type/settings';
+import { retryAiRequest } from '@/api/retry';
 import {
   CharacterOperationsResponse,
   StoredCharactersResponse,
@@ -111,7 +112,7 @@ export type SummaryGenerationOptions = {
   previous_summaries?: SummaryContextEntry[];
   /** 生成请求唯一标识符，可通过 stopGenerationById 停止本次总结请求 */
   generation_id?: string;
-  /** 返回 true 表示任务已被外部取消，失败后不再降级重试 */
+  /** 返回 true 表示任务已被外部取消，不再请求或重试 */
   should_cancel?: () => boolean;
 };
 
@@ -1033,39 +1034,20 @@ async function summarizeMessageWithJsonPrompt(
   return parseSummaryJson(result, options);
 }
 
-/**
- * 判断是否为鉴权/网络类确定性失败。
- * 这类错误降级重试注定再失败一次，只会浪费 token，应直接上抛；
- * 只有输出格式类错误（JSON 解析失败、schema 校验失败、端点不支持结构化输出等）才值得降级重试。
- */
-function isDeterministicRequestError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /401|403|unauthorized|forbidden|invalid[_ ]?api[_ ]?key|incorrect[_ ]?api[_ ]?key|authentication|鉴权|network error|timeout|timed out|econnrefused|enotfound|fetch failed/i.test(
-    message,
-  );
-}
-
 export async function summarizeMessage(
   settings: AiSettings,
   content: string,
   options: SummaryGenerationOptions = {},
 ): Promise<SummaryGenerationResult> {
-  try {
-    return await summarizeMessageWithStructuredOutput(settings, content, options);
-  } catch (error) {
-    if (options.should_cancel?.()) {
-      console.info('[CosmosMemory] 总结请求已被取消，跳过降级重试');
-      throw error;
-    }
-    if (isDeterministicRequestError(error)) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn('[CosmosMemory] 结构化输出总结请求遇到鉴权/网络错误，不再降级重试', { message });
-      throw error;
-    }
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn('[CosmosMemory] 结构化输出总结请求失败，降级为普通 JSON 提示重试', { message });
-    return summarizeMessageWithJsonPrompt(settings, content, options);
-  }
+  buildCustomApi(settings);
+  return retryAiRequest(
+    settings,
+    retry_index =>
+      retry_index === 0
+        ? summarizeMessageWithStructuredOutput(settings, content, options)
+        : summarizeMessageWithJsonPrompt(settings, content, options),
+    options.should_cancel,
+  );
 }
 
 async function extractCharactersWithStructuredOutput(
@@ -1120,24 +1102,18 @@ export async function extractCharactersFromChatContent(
   settings: AiSettings,
   content: string,
 ): Promise<StoredCharacter[]> {
-  try {
-    return await extractCharactersWithStructuredOutput(settings, content);
-  } catch (error) {
-    if (isDeterministicRequestError(error)) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn('[CosmosMemory] 结构化输出人物信息重新生成遇到鉴权/网络错误，不再降级重试', { message });
-      throw error;
-    }
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn('[CosmosMemory] 结构化输出人物信息重新生成失败，降级为普通 JSON 提示重试', { message });
-    return extractCharactersWithJsonPrompt(settings, content);
-  }
+  buildCustomApi(settings);
+  return retryAiRequest(settings, retry_index =>
+    retry_index === 0
+      ? extractCharactersWithStructuredOutput(settings, content)
+      : extractCharactersWithJsonPrompt(settings, content),
+  );
 }
 
 export type SummaryRollupGenerationOptions = {
   /** 生成请求唯一标识符，可通过 stopGenerationById 停止本次请求 */
   generation_id?: string;
-  /** 返回 true 表示任务已被外部取消，失败后不再降级重试 */
+  /** 返回 true 表示任务已被外部取消，不再请求或重试 */
   should_cancel?: () => boolean;
 };
 
@@ -1227,20 +1203,13 @@ export async function rollupSummariesToArticle(
   summaries: SummaryContextEntry[],
   options: SummaryRollupGenerationOptions = {},
 ): Promise<string> {
-  try {
-    return await rollupSummariesWithStructuredOutput(settings, summaries, options);
-  } catch (error) {
-    if (options.should_cancel?.()) {
-      console.info('[CosmosMemory] 二次总结请求已被取消，跳过降级重试');
-      throw error;
-    }
-    if (isDeterministicRequestError(error)) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn('[CosmosMemory] 结构化输出二次总结请求遇到鉴权/网络错误，不再降级重试', { message });
-      throw error;
-    }
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn('[CosmosMemory] 结构化输出二次总结请求失败，降级为普通 JSON 提示重试', { message });
-    return rollupSummariesWithJsonPrompt(settings, summaries, options);
-  }
+  buildCustomApi(settings);
+  return retryAiRequest(
+    settings,
+    retry_index =>
+      retry_index === 0
+        ? rollupSummariesWithStructuredOutput(settings, summaries, options)
+        : rollupSummariesWithJsonPrompt(settings, summaries, options),
+    options.should_cancel,
+  );
 }

@@ -1,5 +1,7 @@
 export const DEFAULT_CUSTOM_API_URL = 'https://api.deepseek.com/v1';
 export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
+export const DEFAULT_AI_RETRY_COUNT = 3;
+export const MAX_AI_RETRY_COUNT = 10;
 
 /** 总结请求的思考级别；auto 保留 SillyTavern 当前请求设置 */
 export const REASONING_EFFORT_OPTIONS = ['auto', 'off', 'low', 'medium', 'high', 'max'] as const;
@@ -29,6 +31,8 @@ export const AiSettings = z
     available_models: z.array(z.string()).default([]),
     max_output_tokens: z.number().int().min(1).default(DEFAULT_MAX_OUTPUT_TOKENS),
     reasoning_effort: z.enum(REASONING_EFFORT_OPTIONS).default('auto'),
+    retry_enabled: z.boolean().default(true),
+    retry_count: z.number().int().min(1).max(MAX_AI_RETRY_COUNT).default(DEFAULT_AI_RETRY_COUNT),
   })
   .prefault({});
 

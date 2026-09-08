@@ -122,6 +122,30 @@
           </template>
 
           <div class="cosmos-memory-row flex-container">
+            <input id="cosmos_memory_retry_enabled" v-model="settings.ai.retry_enabled" type="checkbox" />
+            <label for="cosmos_memory_retry_enabled">{{ t`启用报错重试` }}</label>
+          </div>
+
+          <label v-if="settings.ai.retry_enabled" class="cosmos-memory-field">
+            <span>{{ t`最大重试次数` }}</span>
+            <input
+              v-model.number="settings.ai.retry_count"
+              class="text_pole"
+              type="number"
+              min="1"
+              :max="MAX_AI_RETRY_COUNT"
+              step="1"
+              @change="normalize_retry_count"
+            />
+          </label>
+
+          <div class="cosmos-memory-hint">
+            {{
+              t`适用于剧情总结、二次总结和人物重新生成。请求报错、空内容或格式校验失败时自动重试，默认重试 3 次（首次请求之外）；取消任务或鉴权失败时不重试。关闭后只请求一次。`
+            }}
+          </div>
+
+          <div class="cosmos-memory-row flex-container">
             <input
               class="menu_button"
               type="button"
@@ -477,7 +501,12 @@ import SettingChangeDialog from '@/panel/SettingChangeDialog.vue';
 import SummaryDialog from '@/panel/SummaryDialog.vue';
 import VectorRecallTab from '@/panel/VectorRecallTab.vue';
 import { useSettingsStore } from '@/store/settings';
-import { CUSTOM_API_SOURCE_OPTIONS, DEFAULT_MAX_OUTPUT_TOKENS } from '@/type/settings';
+import {
+  CUSTOM_API_SOURCE_OPTIONS,
+  DEFAULT_MAX_OUTPUT_TOKENS,
+  DEFAULT_AI_RETRY_COUNT,
+  MAX_AI_RETRY_COUNT,
+} from '@/type/settings';
 import { storeToRefs } from 'pinia';
 
 const custom_api_source_options = CUSTOM_API_SOURCE_OPTIONS.filter(option => option !== 'auto');
@@ -734,6 +763,13 @@ function normalize_max_output_tokens() {
   settings.value.ai.max_output_tokens = Number.isFinite(count)
     ? Math.max(1, Math.floor(count))
     : DEFAULT_MAX_OUTPUT_TOKENS;
+}
+
+function normalize_retry_count() {
+  const count = settings.value.ai.retry_count;
+  settings.value.ai.retry_count = Number.isFinite(count)
+    ? Math.min(MAX_AI_RETRY_COUNT, Math.max(1, Math.floor(count)))
+    : DEFAULT_AI_RETRY_COUNT;
 }
 
 function normalize_summary_context_count() {

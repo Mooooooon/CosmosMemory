@@ -1,5 +1,10 @@
 {
   "设置": "Settings",
+  "启用报错重试": "Enable automatic retries",
+  "最大重试次数": "Maximum retries",
+  "适用于剧情总结、二次总结和人物重新生成。请求报错、空内容或格式校验失败时自动重试，默认重试 3 次（首次请求之外）；取消任务或鉴权失败时不重试。关闭后只请求一次。": "Applies to story summaries, summary rollups, and character regeneration. Retry request errors, empty responses, or invalid output up to 3 times by default, in addition to the initial request. Cancelled requests and authentication failures are not retried. When disabled, only one request is made.",
+  "AI 请求已取消。": "AI request cancelled.",
+  "AI 请求失败或返回内容无效，正在重试…": "AI request failed or returned invalid content. Retrying…",
   "启用状态栏": "Enable status bar",
   "显示楼层总结栏": "Show message summary",
   "最新 AI 回复生成总结后，在正文末尾、状态栏上方显示可展开的本楼总结。": "Once the latest AI reply has a summary, show it in a collapsible section at the end of the reply, above the status bar.",
