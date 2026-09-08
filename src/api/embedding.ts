@@ -2,12 +2,7 @@
  * Embeddings 客户端：前端直连（默认 SiliconFlow，支持任意 OpenAI 兼容端点），
  * 不经过酒馆助手（generateRaw 只支持对话补全，不支持 embeddings 端点）。
  */
-import {
-  buildApiHeaders,
-  fetchSiliconFlowModelNames,
-  normalizeApiUrl,
-  throwApiResponseError,
-} from '@/api/siliconflow';
+import { buildApiHeaders, fetchSiliconFlowModelNames, normalizeApiUrl, throwApiResponseError } from '@/api/siliconflow';
 
 /** 单请求批量条数：各模型 input 上限 16/32/64 不等，取保守值并串行请求避免 429 */
 const EMBEDDING_BATCH_SIZE = 16;

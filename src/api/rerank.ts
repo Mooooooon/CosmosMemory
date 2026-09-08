@@ -4,12 +4,7 @@
  * embedding 召回负责「找得到」，rerank 负责「排得准」——
  * 交叉编码器对 query-document 逐对打分，精度远高于向量余弦相似度。
  */
-import {
-  buildApiHeaders,
-  fetchSiliconFlowModelNames,
-  normalizeApiUrl,
-  throwApiResponseError,
-} from '@/api/siliconflow';
+import { buildApiHeaders, fetchSiliconFlowModelNames, normalizeApiUrl, throwApiResponseError } from '@/api/siliconflow';
 
 export type RerankConfig = {
   api_url?: string;

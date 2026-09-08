@@ -206,9 +206,7 @@
       </div>
 
       <div class="cosmos-memory-hint">
-        {{
-          t`对向量检索候选用交叉编码器重排，显著提升召回准确度；失败时自动降级为向量排序。`
-        }}
+        {{ t`对向量检索候选用交叉编码器重排，显著提升召回准确度；失败时自动降级为向量排序。` }}
       </div>
 
       <div v-if="settings.vector_recall.rerank_enabled" class="cosmos-sub-card">
@@ -408,10 +406,7 @@ async function handle_fetch_embedding_models() {
   test_result.value = null;
 
   try {
-    const models = await fetchEmbeddingModelNames(
-      settings.value.vector_recall.api_key.trim(),
-      effective_api_url.value,
-    );
+    const models = await fetchEmbeddingModelNames(settings.value.vector_recall.api_key.trim(), effective_api_url.value);
     settings.value.vector_recall.available_models = models;
 
     if (!settings.value.vector_recall.model && models.length > 0) {
@@ -432,10 +427,7 @@ async function handle_fetch_rerank_models() {
   is_fetching_rerank_models.value = true;
 
   try {
-    const models = await fetchRerankModelNames(
-      effective_rerank_api_key.value,
-      effective_rerank_api_url.value,
-    );
+    const models = await fetchRerankModelNames(effective_rerank_api_key.value, effective_rerank_api_url.value);
     settings.value.vector_recall.rerank_available_models = models;
 
     if (!settings.value.vector_recall.rerank_model && models.length > 0) {
