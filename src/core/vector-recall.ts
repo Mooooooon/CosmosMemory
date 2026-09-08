@@ -19,7 +19,7 @@ import { STORAGE_ROOT } from '@/core/entity-store';
 import { isCosmosMemoryMessage } from '@/core/message-flags';
 import { getRegexedAiContent, OPENING_MESSAGE_ID } from '@/core/summary';
 import { useSettingsStore } from '@/store/settings';
-import type { VectorRecallSettings } from '@/type/settings';
+import { DEFAULT_VECTOR_RECALL_API_URL, type VectorRecallSettings } from '@/type/settings';
 import { getCurrentChatId } from '@sillytavern/script';
 import { getStringHash } from '@sillytavern/scripts/utils';
 
@@ -53,13 +53,19 @@ function getVectorCollectionId(): string | null {
 }
 
 function getEmbeddingConfig(settings: VectorRecallSettings): EmbeddingConfig | null {
+  const api_url = (settings.api_url || DEFAULT_VECTOR_RECALL_API_URL).trim();
   const api_key = settings.api_key.trim();
   const model = settings.model.trim();
-  if (!settings.enabled || !api_key || !model) {
+  if (!settings.enabled || !model) {
     return null;
   }
 
-  return { api_key, model };
+  // SiliconFlow 端点要求必须提供 API Key；其他本地/自建免鉴权端点允许空 Key
+  if (api_url.includes('siliconflow.cn') && !api_key) {
+    return null;
+  }
+
+  return { api_url, api_key, model };
 }
 
 function getOriginalAssistantMessages(): ChatMessage[] {
@@ -199,7 +205,7 @@ export async function rebuildVectorIndex(): Promise<SyncResult> {
   const config = getEmbeddingConfig(settings);
   const collection_id = getVectorCollectionId();
   if (!config || !collection_id) {
-    throw new Error(t`请先启用向量召回并填写 API Key 与模型。`);
+    throw new Error(t`请先启用向量召回并配置 API 端点与模型。`);
   }
 
   await purgeVectorCollection(collection_id);
@@ -318,13 +324,23 @@ function saveLastRecallInfo(info: LastRecallInfo) {
 }
 
 function getRerankConfig(settings: VectorRecallSettings): RerankConfig | null {
-  const api_key = settings.api_key.trim();
-  const model = settings.rerank_model.trim();
-  if (!settings.rerank_enabled || !api_key || !model) {
+  if (!settings.rerank_enabled) {
     return null;
   }
 
-  return { api_key, model };
+  const model = settings.rerank_model.trim();
+  if (!model) {
+    return null;
+  }
+
+  const api_url = (settings.rerank_api_url || settings.api_url || DEFAULT_VECTOR_RECALL_API_URL).trim();
+  const api_key = (settings.rerank_api_key || settings.api_key).trim();
+
+  if (api_url.includes('siliconflow.cn') && !api_key) {
+    return null;
+  }
+
+  return { api_url, api_key, model };
 }
 
 /**

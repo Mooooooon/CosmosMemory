@@ -20,8 +20,28 @@
 
       <div v-if="settings.vector_recall.enabled" class="cosmos-sub-card">
         <label class="cosmos-memory-field">
-          <span>{{ t`SiliconFlow API Key` }}</span>
-          <input v-model.trim="settings.vector_recall.api_key" class="text_pole" type="password" autocomplete="off" />
+          <span>{{ t`API 端点` }}</span>
+          <input
+            v-model.trim="settings.vector_recall.api_url"
+            class="text_pole"
+            type="url"
+            :placeholder="DEFAULT_VECTOR_RECALL_API_URL"
+          />
+        </label>
+
+        <div class="cosmos-memory-hint">
+          {{ t`向量服务渠道端点，默认 SiliconFlow，支持任意 OpenAI 兼容的 embeddings 接口。` }}
+        </div>
+
+        <label class="cosmos-memory-field">
+          <span>{{ t`API 密钥` }}</span>
+          <input
+            v-model.trim="settings.vector_recall.api_key"
+            class="text_pole"
+            type="password"
+            autocomplete="off"
+            :placeholder="is_siliconflow ? t`SiliconFlow API Key` : t`输入 API 密钥（本地免鉴权可留空）`"
+          />
         </label>
 
         <div class="cosmos-memory-row flex-container cosmos-button-group">
@@ -29,29 +49,36 @@
             class="menu_button"
             type="button"
             :value="is_fetching_models ? t`获取中...` : t`获取模型列表`"
-            :disabled="is_fetching_models || !settings.vector_recall.api_key.trim()"
+            :disabled="is_fetching_models || !effective_api_url"
             @click="handle_fetch_embedding_models"
           />
           <input
             class="menu_button"
             type="button"
             :value="is_testing ? t`测试中...` : t`测试连接`"
-            :disabled="is_testing || !settings.vector_recall.api_key.trim() || !settings.vector_recall.model.trim()"
+            :disabled="is_testing || !effective_api_url || !settings.vector_recall.model.trim()"
             @click="handle_test_embedding"
           />
         </div>
 
         <label class="cosmos-memory-field">
           <span>{{ t`Embedding 模型` }}</span>
-          <select v-model="settings.vector_recall.model" class="text_pole">
+          <input
+            v-model.trim="settings.vector_recall.model"
+            class="text_pole"
+            type="text"
+            list="cosmos_memory_embedding_models"
+            :placeholder="DEFAULT_EMBEDDING_MODEL"
+          />
+          <datalist id="cosmos_memory_embedding_models">
             <option v-for="model in model_options" :key="model" :value="model">
               {{ model }}
             </option>
-          </select>
+          </datalist>
         </label>
 
         <div class="cosmos-memory-hint">
-          {{ t`更换模型后索引会自动按模型隔离重建，旧模型的索引不受影响。` }}
+          {{ t`可直接填写或在获取后从下拉列表中选取。更换模型后索引会自动按模型隔离重建，旧模型的索引不受影响。` }}
         </div>
 
         <div
@@ -180,28 +207,60 @@
 
       <div class="cosmos-memory-hint">
         {{
-          t`对向量检索候选用交叉编码器重排，显著提升召回准确度；与 Embedding 共用 API Key，失败时自动降级为向量排序。`
+          t`对向量检索候选用交叉编码器重排，显著提升召回准确度；失败时自动降级为向量排序。`
         }}
       </div>
 
       <div v-if="settings.vector_recall.rerank_enabled" class="cosmos-sub-card">
-        <div class="cosmos-memory-row flex-container">
+        <label class="cosmos-memory-field">
+          <span>{{ t`Rerank API 端点` }}</span>
+          <input
+            v-model.trim="settings.vector_recall.rerank_api_url"
+            class="text_pole"
+            type="url"
+            :placeholder="effective_rerank_api_url_placeholder"
+          />
+        </label>
+
+        <div class="cosmos-memory-hint">
+          {{ t`可选，留空则默认回退至上方向量服务端点或 SiliconFlow。` }}
+        </div>
+
+        <label class="cosmos-memory-field">
+          <span>{{ t`Rerank API 密钥` }}</span>
+          <input
+            v-model.trim="settings.vector_recall.rerank_api_key"
+            class="text_pole"
+            type="password"
+            autocomplete="off"
+            :placeholder="t`可选，留空则共用上方 API 密钥`"
+          />
+        </label>
+
+        <div class="cosmos-memory-row flex-container cosmos-button-group">
           <input
             class="menu_button"
             type="button"
             :value="is_fetching_rerank_models ? t`获取中...` : t`获取 Rerank 模型列表`"
-            :disabled="is_fetching_rerank_models || !settings.vector_recall.api_key.trim()"
+            :disabled="is_fetching_rerank_models || !effective_rerank_api_url"
             @click="handle_fetch_rerank_models"
           />
         </div>
 
         <label class="cosmos-memory-field">
           <span>{{ t`Rerank 模型` }}</span>
-          <select v-model="settings.vector_recall.rerank_model" class="text_pole">
+          <input
+            v-model.trim="settings.vector_recall.rerank_model"
+            class="text_pole"
+            type="text"
+            list="cosmos_memory_rerank_models"
+            :placeholder="DEFAULT_RERANK_MODEL"
+          />
+          <datalist id="cosmos_memory_rerank_models">
             <option v-for="model in rerank_model_options" :key="model" :value="model">
               {{ model }}
             </option>
-          </select>
+          </datalist>
         </label>
 
         <label class="cosmos-memory-field">
@@ -262,10 +321,16 @@
 
 <script setup lang="ts">
 import { fetchEmbeddingModelNames, pingEmbeddingService } from '@/api/embedding';
-import { fetchSiliconFlowModelNames } from '@/api/siliconflow';
+import { fetchRerankModelNames } from '@/api/rerank';
 import { getVectorIndexStatus, purgeVectorIndex, rebuildVectorIndex, syncChatVectors } from '@/core/vector-recall';
 import { useSettingsStore } from '@/store/settings';
-import { DEFAULT_VECTOR_RECALL_INJECTION_DEPTH, DEFAULT_VECTOR_RECALL_MAX_CHARS } from '@/type/settings';
+import {
+  DEFAULT_EMBEDDING_MODEL,
+  DEFAULT_RERANK_MODEL,
+  DEFAULT_VECTOR_RECALL_API_URL,
+  DEFAULT_VECTOR_RECALL_INJECTION_DEPTH,
+  DEFAULT_VECTOR_RECALL_MAX_CHARS,
+} from '@/type/settings';
 import { storeToRefs } from 'pinia';
 
 type TestResult = {
@@ -285,6 +350,30 @@ const test_result = ref<TestResult | null>(null);
 const stored_count = ref<number | null>(null);
 
 const is_busy = computed(() => is_syncing.value || is_rebuilding.value || is_purging.value);
+
+const effective_api_url = computed(() => {
+  return (settings.value.vector_recall.api_url || DEFAULT_VECTOR_RECALL_API_URL).trim();
+});
+
+const is_siliconflow = computed(() => {
+  return effective_api_url.value.includes('siliconflow.cn');
+});
+
+const effective_rerank_api_url = computed(() => {
+  return (
+    settings.value.vector_recall.rerank_api_url ||
+    settings.value.vector_recall.api_url ||
+    DEFAULT_VECTOR_RECALL_API_URL
+  ).trim();
+});
+
+const effective_rerank_api_url_placeholder = computed(() => {
+  return settings.value.vector_recall.api_url.trim() || DEFAULT_VECTOR_RECALL_API_URL;
+});
+
+const effective_rerank_api_key = computed(() => {
+  return (settings.value.vector_recall.rerank_api_key || settings.value.vector_recall.api_key).trim();
+});
 
 const model_options = computed(() => {
   return [...new Set([settings.value.vector_recall.model, ...settings.value.vector_recall.available_models])]
@@ -319,7 +408,10 @@ async function handle_fetch_embedding_models() {
   test_result.value = null;
 
   try {
-    const models = await fetchEmbeddingModelNames(settings.value.vector_recall.api_key.trim());
+    const models = await fetchEmbeddingModelNames(
+      settings.value.vector_recall.api_key.trim(),
+      effective_api_url.value,
+    );
     settings.value.vector_recall.available_models = models;
 
     if (!settings.value.vector_recall.model && models.length > 0) {
@@ -340,7 +432,10 @@ async function handle_fetch_rerank_models() {
   is_fetching_rerank_models.value = true;
 
   try {
-    const models = await fetchSiliconFlowModelNames(settings.value.vector_recall.api_key.trim(), 'reranker');
+    const models = await fetchRerankModelNames(
+      effective_rerank_api_key.value,
+      effective_rerank_api_url.value,
+    );
     settings.value.vector_recall.rerank_available_models = models;
 
     if (!settings.value.vector_recall.rerank_model && models.length > 0) {
@@ -362,6 +457,7 @@ async function handle_test_embedding() {
 
   try {
     const { dimension } = await pingEmbeddingService({
+      api_url: effective_api_url.value,
       api_key: settings.value.vector_recall.api_key.trim(),
       model: settings.value.vector_recall.model.trim(),
     });
@@ -387,7 +483,7 @@ async function handle_sync_now() {
   try {
     const result = await syncChatVectors();
     if (!result) {
-      toastr.warning(t`同步未执行：请确认已启用向量召回并填写 API Key 与模型，且当前有打开的聊天。`, 'Cosmos Memory');
+      toastr.warning(t`同步未执行：请确认已启用向量召回并配置 API 端点与模型，且当前有打开的聊天。`, 'Cosmos Memory');
       return;
     }
 

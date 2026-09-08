@@ -1,24 +1,25 @@
 /**
- * SiliconFlow embeddings 客户端：前端直连 https://api.siliconflow.cn，
+ * Embeddings 客户端：前端直连（默认 SiliconFlow，支持任意 OpenAI 兼容端点），
  * 不经过酒馆助手（generateRaw 只支持对话补全，不支持 embeddings 端点）。
  */
 import {
-  buildSiliconFlowHeaders,
+  buildApiHeaders,
   fetchSiliconFlowModelNames,
-  SILICONFLOW_BASE_URL,
-  throwSiliconFlowResponseError,
+  normalizeApiUrl,
+  throwApiResponseError,
 } from '@/api/siliconflow';
 
-/** 单请求批量条数：SiliconFlow 各模型 input 上限 32/64 不等，取保守值并串行请求避免 429 */
+/** 单请求批量条数：各模型 input 上限 16/32/64 不等，取保守值并串行请求避免 429 */
 const EMBEDDING_BATCH_SIZE = 16;
 
 export type EmbeddingConfig = {
-  api_key: string;
+  api_url?: string;
+  api_key?: string;
   model: string;
 };
 
 type EmbeddingResponseEntry = {
-  index: number;
+  index?: number;
   embedding: number[];
 };
 
@@ -29,11 +30,12 @@ type EmbeddingResponseEntry = {
 export async function fetchEmbeddings(texts: string[], config: EmbeddingConfig): Promise<Record<string, number[]>> {
   const unique_texts = [...new Set(texts)].filter(text => text.length > 0);
   const result: Record<string, number[]> = {};
+  const base_url = normalizeApiUrl(config.api_url);
 
   for (const chunk of _.chunk(unique_texts, EMBEDDING_BATCH_SIZE)) {
-    const response = await fetch(`${SILICONFLOW_BASE_URL}/embeddings`, {
+    const response = await fetch(`${base_url}/embeddings`, {
       method: 'POST',
-      headers: buildSiliconFlowHeaders(config.api_key),
+      headers: buildApiHeaders(config.api_key),
       body: JSON.stringify({
         model: config.model,
         input: chunk,
@@ -42,12 +44,15 @@ export async function fetchEmbeddings(texts: string[], config: EmbeddingConfig):
     });
 
     if (!response.ok) {
-      await throwSiliconFlowResponseError(response, t`Embedding 请求失败`);
+      await throwApiResponseError(response, t`Embedding 请求失败`);
     }
 
     const data = (await response.json()) as { data?: EmbeddingResponseEntry[] };
-    for (const entry of data.data ?? []) {
-      const text = chunk[entry.index];
+    const entries = data.data ?? [];
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i]!;
+      const index = typeof entry.index === 'number' ? entry.index : i;
+      const text = chunk[index];
       if (text !== undefined && Array.isArray(entry.embedding) && entry.embedding.length > 0) {
         result[text] = entry.embedding;
       }
@@ -62,9 +67,9 @@ export async function fetchEmbeddings(texts: string[], config: EmbeddingConfig):
   return result;
 }
 
-/** 拉取 SiliconFlow 的文本 embedding 模型列表，供设置面板下拉选择 */
-export async function fetchEmbeddingModelNames(api_key: string): Promise<string[]> {
-  return fetchSiliconFlowModelNames(api_key, 'embedding');
+/** 拉取指定渠道的文本 embedding 模型列表，供设置面板下拉或输入选择 */
+export async function fetchEmbeddingModelNames(api_key: string, api_url?: string): Promise<string[]> {
+  return fetchSiliconFlowModelNames(api_key, 'embedding', api_url);
 }
 
 /** 连通性测试：对固定短文本计算一次向量，返回维度供 UI 展示 */

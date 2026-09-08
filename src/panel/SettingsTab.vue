@@ -46,12 +46,18 @@
 
         <label class="cosmos-memory-field">
           <span>{{ t`模型` }}</span>
-          <select v-model="settings.ai.selected_model" class="text_pole" :disabled="model_options.length === 0">
-            <option value="">{{ t`请选择模型` }}</option>
+          <input
+            v-model.trim="settings.ai.selected_model"
+            class="text_pole"
+            type="text"
+            list="cosmos_memory_custom_models"
+            :placeholder="t`输入或选择模型名称`"
+          />
+          <datalist id="cosmos_memory_custom_models">
             <option v-for="model in model_options" :key="model" :value="model">
               {{ model }}
             </option>
-          </select>
+          </datalist>
         </label>
 
         <label class="cosmos-memory-field">

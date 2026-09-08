@@ -110,6 +110,7 @@ export const StatusBarSettings = z
   })
   .prefault({});
 
+export const DEFAULT_VECTOR_RECALL_API_URL = 'https://api.siliconflow.cn/v1';
 export const DEFAULT_EMBEDDING_MODEL = 'Qwen/Qwen3-Embedding-0.6B';
 export const DEFAULT_RERANK_MODEL = 'BAAI/bge-reranker-v2-m3';
 /** 向量召回注入深度：低于运行时记忆注入（9999-10002），高于全部聊天正文 */
@@ -120,7 +121,9 @@ export type VectorRecallSettings = z.infer<typeof VectorRecallSettings>;
 export const VectorRecallSettings = z
   .object({
     enabled: z.boolean().default(false),
-    /** SiliconFlow API Key，仅用于前端直连 embeddings 接口，禁止输出到日志 */
+    /** 向量化 API 端点（默认 SiliconFlow，支持任意 OpenAI 兼容接口） */
+    api_url: z.string().default(DEFAULT_VECTOR_RECALL_API_URL),
+    /** API Key，仅用于直连接口，禁止输出到日志 */
     api_key: z.string().default(''),
     model: z.string().default(DEFAULT_EMBEDDING_MODEL),
     available_models: z.array(z.string()).default([]),
@@ -137,8 +140,12 @@ export const VectorRecallSettings = z
     injection_depth: z.number().int().min(0).default(DEFAULT_VECTOR_RECALL_INJECTION_DEPTH),
     /** 单楼层入库前的截断字符数，hash 按截断后文本计算以保证增量同步幂等 */
     max_chars_per_message: z.number().int().min(200).default(DEFAULT_VECTOR_RECALL_MAX_CHARS),
-    /** 对向量检索候选做 rerank 精排（与 embedding 共用 API Key） */
+    /** 对向量检索候选做 rerank 精排 */
     rerank_enabled: z.boolean().default(false),
+    /** Rerank 独立 API 端点（可选，留空则回退至 api_url 或 SiliconFlow） */
+    rerank_api_url: z.string().default(''),
+    /** Rerank 独立 API Key（可选，留空则共用上方 api_key） */
+    rerank_api_key: z.string().default(''),
     rerank_model: z.string().default(DEFAULT_RERANK_MODEL),
     rerank_available_models: z.array(z.string()).default([]),
     /** rerank 相关度阈值，低于该分数的候选不注入 */
