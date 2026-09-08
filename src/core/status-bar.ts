@@ -6,6 +6,8 @@ import { getStoredLocations } from '@/core/locations';
 import { getSettingChanges } from '@/core/setting-changes';
 import { getLastRecallInfo } from '@/core/vector-recall';
 import { useSettingsStore } from '@/store/settings';
+import { updateMessageSummary } from '@/core/message-summary';
+import { message_summaries_revision } from '@/core/summary';
 
 let activeTab: 'current' | 'changes' | 'characters' | 'items' | 'locations' | 'recall' = 'current';
 let updateTimeout: any = null;
@@ -279,11 +281,14 @@ export function updateStatusBar(): boolean {
   }
 
   const { settings } = useSettingsStore();
+  const messageId = getLatestAiMessageId();
+  // 总结栏独立于状态栏开关，且先挂载，保证显示在状态栏上方。
+  const summary_updated = updateMessageSummary(messageId);
 
   // 如果状态栏被关闭，移除已有状态栏并返回
   if (!settings.status_bar.enabled) {
     $('#chat .cosmos-memory-status-bar', window.parent.document).remove();
-    return true;
+    return summary_updated;
   }
 
   // 根据各功能开关过滤可用的 Tab
@@ -301,7 +306,7 @@ export function updateStatusBar(): boolean {
   // 没有任何功能开启时，不显示状态栏
   if (enabledTabs.length === 0) {
     $('#chat .cosmos-memory-status-bar', window.parent.document).remove();
-    return true;
+    return summary_updated;
   }
 
   // 如果当前激活的 Tab 不在已启用列表中，切换到第一个可用 Tab
@@ -309,15 +314,16 @@ export function updateStatusBar(): boolean {
     activeTab = enabledTabs[0]!.id;
   }
 
-  // 1. 查找最新 AI 回复的楼层号
-  const messageId = getLatestAiMessageId();
+  // 1. 没有 AI 回复时清理旧状态栏
   if (messageId === null) {
+    $('#chat .cosmos-memory-status-bar', window.parent.document).remove();
     return false;
   }
 
   // 2. 获取对应的 DOM 容器
   const $msgText = window.TavernHelper.retrieveDisplayedMessage(messageId);
   if (!$msgText || $msgText.length === 0) {
+    $('#chat .cosmos-memory-status-bar', window.parent.document).remove();
     return false;
   }
 
@@ -396,6 +402,12 @@ export function triggerUpdateStatusBar() {
  */
 export function initStatusBar() {
   console.info('[CosmosMemory] 初始化状态栏监听器');
+  const { settings } = useSettingsStore();
+  watch([message_summaries_revision, () => settings.summary.show_in_message], triggerUpdateStatusBar);
+
+  eventSource.on(event_types.MESSAGE_SWIPED, triggerUpdateStatusBar);
+  eventSource.on(event_types.MESSAGE_UPDATED, triggerUpdateStatusBar);
+  eventSource.on(event_types.MORE_MESSAGES_LOADED, triggerUpdateStatusBar);
 
   // 监听酒馆核心渲染/更改事件
   eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, () => {

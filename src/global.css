@@ -1,4 +1,24 @@
-/* CosmosMemory 状态栏样式 */
+/* CosmosMemory 楼层总结栏与状态栏样式 */
+
+.cosmos-memory-message-summary {
+  margin-top: 12px;
+  border: 1px solid var(--SmartThemeBorderColor);
+  border-radius: 8px;
+  background: var(--SmartThemeBlurTintColor);
+  color: var(--SmartThemeBodyColor);
+}
+
+.cosmos-memory-message-summary > summary {
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.cosmos-memory-message-summary-content {
+  padding: 0 12px 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 .cosmos-memory-status-bar {
   margin-top: 12px;

@@ -160,6 +160,19 @@
         <div v-show="active_tab === 'summary'" class="cosmos-settings-tab-panel">
           <div class="cosmos-memory-row flex-container">
             <input
+              id="cosmos_memory_show_summary_in_message"
+              v-model="settings.summary.show_in_message"
+              type="checkbox"
+            />
+            <label for="cosmos_memory_show_summary_in_message">{{ t`显示楼层总结栏` }}</label>
+          </div>
+
+          <div class="cosmos-memory-hint">
+            {{ t`最新 AI 回复生成总结后，在正文末尾、状态栏上方显示可展开的本楼总结。` }}
+          </div>
+
+          <div class="cosmos-memory-row flex-container">
+            <input
               id="cosmos_memory_compression_enabled"
               v-model="settings.compression.enabled"
               type="checkbox"

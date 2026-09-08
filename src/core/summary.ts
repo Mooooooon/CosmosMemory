@@ -40,6 +40,8 @@ import { getCurrentChatId } from '@sillytavern/script';
 
 const SUMMARY_STORAGE_PATH = `${STORAGE_ROOT}.summaries`;
 const SUMMARY_BACKFILL_CONCURRENCY = 2;
+/** 摘要保存或删除后通知展示层刷新，覆盖自动总结与手动补全等入口。 */
+export const message_summaries_revision = ref(0);
 /**
  * 开场白所在楼层：first_message 事件始终以楼层 0 触发。
  * 开场白属于角色卡自带内容且始终保留在上下文中，不参与总结，也不计入缺失补全。
@@ -181,6 +183,7 @@ function saveMessageSummary(summary: MessageSummary) {
     },
     { type: 'chat' },
   );
+  message_summaries_revision.value++;
   console.info('[CosmosMemory] 已写入聊天变量', {
     path: `${SUMMARY_STORAGE_PATH}.${summary.message_id}`,
     message_id: summary.message_id,
@@ -279,6 +282,9 @@ function removeMessageSummariesMatching(shouldRemove: (summary: MessageSummary) 
     { type: 'chat' },
   );
 
+  if (removed_summaries.length > 0) {
+    message_summaries_revision.value++;
+  }
   return removed_summaries.sort((left, right) => left.message_id - right.message_id);
 }
 
@@ -514,6 +520,7 @@ function deleteMessageSummary(message_id: number) {
     },
     { type: 'chat' },
   );
+  message_summaries_revision.value++;
 }
 
 /**

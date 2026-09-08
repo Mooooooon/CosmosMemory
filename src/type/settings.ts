@@ -54,6 +54,7 @@ export const SummaryRollupSettings = z
 export type SummarySettings = z.infer<typeof SummarySettings>;
 export const SummarySettings = z
   .object({
+    show_in_message: z.boolean().default(true),
     resummarize_on_edit: z.boolean().default(false),
     send_descriptions_and_world_info: z.boolean().default(false),
     send_previous_message_original: z.boolean().default(false),
