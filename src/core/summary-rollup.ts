@@ -42,7 +42,34 @@ type RollupTask = {
 };
 
 let running_task: RollupTask | null = null;
-let is_task_cancelled = false;
+const cancelled_generation_ids = new Set<string>();
+
+export function wasRollupTaskCancelled(generation_id?: string): boolean {
+  if (!generation_id) {
+    return false;
+  }
+  return cancelled_generation_ids.has(generation_id);
+}
+
+export function isRollupTaskCancelledError(error: unknown): boolean {
+  if (!error) {
+    return false;
+  }
+  if (typeof error === 'object') {
+    const error_name = (error as { name?: unknown }).name;
+    const error_message = (error as { message?: unknown }).message;
+    if (error_name === 'AbortError') {
+      return true;
+    }
+    if (typeof error_message === 'string' && error_message.includes('已取消')) {
+      return true;
+    }
+  }
+  if (typeof error === 'string' && error.includes('已取消')) {
+    return true;
+  }
+  return false;
+}
 
 function parseRollupSource(value: unknown): SummaryRollupSource | null {
   if (
@@ -195,16 +222,12 @@ function getPendingRollupBatches(
   };
 }
 
-function wasTaskCancelled(generation_id: string): boolean {
-  return is_task_cancelled || running_task?.generation_id !== generation_id;
-}
-
 function assertTaskCanSave(chat_id: string | null, batch: MessageSummary[], generation_id: string) {
-  if (wasTaskCancelled(generation_id)) {
-    throw new Error(t`二次总结任务已取消。`);
+  if (wasRollupTaskCancelled(generation_id)) {
+    throw new DOMException(t`二次总结任务已取消。`, 'AbortError');
   }
   if (safeGetCurrentChatId() !== chat_id) {
-    throw new Error(t`二次总结完成时聊天已切换，结果未保存。`);
+    throw new DOMException(t`二次总结完成时聊天已切换，结果未保存。`, 'AbortError');
   }
 
   const summaries_by_id = new Map(getStoredMessageSummaries().map(summary => [summary.message_id, summary]));
@@ -231,7 +254,7 @@ async function generateSegment(
     batch.map(summary => ({ message_id: summary.message_id, summary: summary.summary })),
     {
       generation_id,
-      should_cancel: () => wasTaskCancelled(generation_id),
+      should_cancel: () => wasRollupTaskCancelled(generation_id),
     },
   );
   assertTaskCanSave(chat_id, batch, generation_id);
@@ -301,12 +324,27 @@ function runRollupTask(regenerate: boolean): Promise<SummaryRollupRunResult> {
     return running_task.promise;
   }
 
-  is_task_cancelled = false;
   const generation_id = `cosmos-memory-summary-rollup-${Date.now()}`;
-  const promise = rollupCore(generation_id, regenerate).finally(() => {
-    running_task = null;
+  cancelled_generation_ids.delete(generation_id);
+
+  let resolve_task!: (result: SummaryRollupRunResult) => void;
+  let reject_task!: (error: unknown) => void;
+  const promise = new Promise<SummaryRollupRunResult>((resolve, reject) => {
+    resolve_task = resolve;
+    reject_task = reject;
   });
+
   running_task = { promise, generation_id };
+
+  rollupCore(generation_id, regenerate)
+    .then(resolve_task, reject_task)
+    .finally(() => {
+      if (running_task?.generation_id === generation_id) {
+        running_task = null;
+      }
+      cancelled_generation_ids.delete(generation_id);
+    });
+
   return promise;
 }
 
@@ -340,6 +378,10 @@ export function triggerSummaryRollupIfNeeded() {
     segment_size: settings.summary_rollup.trigger_summary_count,
   });
   void runSummaryRollup().catch(error => {
+    if (isRollupTaskCancelledError(error)) {
+      console.info('[CosmosMemory] 自动二次总结已取消');
+      return;
+    }
     console.error('[CosmosMemory] 自动二次总结失败', error);
     const message = error instanceof Error ? error.message : String(error);
     toastr.warning(message, t`Cosmos Memory 二次总结失败`);
@@ -352,9 +394,10 @@ export function stopSummaryRollupTask() {
     return;
   }
 
-  is_task_cancelled = true;
+  const { generation_id } = running_task;
+  cancelled_generation_ids.add(generation_id);
   try {
-    window.TavernHelper.stopGenerationById(running_task.generation_id);
+    window.TavernHelper.stopGenerationById(generation_id);
   } catch (error) {
     console.warn('[CosmosMemory] 停止二次总结请求失败', error);
   }

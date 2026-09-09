@@ -111,7 +111,7 @@
 
 <script setup lang="ts">
 import { applySummaryCompressionForNextGeneration } from '@/core/compression';
-import { regenerateSummaryRollups, runSummaryRollup } from '@/core/summary-rollup';
+import { isRollupTaskCancelledError, regenerateSummaryRollups, runSummaryRollup } from '@/core/summary-rollup';
 import { useSettingsStore } from '@/store/settings';
 import { storeToRefs } from 'pinia';
 
@@ -173,6 +173,10 @@ async function handle_run_rollup() {
       toastr.info(t`待合并总结还没有达到一个完整分段。`, 'Cosmos Memory');
     }
   } catch (error) {
+    if (isRollupTaskCancelledError(error)) {
+      toastr.info(t`二次总结已取消。`, 'Cosmos Memory');
+      return;
+    }
     const message = error instanceof Error ? error.message : String(error);
     toastr.error(message, t`Cosmos Memory 二次总结失败`);
   } finally {
@@ -196,6 +200,10 @@ async function handle_regenerate_rollups() {
       toastr.info(t`当前总结数量还不能生成完整分段，已恢复为逐楼摘要。`, 'Cosmos Memory');
     }
   } catch (error) {
+    if (isRollupTaskCancelledError(error)) {
+      toastr.info(t`二次总结重新生成已取消。`, 'Cosmos Memory');
+      return;
+    }
     const message = error instanceof Error ? error.message : String(error);
     toastr.error(message, t`Cosmos Memory 重新生成二次总结失败`);
   } finally {
