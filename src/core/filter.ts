@@ -47,10 +47,7 @@ export function countMessageCharacters(text: string): number {
  * 2. 包含配置的报错/拒答关键词（如 "I cannot", "抱歉", "我不能" 等，不区分大小写）；
  * 3. 长度低于配置的阈值（Token 数或字数，可设置；为 0 时不限制）。
  */
-export async function evaluateMessageFilter(
-  text: string,
-  filter_settings: FilterSettings,
-): Promise<FilterCheckResult> {
+export async function evaluateMessageFilter(text: string, filter_settings: FilterSettings): Promise<FilterCheckResult> {
   const trimmed = (text || '').trim();
   if (!trimmed) {
     return {

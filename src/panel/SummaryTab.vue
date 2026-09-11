@@ -224,7 +224,9 @@ function handle_blocked_keywords_change(event: Event) {
 
 function normalize_filter_min_length() {
   const count = settings.value.filter.min_length;
-  settings.value.filter.min_length = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : DEFAULT_FILTER_MIN_LENGTH;
+  settings.value.filter.min_length = Number.isFinite(count)
+    ? Math.max(0, Math.floor(count))
+    : DEFAULT_FILTER_MIN_LENGTH;
 }
 
 function handle_show_summaries() {

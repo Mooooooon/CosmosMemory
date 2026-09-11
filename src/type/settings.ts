@@ -188,4 +188,3 @@ export const Settings = z
   .prefault({});
 
 export const setting_field = 'cosmos_memory';
-
