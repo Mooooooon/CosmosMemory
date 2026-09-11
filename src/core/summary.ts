@@ -35,6 +35,8 @@ import {
   type SettingChangeOperation,
 } from '@/core/setting-changes';
 import { STORAGE_ROOT } from '@/core/entity-store';
+import { evaluateMessageFilter } from '@/core/filter';
+import { isCosmosMemoryMessage } from '@/core/message-flags';
 import { useSettingsStore } from '@/store/settings';
 import { getCurrentChatId } from '@sillytavern/script';
 
@@ -206,16 +208,32 @@ function getCurrentLastMessageId(): number {
   }).reduce((max_message_id, message) => Math.max(max_message_id, message.message_id), -1);
 }
 
-function getMissingAssistantMessageIds(max_message_id: number): number[] {
+async function getMissingAssistantMessageIds(max_message_id: number): Promise<number[]> {
   const stored_summary_ids = getStoredSummaryIds();
-  return getExistingChatMessages(max_message_id)
-    .filter(
-      message =>
-        message.message_id !== OPENING_MESSAGE_ID &&
-        message.role === 'assistant' &&
-        !stored_summary_ids.has(message.message_id),
-    )
-    .map(message => message.message_id);
+  const { settings } = useSettingsStore();
+  const candidates = getExistingChatMessages(max_message_id).filter(
+    message =>
+      message.message_id !== OPENING_MESSAGE_ID &&
+      message.role === 'assistant' &&
+      !isCosmosMemoryMessage(message) &&
+      !stored_summary_ids.has(message.message_id),
+  );
+
+  const missing_ids: number[] = [];
+  for (const message of candidates) {
+    const source = getRegexedAiContent(message);
+    const filter_result = await evaluateMessageFilter(source, settings.filter);
+    if (!filter_result.filtered) {
+      missing_ids.push(message.message_id);
+    } else {
+      console.info('[CosmosMemory] 补全检查跳过已过滤楼层', {
+        message_id: message.message_id,
+        reason: filter_result.reason,
+      });
+    }
+  }
+
+  return missing_ids;
 }
 
 export function getStoredMessageSummaries(): MessageSummary[] {
@@ -344,6 +362,17 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
   }
 
   const { settings } = useSettingsStore();
+  const filter_result = await evaluateMessageFilter(source, settings.filter);
+  if (filter_result.filtered) {
+    console.info('[CosmosMemory] 楼层内容被过滤规则拦截，跳过AI总结等功能', {
+      message_id,
+      reason: filter_result.reason,
+      count: filter_result.count,
+      unit: filter_result.unit,
+    });
+    return null;
+  }
+
   console.info('[CosmosMemory] 开始请求 AI 总结', {
     message_id,
     use_tavern_api: settings.ai.use_tavern_api,
@@ -619,7 +648,7 @@ async function backfillMissingSummaries(
 }
 
 export async function summarizeMissingAssistantMessages(): Promise<MessageSummary[]> {
-  const message_ids = getMissingAssistantMessageIds(getCurrentLastMessageId());
+  const message_ids = await getMissingAssistantMessageIds(getCurrentLastMessageId());
   if (message_ids.length === 0) {
     console.info('[CosmosMemory] 发送前检查完成，没有缺失总结的 assistant 楼层');
     return [];
@@ -672,7 +701,7 @@ export async function runMemoryBacktrackCheck(
     rebuildMemoryFromSummaries(getStoredMessageSummaries());
   }
 
-  const missing_message_ids = getMissingAssistantMessageIds(max_message_id);
+  const missing_message_ids = await getMissingAssistantMessageIds(max_message_id);
   if (missing_message_ids.length === 0) {
     console.info('[CosmosMemory] 回溯检查完成，没有缺失总结的 assistant 楼层');
     return {

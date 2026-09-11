@@ -85,6 +85,66 @@
       </div>
     </div>
 
+    <!-- 回复过滤设置 -->
+    <div class="cosmos-section-card">
+      <div class="cosmos-section-header">
+        <span class="cosmos-section-title">
+          <i class="fa-solid fa-filter"></i>
+          {{ t`回复过滤` }}
+        </span>
+      </div>
+
+      <div class="cosmos-memory-row flex-container">
+        <input id="cosmos_memory_filter_enabled" v-model="settings.filter.enabled" type="checkbox" />
+        <label for="cosmos_memory_filter_enabled">{{ t`启用回复过滤` }}</label>
+      </div>
+
+      <div class="cosmos-memory-hint">
+        {{ t`当 AI 回复为空、长度过短或包含报错拒答关键词时，不触发剧情总结等功能。` }}
+      </div>
+
+      <template v-if="settings.filter.enabled">
+        <label class="cosmos-memory-field">
+          <span>{{ t`长度统计单位` }}</span>
+          <select v-model="settings.filter.length_unit" class="text_pole">
+            <option value="token">{{ t`Token 数` }}</option>
+            <option value="char">{{ t`字数 (字符数)` }}</option>
+          </select>
+        </label>
+
+        <label class="cosmos-memory-field">
+          <span>{{ settings.filter.length_unit === 'token' ? t`最小 Token 数` : t`最小字数` }}</span>
+          <input
+            v-model.number="settings.filter.min_length"
+            class="text_pole"
+            type="number"
+            min="0"
+            step="10"
+            @change="normalize_filter_min_length"
+          />
+        </label>
+
+        <div class="cosmos-memory-hint">
+          {{ t`低于该数值的回复将跳过总结；设为 0 表示不限制最小长度。` }}
+        </div>
+
+        <label class="cosmos-memory-field">
+          <span>{{ t`过滤关键词` }}</span>
+          <textarea
+            v-model="blocked_keywords_text"
+            class="text_pole"
+            rows="3"
+            :placeholder="t`每行一个关键词，或以逗号分隔，如：I cannot`"
+            @change="handle_blocked_keywords_change"
+          ></textarea>
+        </label>
+
+        <div class="cosmos-memory-hint">
+          {{ t`当 AI 回复包含以上任一关键词时（不区分大小写），将视为报错或拒答并跳过总结。支持换行或逗号分隔。` }}
+        </div>
+      </template>
+    </div>
+
     <!-- 楼层展示设置 -->
     <div class="cosmos-section-card">
       <div class="cosmos-section-header">
@@ -133,6 +193,7 @@
 </template>
 
 <script setup lang="ts">
+import { DEFAULT_FILTER_MIN_LENGTH } from '@/type/settings';
 import { runMemoryBacktrackCheck, stopSummarizeTasks, type MemoryBacktrackCheckResult } from '@/core/summary';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
 import SummaryDialog from '@/panel/SummaryDialog.vue';
@@ -143,6 +204,28 @@ const { settings } = storeToRefs(useSettingsStore());
 
 const is_checking_memory = ref(false);
 const summary_dialog = ref<InstanceType<typeof SummaryDialog> | null>(null);
+
+const blocked_keywords_text = computed({
+  get() {
+    return (settings.value.filter.blocked_keywords ?? []).join('\n');
+  },
+  set(val: string) {
+    settings.value.filter.blocked_keywords = val
+      .split(/[\n,，]+/)
+      .map(k => k.trim())
+      .filter(Boolean);
+  },
+});
+
+function handle_blocked_keywords_change(event: Event) {
+  const target = event.target as HTMLTextAreaElement;
+  blocked_keywords_text.value = target.value;
+}
+
+function normalize_filter_min_length() {
+  const count = settings.value.filter.min_length;
+  settings.value.filter.min_length = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : DEFAULT_FILTER_MIN_LENGTH;
+}
 
 function handle_show_summaries() {
   summary_dialog.value?.open();

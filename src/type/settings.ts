@@ -153,6 +153,22 @@ export const VectorRecallSettings = z
   })
   .prefault({});
 
+export const DEFAULT_FILTER_MIN_LENGTH = 200;
+export const DEFAULT_FILTER_BLOCKED_KEYWORDS = ['I cannot'];
+
+export const FILTER_LENGTH_UNIT_OPTIONS = ['token', 'char'] as const;
+export type FilterLengthUnit = (typeof FILTER_LENGTH_UNIT_OPTIONS)[number];
+
+export type FilterSettings = z.infer<typeof FilterSettings>;
+export const FilterSettings = z
+  .object({
+    enabled: z.boolean().default(true),
+    length_unit: z.enum(FILTER_LENGTH_UNIT_OPTIONS).default('token'),
+    min_length: z.number().int().min(0).default(DEFAULT_FILTER_MIN_LENGTH),
+    blocked_keywords: z.array(z.string()).default(DEFAULT_FILTER_BLOCKED_KEYWORDS),
+  })
+  .prefault({});
+
 export type Settings = z.infer<typeof Settings>;
 export const Settings = z
   .object({
@@ -167,7 +183,9 @@ export const Settings = z
     locations: LocationSettings,
     status_bar: StatusBarSettings,
     vector_recall: VectorRecallSettings,
+    filter: FilterSettings,
   })
   .prefault({});
 
 export const setting_field = 'cosmos_memory';
+

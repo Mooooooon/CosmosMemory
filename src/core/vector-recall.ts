@@ -82,6 +82,7 @@ function getOriginalAssistantMessages(): ChatMessage[] {
  * - 隐藏楼层照常入库——被压缩隐藏的楼层正是召回的主要目标。
  */
 function collectVectorizableItems(settings: VectorRecallSettings): VectorItem[] {
+  const { settings: global_settings } = useSettingsStore();
   const items: VectorItem[] = [];
   for (const message of getOriginalAssistantMessages()) {
     if (message.message_id === OPENING_MESSAGE_ID) {
@@ -91,6 +92,16 @@ function collectVectorizableItems(settings: VectorRecallSettings): VectorItem[] 
     const text = getRegexedAiContent(message).slice(0, settings.max_chars_per_message);
     if (!text) {
       continue;
+    }
+
+    if (global_settings.filter.enabled) {
+      const lower_text = text.toLowerCase();
+      const has_blocked_keyword = global_settings.filter.blocked_keywords.some(
+        keyword => keyword.trim() && lower_text.includes(keyword.trim().toLowerCase()),
+      );
+      if (has_blocked_keyword) {
+        continue;
+      }
     }
 
     // 完全同文的楼层会合并为一条向量（hash 相同），召回效果等价，可接受

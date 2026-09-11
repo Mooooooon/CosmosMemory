@@ -289,5 +289,17 @@
   "要编辑的设定变更已不存在。": "The setting change to edit no longer exists.",
   "要删除的设定变更已不存在。": "The setting change to delete no longer exists.",
   "Cosmos Memory 保存设定变更失败": "Cosmos Memory failed to save the setting change",
-  "Cosmos Memory 删除设定变更失败": "Cosmos Memory failed to delete the setting change"
+  "Cosmos Memory 删除设定变更失败": "Cosmos Memory failed to delete the setting change",
+  "回复过滤": "Reply Filter",
+  "启用回复过滤": "Enable reply filter",
+  "当 AI 回复为空、长度过短或包含报错拒答关键词时，不触发剧情总结等功能。": "Do not trigger story summary and other features when the AI reply is empty, too short, or contains error/refusal keywords.",
+  "长度统计单位": "Length measurement unit",
+  "Token 数": "Tokens",
+  "字数 (字符数)": "Characters",
+  "最小 Token 数": "Minimum tokens",
+  "最小字数": "Minimum characters",
+  "低于该数值的回复将跳过总结；设为 0 表示不限制最小长度。": "Replies below this threshold will skip summarization; set to 0 for no minimum length limit.",
+  "过滤关键词": "Filter keywords",
+  "每行一个关键词，或以逗号分隔，如：I cannot": "One keyword per line, or comma-separated, e.g.: I cannot",
+  "当 AI 回复包含以上任一关键词时（不区分大小写），将视为报错或拒答并跳过总结。支持换行或逗号分隔。": "When the AI reply contains any of these keywords (case-insensitive), it will be treated as an error or refusal and skip summarization. Supports newlines or commas."
 }
