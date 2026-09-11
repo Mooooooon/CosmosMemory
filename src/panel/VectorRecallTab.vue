@@ -63,18 +63,11 @@
 
         <label class="cosmos-memory-field">
           <span>{{ t`Embedding 模型` }}</span>
-          <input
-            v-model.trim="settings.vector_recall.model"
-            class="text_pole"
-            type="text"
-            list="cosmos_memory_embedding_models"
+          <ModelSelectInput
+            v-model="settings.vector_recall.model"
+            :options="model_options"
             :placeholder="DEFAULT_EMBEDDING_MODEL"
           />
-          <datalist id="cosmos_memory_embedding_models">
-            <option v-for="model in model_options" :key="model" :value="model">
-              {{ model }}
-            </option>
-          </datalist>
         </label>
 
         <div class="cosmos-memory-hint">
@@ -247,18 +240,11 @@
 
         <label class="cosmos-memory-field">
           <span>{{ t`Rerank 模型` }}</span>
-          <input
-            v-model.trim="settings.vector_recall.rerank_model"
-            class="text_pole"
-            type="text"
-            list="cosmos_memory_rerank_models"
+          <ModelSelectInput
+            v-model="settings.vector_recall.rerank_model"
+            :options="rerank_model_options"
             :placeholder="DEFAULT_RERANK_MODEL"
           />
-          <datalist id="cosmos_memory_rerank_models">
-            <option v-for="model in rerank_model_options" :key="model" :value="model">
-              {{ model }}
-            </option>
-          </datalist>
         </label>
 
         <label class="cosmos-memory-field">
@@ -321,6 +307,7 @@
 import { fetchEmbeddingModelNames, pingEmbeddingService } from '@/api/embedding';
 import { fetchRerankModelNames } from '@/api/rerank';
 import { getVectorIndexStatus, purgeVectorIndex, rebuildVectorIndex, syncChatVectors } from '@/core/vector-recall';
+import ModelSelectInput from '@/panel/ModelSelectInput.vue';
 import { useSettingsStore } from '@/store/settings';
 import {
   DEFAULT_EMBEDDING_MODEL,

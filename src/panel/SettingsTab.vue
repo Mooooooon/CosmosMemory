@@ -46,18 +46,11 @@
 
         <label class="cosmos-memory-field">
           <span>{{ t`模型` }}</span>
-          <input
-            v-model.trim="settings.ai.selected_model"
-            class="text_pole"
-            type="text"
-            list="cosmos_memory_custom_models"
+          <ModelSelectInput
+            v-model="settings.ai.selected_model"
+            :options="model_options"
             :placeholder="t`输入或选择模型名称`"
           />
-          <datalist id="cosmos_memory_custom_models">
-            <option v-for="model in model_options" :key="model" :value="model">
-              {{ model }}
-            </option>
-          </datalist>
         </label>
 
         <label class="cosmos-memory-field">
@@ -209,6 +202,7 @@
 <script setup lang="ts">
 import { fetchCustomModelNames, resolveCustomApiSource, sendPing } from '@/api/ai';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
+import ModelSelectInput from '@/panel/ModelSelectInput.vue';
 import { useSettingsStore } from '@/store/settings';
 import {
   CUSTOM_API_SOURCE_OPTIONS,
