@@ -33,9 +33,7 @@
 
       <!-- 搜索有匹配与非匹配结果：匹配靠前显示，其他也正常显示 -->
       <template v-else-if="matched_options.matching.length > 0 && matched_options.others.length > 0">
-        <div class="cosmos-combobox-group-title">
-          {{ t`匹配模型` }} ({{ matched_options.matching.length }})
-        </div>
+        <div class="cosmos-combobox-group-title">{{ t`匹配模型` }} ({{ matched_options.matching.length }})</div>
         <div
           v-for="model in matched_options.matching"
           :key="model"
@@ -49,9 +47,7 @@
 
         <div class="cosmos-combobox-divider"></div>
 
-        <div class="cosmos-combobox-group-title">
-          {{ t`其他模型` }} ({{ matched_options.others.length }})
-        </div>
+        <div class="cosmos-combobox-group-title">{{ t`其他模型` }} ({{ matched_options.others.length }})</div>
         <div
           v-for="model in matched_options.others"
           :key="model"
