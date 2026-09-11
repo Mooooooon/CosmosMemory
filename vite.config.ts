@@ -1,14 +1,26 @@
 import vue from '@vitejs/plugin-vue';
 import path from 'node:path';
 import unpluginAutoImport from 'unplugin-auto-import/vite';
+<<<<<<< HEAD
+=======
+import { VueUseComponentsResolver, VueUseDirectiveResolver } from 'unplugin-vue-components/resolvers';
+>>>>>>> ff80aa1eb10276c4a9ba60c38bee94e1a72c84e8
 import unpluginVueComponents from 'unplugin-vue-components/vite';
 import { defineConfig } from 'vite';
 import pluginExternal from 'vite-plugin-external';
 
 const externals = {
   jquery: '$',
+<<<<<<< HEAD
   lodash: '_',
   toastr: 'toastr',
+=======
+  hljs: 'hljs',
+  lodash: '_',
+  showdown: 'showdown',
+  toastr: 'toastr',
+  '@popperjs/core': 'Popper',
+>>>>>>> ff80aa1eb10276c4a9ba60c38bee94e1a72c84e8
 } as const;
 
 const relative_sillytavern_path = path.relative(
@@ -31,8 +43,15 @@ export default defineConfig(({ mode }) => ({
       imports: [
         'vue',
         'pinia',
+<<<<<<< HEAD
         { from: '@sillytavern/scripts/i18n', imports: ['t'] },
         { from: 'klona', imports: ['klona'] },
+=======
+        '@vueuse/core',
+        { from: '@sillytavern/scripts/i18n', imports: ['t'] },
+        { from: 'klona', imports: ['klona'] },
+        { from: 'vue-final-modal', imports: ['useModal'] },
+>>>>>>> ff80aa1eb10276c4a9ba60c38bee94e1a72c84e8
         { from: 'zod', imports: ['z'] },
       ],
       dirs: [{ glob: './src/panel/composable', types: true }],
@@ -41,6 +60,10 @@ export default defineConfig(({ mode }) => ({
       dts: true,
       syncMode: 'overwrite',
       // globs: ['src/panel/component/*.vue'],
+<<<<<<< HEAD
+=======
+      resolvers: [VueUseComponentsResolver(), VueUseDirectiveResolver()],
+>>>>>>> ff80aa1eb10276c4a9ba60c38bee94e1a72c84e8
     }),
     {
       name: 'sillytavern_resolver',

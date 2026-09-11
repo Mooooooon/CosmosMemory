@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "基础设置": "Settings",
   "剧情总结": "Summary",
   "记忆压缩": "Compression",
@@ -284,4 +285,9 @@
   "要删除的设定变更已不存在。": "The setting change to delete no longer exists.",
   "Cosmos Memory 保存设定变更失败": "Cosmos Memory failed to save the setting change",
   "Cosmos Memory 删除设定变更失败": "Cosmos Memory failed to delete the setting change"
+=======
+  "插件示例": "Plugin Example",
+  "示例按钮": "Example Button",
+  "示例开关": "Example Switch"
+>>>>>>> ff80aa1eb10276c4a9ba60c38bee94e1a72c84e8
 }
