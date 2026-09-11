@@ -78,8 +78,8 @@ const tabs = computed(() => [
   font-weight: 500;
   text-align: center;
   color: var(--SmartThemeBodyColor);
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--SmartThemeBodyColor) 4%, transparent);
+  border: 1px solid var(--SmartThemeBorderColor);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -93,8 +93,8 @@ const tabs = computed(() => [
 }
 
 .cosmos-settings-tab:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
+  background: color-mix(in srgb, var(--SmartThemeBodyColor) 8%, transparent);
+  border-color: var(--SmartThemeQuoteColor);
   transform: translateY(-1px);
 }
 
@@ -103,13 +103,13 @@ const tabs = computed(() => [
 }
 
 .cosmos-settings-tab.active {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.05) 100%);
-  border-color: var(--SmartThemeBorderColor);
+  background: color-mix(in srgb, var(--SmartThemeBodyColor) 12%, var(--SmartThemeBlurTintColor));
+  border-color: var(--SmartThemeQuoteColor);
   font-weight: 700;
   box-shadow:
-    0 4px 10px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  text-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
+    0 4px 10px var(--SmartThemeShadowColor),
+    inset 0 1px 0 color-mix(in srgb, var(--SmartThemeBodyColor) 15%, transparent);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--SmartThemeQuoteColor) 30%, transparent);
 }
 
 :deep(.cosmos-settings-tab-panel) {

@@ -29,7 +29,7 @@
   color: var(--SmartThemeBodyColor);
   overflow: hidden;
   font-family: inherit;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px var(--SmartThemeShadowColor);
   animation: cosmos-fade-in 0.25s ease-out;
 }
 
@@ -46,7 +46,7 @@
 
 .cosmos-tabs {
   display: flex;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--black30a);
   border-bottom: 1px solid var(--SmartThemeBorderColor);
 }
 
@@ -68,14 +68,14 @@
 
 .cosmos-tab:hover {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--SmartThemeBodyColor) 8%, transparent);
 }
 
 .cosmos-tab.active {
   opacity: 1;
   font-weight: bold;
   background: var(--SmartThemeBlurTintColor);
-  box-shadow: inset 0 -2px 0 var(--SmartThemeBodyColor);
+  box-shadow: inset 0 -2px 0 var(--SmartThemeQuoteColor);
 }
 
 .cosmos-tab-content {
@@ -85,14 +85,15 @@
 }
 
 .cosmos-empty {
-  opacity: 0.6;
+  color: var(--SmartThemeEmColor);
+  opacity: 0.75;
   font-style: italic;
   text-align: center;
   padding: 16px 0;
 }
 
 .cosmos-error {
-  color: #ff6b6b;
+  color: var(--warning);
   font-style: italic;
   text-align: center;
   padding: 16px 0;
@@ -128,7 +129,7 @@
 .cosmos-info-char-card,
 .cosmos-character-card,
 .cosmos-item-card {
-  background: rgba(255, 255, 255, 0.03);
+  background: color-mix(in srgb, var(--SmartThemeBodyColor) 4%, transparent);
   border: 1px solid var(--SmartThemeBorderColor);
   border-radius: 6px;
   padding: 10px;
@@ -139,15 +140,15 @@
 .cosmos-character-card:hover,
 .cosmos-item-card:hover {
   transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.06);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  background: color-mix(in srgb, var(--SmartThemeBodyColor) 8%, transparent);
+  box-shadow: 0 2px 6px var(--SmartThemeShadowColor);
 }
 
 .cosmos-char-name,
 .cosmos-item-name {
   font-weight: bold;
   margin-bottom: 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--SmartThemeBorderColor);
   padding-bottom: 4px;
 }
 
@@ -175,7 +176,6 @@
 }
 
 .cosmos-location-world {
-  border-left-color: rgba(255, 255, 255, 0.2);
   margin-left: 0;
   padding-left: 0;
   border-left: none;
@@ -215,6 +215,7 @@
   background: var(--SmartThemeBlurTintColor);
   border: 1px solid var(--SmartThemeBorderColor);
   border-radius: 8px;
+  box-shadow: 0 8px 24px var(--SmartThemeShadowColor);
   box-sizing: border-box;
   color: var(--SmartThemeBodyColor);
   max-height: min(720px, 80vh);
@@ -226,7 +227,9 @@
 }
 
 .cosmos-memory-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.45);
+  background-color: var(--black50a);
+  backdrop-filter: blur(calc(var(--SmartThemeBlurStrength, 4) * 1px));
+  -webkit-backdrop-filter: blur(calc(var(--SmartThemeBlurStrength, 4) * 1px));
 }
 
 .cosmos-memory-dialog-header,
@@ -281,8 +284,9 @@
 }
 
 .cosmos-memory-summary-meta span {
+  color: var(--SmartThemeEmColor);
   font-size: 0.9em;
-  opacity: 0.75;
+  opacity: 0.85;
 }
 
 .cosmos-memory-character-fields {
@@ -346,7 +350,8 @@
 
 .cosmos-memory-field > span,
 .cosmos-memory-hint {
-  opacity: 0.85;
+  color: var(--SmartThemeEmColor);
+  opacity: 0.9;
 }
 
 .cosmos-memory-reasoning-select:disabled {
@@ -388,8 +393,9 @@
 }
 
 .cosmos-memory-text-count {
+  color: var(--SmartThemeEmColor);
   font-size: 0.85em;
-  opacity: 0.7;
+  opacity: 0.85;
   text-align: right;
 }
 
@@ -401,7 +407,7 @@
 
 /* ===== CosmosMemory 卡片式分组与组件样式 ===== */
 .cosmos-section-card {
-  background: rgba(255, 255, 255, 0.03);
+  background: color-mix(in srgb, var(--SmartThemeBodyColor) 4%, transparent);
   border: 1px solid var(--SmartThemeBorderColor);
   border-radius: 8px;
   padding: 12px 14px;
@@ -412,7 +418,7 @@
 }
 
 .cosmos-section-card:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--SmartThemeBodyColor) 7%, transparent);
 }
 
 .cosmos-section-header {
@@ -421,7 +427,7 @@
   justify-content: space-between;
   margin-bottom: 10px;
   padding-bottom: 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--SmartThemeBorderColor);
 }
 
 .cosmos-section-title {
@@ -439,7 +445,7 @@
 }
 
 .cosmos-sub-card {
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--black30a);
   border: 1px dashed var(--SmartThemeBorderColor);
   border-radius: 6px;
   padding: 10px 12px;
@@ -478,7 +484,7 @@
   align-items: center;
   gap: 8px;
   padding-bottom: 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--SmartThemeBorderColor);
 }
 
 .cosmos-entity-title {

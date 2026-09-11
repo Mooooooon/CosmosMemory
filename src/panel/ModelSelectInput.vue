@@ -249,11 +249,12 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   z-index: 1050;
-  background-color: rgba(26, 28, 35, 0.96);
-  backdrop-filter: blur(16px);
-  border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+  background-color: var(--SmartThemeBlurTintColor);
+  backdrop-filter: blur(calc(var(--SmartThemeBlurStrength, 8) * 2px));
+  -webkit-backdrop-filter: blur(calc(var(--SmartThemeBlurStrength, 8) * 2px));
+  border: 1px solid var(--SmartThemeBorderColor);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 8px 24px var(--SmartThemeShadowColor);
   max-height: 240px;
   overflow-y: auto;
   padding: 4px 0;
@@ -263,14 +264,14 @@ onBeforeUnmount(() => {
   padding: 6px 10px 4px;
   font-size: 0.75em;
   font-weight: 600;
-  color: var(--SmartThemeBodyColor);
-  opacity: 0.55;
+  color: var(--SmartThemeEmColor);
+  opacity: 0.85;
   letter-spacing: 0.5px;
 }
 
 .cosmos-combobox-divider {
   height: 1px;
-  background: var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.1));
+  background: var(--SmartThemeBorderColor);
   margin: 4px 0;
 }
 
@@ -288,11 +289,11 @@ onBeforeUnmount(() => {
 }
 
 .cosmos-combobox-option:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--SmartThemeBodyColor) 12%, transparent);
 }
 
 .cosmos-combobox-option.is-selected {
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--SmartThemeBodyColor) 8%, transparent);
   font-weight: 600;
 }
 
@@ -304,13 +305,14 @@ onBeforeUnmount(() => {
   opacity: 0.85;
   font-size: 0.85em;
   flex-shrink: 0;
-  color: var(--SmartThemeBodyColor);
+  color: var(--SmartThemeQuoteColor);
 }
 
 .cosmos-combobox-empty {
   padding: 12px 10px;
   font-size: 0.85em;
-  opacity: 0.6;
+  color: var(--SmartThemeEmColor);
+  opacity: 0.75;
   text-align: center;
   font-style: italic;
 }
