@@ -17,7 +17,7 @@ import {
 } from '@/api/vector-storage';
 import { STORAGE_ROOT } from '@/core/entity-store';
 import { isCosmosMemoryMessage } from '@/core/message-flags';
-import { getRegexedAiContent, OPENING_MESSAGE_ID } from '@/core/summary';
+import { getRegexedAiContent, getRegexedMessageContent, OPENING_MESSAGE_ID } from '@/core/summary';
 import { useSettingsStore } from '@/store/settings';
 import { DEFAULT_VECTOR_RECALL_API_URL, type VectorRecallSettings } from '@/type/settings';
 import { getCurrentChatId } from '@sillytavern/script';
@@ -265,7 +265,7 @@ function buildQuerySearchText(settings: VectorRecallSettings, excluded_message_i
     .slice(-settings.query_recent_message_count);
 
   const search_text = recent_messages
-    .map(message => (message.role === 'assistant' ? getRegexedAiContent(message) : message.message.trim()))
+    .map(message => getRegexedMessageContent(message))
     .filter(Boolean)
     .join('\n');
 

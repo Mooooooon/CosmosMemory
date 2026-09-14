@@ -1,6 +1,7 @@
 import { extractCharactersFromChatContent } from '@/api/ai';
 import { replaceStoredCharacters, type StoredCharacter } from '@/core/characters';
 import { isCosmosMemoryMessage } from '@/core/message-flags';
+import { getRegexedAiContent } from '@/core/summary';
 import type { AiSettings } from '@/type/settings';
 
 function getAssistantChatContent(): string {
@@ -10,7 +11,7 @@ function getAssistantChatContent(): string {
   })
     .filter(message => !isCosmosMemoryMessage(message))
     .map(message => {
-      const content = message.message.trim();
+      const content = getRegexedAiContent(message);
       if (!content) {
         return '';
       }

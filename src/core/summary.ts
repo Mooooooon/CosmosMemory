@@ -102,10 +102,45 @@ function getAssistantMessage(message_id: number): ChatMessage | null {
   return message;
 }
 
+/**
+ * 对消息文本完整应用酒馆正则过滤：
+ * 1. 优先应用 display（仅格式显示）：酒馆新建正则默认勾选此项，绝大多数用户/预设正则（如过滤 <think> 思考标签、UI 提示等）仅在 display 生效；
+ * 2. 随后应用 prompt（仅格式提示词）：保证提示词专用的正则过滤也能生效；
+ * 3. 传入角色名作为 characterOverride，确保角色专属局部正则正常生效；
+ * 4. 不传 depth（为 undefined），不对深度做限制，避免历史楼层因 depth 限制而被误跳过正则。
+ */
+export function getRegexedContent(
+  text: string,
+  source: 'ai_output' | 'user_input' = 'ai_output',
+  character_name?: string,
+): string {
+  if (!text || typeof text !== 'string') {
+    return '';
+  }
+
+  if (!window.TavernHelper?.formatAsTavernRegexedString) {
+    return text.trim();
+  }
+
+  try {
+    let result = text;
+    // 1. 先应用 display（仅格式显示）
+    result = window.TavernHelper.formatAsTavernRegexedString(result, source, 'display', {
+      character_name,
+    });
+    // 2. 再应用 prompt（仅格式提示词）
+    result = window.TavernHelper.formatAsTavernRegexedString(result, source, 'prompt', {
+      character_name,
+    });
+    return result.trim();
+  } catch (error) {
+    console.warn('[CosmosMemory] 应用酒馆正则过滤失败，回退到原始文本', error);
+    return text.trim();
+  }
+}
+
 export function getRegexedAiContent(message: ChatMessage): string {
-  const regexed_content = window.TavernHelper.formatAsTavernRegexedString(message.message, 'ai_output', 'prompt', {
-    depth: 0,
-  }).trim();
+  const regexed_content = getRegexedContent(message.message, 'ai_output', message.name);
 
   console.info('[CosmosMemory] 完成酒馆正则过滤', {
     message_id: message.message_id,
@@ -114,6 +149,13 @@ export function getRegexedAiContent(message: ChatMessage): string {
   });
 
   return regexed_content;
+}
+
+export function getRegexedMessageContent(message: ChatMessage): string {
+  if (message.role === 'user') {
+    return getRegexedContent(message.message, 'user_input', message.name);
+  }
+  return getRegexedAiContent(message);
 }
 
 function getPreviousAssistantOriginalMessages(
@@ -138,9 +180,7 @@ function getPreviousAssistantOriginalMessages(
   return [opening_message, previous_assistant_message]
     .filter((message): message is ChatMessage => message !== undefined)
     .map(message => {
-      const content = window.TavernHelper.formatAsTavernRegexedString(message.message, 'ai_output', 'prompt', {
-        depth: Math.max(1, message_id - message.message_id),
-      }).trim();
+      const content = getRegexedAiContent(message);
 
       if (!content) {
         console.info('[CosmosMemory] AI 原文正则过滤后的内容为空，跳过发送', {
