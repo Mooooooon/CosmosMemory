@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "基础设置": "Settings",
   "剧情总结": "Summary",
   "记忆压缩": "Compression",
@@ -302,4 +303,9 @@
   "过滤关键词": "Filter keywords",
   "每行一个关键词，或以逗号分隔，如：I cannot": "One keyword per line, or comma-separated, e.g.: I cannot",
   "当 AI 回复包含以上任一关键词时（不区分大小写），将视为报错或拒答并跳过总结。支持换行或逗号分隔。": "When the AI reply contains any of these keywords (case-insensitive), it will be treated as an error or refusal and skip summarization. Supports newlines or commas."
+=======
+  "插件示例": "Plugin Example",
+  "示例按钮": "Example Button",
+  "示例开关": "Example Switch"
+>>>>>>> ca79a60657738624986a5eb77a4305c3a12174bd
 }
