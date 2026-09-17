@@ -82,6 +82,14 @@ export const CurrentInfoSettings = z
   })
   .prefault({});
 
+export type CurrentSceneSettings = z.infer<typeof CurrentSceneSettings>;
+export const CurrentSceneSettings = z
+  .object({
+    enabled: z.boolean().default(false),
+    default_expanded: z.boolean().default(false),
+  })
+  .prefault({});
+
 export type SettingChangeSettings = z.infer<typeof SettingChangeSettings>;
 export const SettingChangeSettings = z
   .object({
@@ -178,6 +186,7 @@ export const Settings = z
     summary_rollup: SummaryRollupSettings,
     characters: CharacterSettings,
     current_info: CurrentInfoSettings,
+    current_scene: CurrentSceneSettings,
     setting_changes: SettingChangeSettings,
     items: ItemSettings,
     locations: LocationSettings,

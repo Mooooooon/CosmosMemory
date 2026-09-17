@@ -27,6 +27,7 @@ import {
   rebuildStoredCurrentInfoFromSummaries,
   type CurrentInfoUpdate,
 } from '@/core/current-info';
+import { rebuildStoredCurrentSceneFromSummaries, saveStoredCurrentScene } from '@/core/current-scene';
 import {
   SettingChangeOperationsResponse,
   applySettingChangeOperations,
@@ -67,6 +68,7 @@ export type MessageSummary = {
   location_operations?: LocationOperation[];
   setting_change_operations?: SettingChangeOperation[];
   current_info_update?: CurrentInfoUpdate | null;
+  current_scene?: string | null;
   updated_at: string;
 };
 
@@ -304,6 +306,7 @@ export function getStoredMessageSummaries(): MessageSummary[] {
         location_operations: location_operations.success ? location_operations.data : [],
         setting_change_operations: setting_change_operations.success ? setting_change_operations.data : [],
         current_info_update: current_info_update.success ? current_info_update.data : null,
+        current_scene: typeof summary.current_scene === 'string' ? summary.current_scene : null,
       };
     })
     .sort((left, right) => left.message_id - right.message_id);
@@ -315,6 +318,7 @@ function rebuildMemoryFromSummaries(summaries: MessageSummary[]) {
   rebuildStoredLocationsFromSummaries(summaries);
   rebuildSettingChangesFromSummaries(summaries);
   rebuildStoredCurrentInfoFromSummaries(summaries);
+  rebuildStoredCurrentSceneFromSummaries(summaries);
 }
 
 function removeMessageSummariesMatching(shouldRemove: (summary: MessageSummary) => boolean): MessageSummary[] {
@@ -423,6 +427,7 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
     locations_enabled: settings.locations.enabled,
     setting_changes_enabled: settings.setting_changes.enabled,
     current_info_enabled: settings.current_info.enabled,
+    current_scene_enabled: settings.current_scene.enabled,
     send_descriptions_and_world_info: settings.summary.send_descriptions_and_world_info,
     send_previous_message_original: settings.summary.send_previous_message_original,
     include_opening_message_original: settings.summary.include_opening_message_original,
@@ -447,6 +452,7 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
     setting_changes: settings.setting_changes.enabled ? getSettingChanges() : [],
     current_info_enabled: settings.current_info.enabled,
     current_info: settings.current_info.enabled ? getStoredCurrentInfo() : undefined,
+    current_scene_enabled: settings.current_scene.enabled,
     send_descriptions_and_world_info: settings.summary.send_descriptions_and_world_info,
     world_info_scan_messages: settings.summary.send_descriptions_and_world_info
       ? [{ role: message.role, content: source }]
@@ -477,6 +483,7 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
     location_operations: settings.locations.enabled ? result.location_operations : [],
     setting_change_operations: settings.setting_changes.enabled ? result.setting_change_operations : [],
     current_info_update: settings.current_info.enabled ? (result.current_info_update ?? null) : null,
+    current_scene: settings.current_scene.enabled ? (result.current_scene ?? null) : null,
     updated_at: new Date().toISOString(),
   };
 
@@ -507,6 +514,9 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
     }
     if (settings.current_info.enabled) {
       applyCurrentInfoUpdate(summary.current_info_update);
+    }
+    if (settings.current_scene.enabled && summary.current_scene) {
+      saveStoredCurrentScene(summary.current_scene);
     }
   }
   return summary;

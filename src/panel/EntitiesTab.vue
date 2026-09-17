@@ -21,7 +21,43 @@
       </div>
     </div>
 
-    <!-- 2. 设定变更卡片 -->
+    <!-- 2. 当前画面卡片 -->
+    <div class="cosmos-section-card cosmos-entity-card">
+      <div class="cosmos-entity-title-row">
+        <input id="cosmos_memory_current_scene_enabled" v-model="settings.current_scene.enabled" type="checkbox" />
+        <label for="cosmos_memory_current_scene_enabled" class="cosmos-entity-title">
+          <i class="fa-solid fa-film"></i>
+          {{ t`当前画面` }}
+        </label>
+      </div>
+
+      <div class="cosmos-memory-hint">
+        {{ t`开启后会在总结时直接生成本楼层结尾定格瞬间的画面描述，并显示在楼层总结与当前信息之间。` }}
+      </div>
+
+      <div class="cosmos-scene-options" style="margin: 8px 0">
+        <label
+          for="cosmos_memory_current_scene_default_expanded"
+          class="checkbox_label"
+          style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.9em"
+        >
+          <input
+            id="cosmos_memory_current_scene_default_expanded"
+            v-model="settings.current_scene.default_expanded"
+            type="checkbox"
+          />
+          <span>{{ t`默认展开` }}</span>
+        </label>
+      </div>
+
+      <div class="cosmos-entity-actions">
+        <button class="menu_button" type="button" @click="handle_show_current_scene">
+          {{ t`查看当前画面` }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 3. 设定变更卡片 -->
     <div class="cosmos-section-card cosmos-entity-card">
       <div class="cosmos-entity-title-row">
         <input
@@ -122,6 +158,7 @@
 
     <!-- 对话框挂载 -->
     <CurrentInfoDialog ref="current_info_dialog" />
+    <CurrentSceneDialog ref="current_scene_dialog" />
     <SettingChangeDialog ref="setting_change_dialog" />
     <CharacterDialog ref="character_dialog" />
     <LocationDialog ref="location_dialog" />
@@ -134,6 +171,7 @@ import { regenerateCharactersFromChat } from '@/core/character-regeneration';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
 import CharacterDialog from '@/panel/CharacterDialog.vue';
 import CurrentInfoDialog from '@/panel/CurrentInfoDialog.vue';
+import CurrentSceneDialog from '@/panel/CurrentSceneDialog.vue';
 import ItemDialog from '@/panel/ItemDialog.vue';
 import LocationDialog from '@/panel/LocationDialog.vue';
 import SettingChangeDialog from '@/panel/SettingChangeDialog.vue';
@@ -145,6 +183,7 @@ const { settings } = storeToRefs(useSettingsStore());
 const is_regenerating_characters = ref(false);
 
 const current_info_dialog = ref<InstanceType<typeof CurrentInfoDialog> | null>(null);
+const current_scene_dialog = ref<InstanceType<typeof CurrentSceneDialog> | null>(null);
 const setting_change_dialog = ref<InstanceType<typeof SettingChangeDialog> | null>(null);
 const character_dialog = ref<InstanceType<typeof CharacterDialog> | null>(null);
 const item_dialog = ref<InstanceType<typeof ItemDialog> | null>(null);
@@ -164,6 +203,10 @@ const is_regenerate_characters_disabled = computed(() => {
 
 function handle_show_current_info() {
   current_info_dialog.value?.open();
+}
+
+function handle_show_current_scene() {
+  current_scene_dialog.value?.open();
 }
 
 function handle_show_setting_changes() {

@@ -63,6 +63,7 @@ const SummaryWithMemoryResponse = z.object({
   location_operations: LocationOperationsResponse.optional().default([]),
   setting_change_operations: SettingChangeOperationsResponse.optional().default([]),
   current_info_update: CurrentInfoUpdateResponse.nullable().optional(),
+  current_scene: z.string().trim().nullable().optional(),
 });
 
 const CharacterExtractionResponse = z.object({
@@ -80,6 +81,7 @@ export type SummaryGenerationResult = {
   location_operations: LocationOperation[];
   setting_change_operations: SettingChangeOperation[];
   current_info_update?: CurrentInfoUpdate | null;
+  current_scene?: string | null;
 };
 
 export type SummaryContextEntry = {
@@ -105,6 +107,7 @@ export type SummaryGenerationOptions = {
   setting_changes?: SettingChange[];
   current_info_enabled?: boolean;
   current_info?: CurrentInfo;
+  current_scene_enabled?: boolean;
   send_descriptions_and_world_info?: boolean;
   /** 仅用于按酒馆规则扫描本次应激活的世界书条目，不会作为聊天历史发送给总结模型 */
   world_info_scan_messages?: RolePrompt[];
@@ -243,6 +246,18 @@ const CURRENT_INFO_EXTRACTION_INSTRUCTION = [
   '若已有当前信息为空，请根据本楼层剧情内容生成符合背景的当前信息；若已有当前信息不为空，请根据本楼层结束后的状态更新，并在 elapsed_time 中记录本楼层消耗的时间。若本楼层时间没有明确变化，则保持 current_time 原值，elapsed_time 填"约0分钟（无明确时间流逝）"。',
   '',
   '只记录当前场景中实际在场的角色（包括主角）；已经离场的角色应从列表中移除。characters 返回的是完整的替换列表而非增量。',
+].join('\n');
+
+const CURRENT_SCENE_EXTRACTION_INSTRUCTION = [
+  '【当前画面】用纯粹的文学描写笔触，直接描摹本楼层最末尾瞬间定格的场景画面。让读者阅读时，脑海中能自然浮现出一幅具有强烈临场感的静态画卷。',
+  '',
+  '画面描摹指南：',
+  '1. 现场空间与光影：直接呈现所在环境的光线明暗、色彩层次、陈设布局与当下空气中的静谧或紧绷感。',
+  '2. 人物定格状态：生动刻画在场角色的神情与微表情、凝固的肢体姿态、衣着质感，以及手中或身边的物品细节。',
+  '3. 空间与时刻的统一度：通篇保持在这一处最终的现场时空，一气呵成描摹这一幕完整的独立画面。',
+  '4. 客观呈现事实：如实描摹正文已发生剧情在终局时的具体场景，呈现出纯净自然的情境感。',
+  '5. 篇幅与文风：约100~200字，行文优美凝练，纯文学写景与人物刻画，自然收尾。',
+  '返回 current_scene 字符串；若本楼层确实完全无法提炼出任何画面，返回空字符串。',
 ].join('\n');
 
 const DESCRIPTION_AND_WORLD_INFO_INSTRUCTION =
@@ -458,6 +473,7 @@ function parseSummaryJson(raw: string, options: SummaryGenerationOptions = {}): 
     location_operations: options.locations_enabled ? result.location_operations : [],
     setting_change_operations: options.setting_changes_enabled ? result.setting_change_operations : [],
     current_info_update: options.current_info_enabled ? (result.current_info_update ?? null) : null,
+    current_scene: options.current_scene_enabled ? (result.current_scene ?? null) : null,
   };
 }
 
@@ -467,7 +483,8 @@ function hasMemoryExtraction(options: SummaryGenerationOptions): boolean {
     options.items_enabled === true ||
     options.locations_enabled === true ||
     options.setting_changes_enabled === true ||
-    options.current_info_enabled === true
+    options.current_info_enabled === true ||
+    options.current_scene_enabled === true
   );
 }
 
@@ -541,6 +558,10 @@ function buildSummarySystemPrompt(options: SummaryGenerationOptions): string {
 
   if (options.current_info_enabled) {
     instructions.push(CURRENT_INFO_EXTRACTION_INSTRUCTION);
+  }
+
+  if (options.current_scene_enabled) {
+    instructions.push(CURRENT_SCENE_EXTRACTION_INSTRUCTION);
   }
 
   if (options.items_enabled) {
@@ -632,6 +653,10 @@ function buildSummaryJsonInstruction(options: SummaryGenerationOptions): string 
       elapsed_time: '本楼层消耗的剧情时间；原文无线索时填“约0分钟（无明确时间流逝）”',
       reason: '更新当前信息的依据；没有则为空字符串',
     };
+  }
+  if (options.current_scene_enabled) {
+    example.current_scene =
+      '直接描摹本楼层末尾定格瞬间的环境光影、角色姿态神情与现场细节（100~200字，纯文学画面描摹）';
   }
   if (options.items_enabled) {
     example.item_operations = [
@@ -782,6 +807,15 @@ function buildStructuredSummarySchema(options: SummaryGenerationOptions): JsonSc
       additionalProperties: false,
     };
     required.push('current_info_update');
+  }
+
+  if (options.current_scene_enabled) {
+    properties.current_scene = {
+      type: 'string',
+      description:
+        '以纯粹的文学描写笔触直接描摹本楼层末尾定格瞬间的现场画面，呈现环境光影与人物状态，约100~200字。',
+    };
+    required.push('current_scene');
   }
 
   if (options.items_enabled) {
@@ -1020,6 +1054,7 @@ async function summarizeMessageWithStructuredOutput(
     locations_enabled: options.locations_enabled === true,
     setting_changes_enabled: options.setting_changes_enabled === true,
     current_info_enabled: options.current_info_enabled === true,
+    current_scene_enabled: options.current_scene_enabled === true,
     send_descriptions_and_world_info: options.send_descriptions_and_world_info === true,
     world_info_scan_message_count: options.world_info_scan_messages?.length ?? 0,
     previous_original_message_ids: options.previous_original_messages?.map(message => message.message_id) ?? [],

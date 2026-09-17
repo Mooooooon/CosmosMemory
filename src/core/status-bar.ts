@@ -7,6 +7,7 @@ import { getSettingChanges } from '@/core/setting-changes';
 import { getLastRecallInfo } from '@/core/vector-recall';
 import { useSettingsStore } from '@/store/settings';
 import { updateMessageSummary } from '@/core/message-summary';
+import { updateMessageScene } from '@/core/message-scene';
 import { message_summaries_revision } from '@/core/summary';
 
 let activeTab: 'current' | 'changes' | 'characters' | 'items' | 'locations' | 'recall' = 'current';
@@ -282,13 +283,14 @@ export function updateStatusBar(): boolean {
 
   const { settings } = useSettingsStore();
   const messageId = getLatestAiMessageId();
-  // 总结栏独立于状态栏开关，且先挂载，保证显示在状态栏上方。
+  // 总结栏与当前画面独立于状态栏开关，按 总结 -> 画面 -> 状态栏 层级挂载。
   const summary_updated = updateMessageSummary(messageId);
+  const scene_updated = updateMessageScene(messageId);
 
   // 如果状态栏被关闭，移除已有状态栏并返回
   if (!settings.status_bar.enabled) {
     $('#chat .cosmos-memory-status-bar', window.parent.document).remove();
-    return summary_updated;
+    return summary_updated && scene_updated;
   }
 
   // 根据各功能开关过滤可用的 Tab
@@ -306,7 +308,7 @@ export function updateStatusBar(): boolean {
   // 没有任何功能开启时，不显示状态栏
   if (enabledTabs.length === 0) {
     $('#chat .cosmos-memory-status-bar', window.parent.document).remove();
-    return summary_updated;
+    return summary_updated && scene_updated;
   }
 
   // 如果当前激活的 Tab 不在已启用列表中，切换到第一个可用 Tab
@@ -403,7 +405,15 @@ export function triggerUpdateStatusBar() {
 export function initStatusBar() {
   console.info('[CosmosMemory] 初始化状态栏监听器');
   const { settings } = useSettingsStore();
-  watch([message_summaries_revision, () => settings.summary.show_in_message], triggerUpdateStatusBar);
+  watch(
+    [
+      message_summaries_revision,
+      () => settings.summary.show_in_message,
+      () => settings.current_scene.enabled,
+      () => settings.current_scene.default_expanded,
+    ],
+    triggerUpdateStatusBar,
+  );
 
   eventSource.on(event_types.MESSAGE_SWIPED, triggerUpdateStatusBar);
   eventSource.on(event_types.MESSAGE_UPDATED, triggerUpdateStatusBar);

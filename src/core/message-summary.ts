@@ -40,8 +40,11 @@ export function updateMessageSummary(message_id: number | null): boolean {
       $content.text(summary.summary);
     }
 
+    const $scene = $message.children('.cosmos-memory-message-scene').first();
     const $status_bar = $message.children('.cosmos-memory-status-bar').first();
-    if ($status_bar.length > 0) {
+    if ($scene.length > 0) {
+      $details.insertBefore($scene);
+    } else if ($status_bar.length > 0) {
       $details.insertBefore($status_bar);
     } else {
       $message.append($details);
