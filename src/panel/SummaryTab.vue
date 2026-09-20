@@ -104,6 +104,34 @@
       </div>
 
       <template v-if="settings.filter.enabled">
+        <div class="cosmos-memory-row flex-container">
+          <input id="cosmos_memory_filter_auto_retry" v-model="settings.filter.auto_retry" type="checkbox" />
+          <label for="cosmos_memory_filter_auto_retry">{{ t`自动重试` }}</label>
+        </div>
+
+        <div class="cosmos-memory-hint">
+          {{ t`当符合过滤条件或遭遇 500/网络等服务器报错时，自动触发重新生成。` }}
+        </div>
+
+        <template v-if="settings.filter.auto_retry">
+          <label class="cosmos-memory-field">
+            <span>{{ t`最大重试次数` }}</span>
+            <input
+              v-model.number="settings.filter.max_retries"
+              class="text_pole"
+              type="number"
+              min="1"
+              max="20"
+              step="1"
+              @change="normalize_filter_max_retries"
+            />
+          </label>
+
+          <div class="cosmos-memory-hint">
+            {{ t`连续重试达到此上限后将停止，避免因模型持续输出被过滤内容而无限循环。` }}
+          </div>
+        </template>
+
         <label class="cosmos-memory-field">
           <span>{{ t`长度统计单位` }}</span>
           <select v-model="settings.filter.length_unit" class="text_pole">
@@ -193,7 +221,7 @@
 </template>
 
 <script setup lang="ts">
-import { DEFAULT_FILTER_MIN_LENGTH } from '@/type/settings';
+import { DEFAULT_FILTER_MAX_RETRIES, DEFAULT_FILTER_MIN_LENGTH } from '@/type/settings';
 import { runMemoryBacktrackCheck, stopSummarizeTasks, type MemoryBacktrackCheckResult } from '@/core/summary';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
 import SummaryDialog from '@/panel/SummaryDialog.vue';
@@ -227,6 +255,13 @@ function normalize_filter_min_length() {
   settings.value.filter.min_length = Number.isFinite(count)
     ? Math.max(0, Math.floor(count))
     : DEFAULT_FILTER_MIN_LENGTH;
+}
+
+function normalize_filter_max_retries() {
+  const count = settings.value.filter.max_retries;
+  settings.value.filter.max_retries = Number.isFinite(count)
+    ? Math.min(20, Math.max(1, Math.floor(count)))
+    : DEFAULT_FILTER_MAX_RETRIES;
 }
 
 function handle_show_summaries() {

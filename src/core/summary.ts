@@ -40,8 +40,14 @@ import { evaluateMessageFilter } from '@/core/filter';
 import { isCosmosMemoryMessage } from '@/core/message-flags';
 import { useSettingsStore } from '@/store/settings';
 import { getCurrentChatId } from '@sillytavern/script';
+import { getStringHash } from '@sillytavern/scripts/utils';
 
 const SUMMARY_STORAGE_PATH = `${STORAGE_ROOT}.summaries`;
+/**
+ * swipe 分支摘要旁路缓存：`{root}.summary_swipes.{message_id}.{swipe_id} = MessageSummary`。
+ * 与 canonical（SUMMARY_STORAGE_PATH，仅存当前激活分支）并存，切回已总结过的分支时直接复用缓存、不再调用 AI。
+ */
+const SUMMARY_SWIPE_STORAGE_PATH = `${STORAGE_ROOT}.summary_swipes`;
 const SUMMARY_BACKFILL_CONCURRENCY = 2;
 /** 摘要保存或删除后通知展示层刷新，覆盖自动总结与手动补全等入口。 */
 export const message_summaries_revision = ref(0);
@@ -62,6 +68,10 @@ let backfill_abort_signal: { aborted: boolean } | null = null;
 
 export type MessageSummary = {
   message_id: number;
+  /** 生成该摘要时激活的 swipe 分支序号；用于检测切换分支后摘要是否已过期 */
+  swipe_id?: number;
+  /** 生成该摘要时所依据的 AI 原文（正则过滤后）内容哈希；swipe 删除/重排后按内容校验缓存是否仍有效 */
+  content_hash?: number;
   summary: string;
   character_operations?: CharacterOperation[];
   item_operations?: ItemOperation[];
@@ -84,7 +94,7 @@ export type MemoryBacktrackCheckResult = {
   aborted: boolean;
 };
 
-function getAssistantMessage(message_id: number): ChatMessage | null {
+export function getAssistantMessage(message_id: number): ChatMessage | null {
   const message = window.TavernHelper.getChatMessages(message_id, { include_swipes: false })[0];
   if (!message) {
     console.info('[CosmosMemory] 未找到消息楼层', { message_id });
@@ -102,6 +112,24 @@ function getAssistantMessage(message_id: number): ChatMessage | null {
     is_hidden: message.is_hidden,
   });
   return message;
+}
+
+/**
+ * 读取指定楼层当前激活的 swipe 分支序号。
+ * 未产生过 swipe 的楼层其 swipe_id 可能为 undefined，此时归一化为 0。
+ */
+export function getActiveSwipeId(message_id: number): number {
+  try {
+    const message = window.TavernHelper.getChatMessages(message_id, { include_swipes: true })[0] as
+      | ChatMessageSwiped
+      | undefined;
+    if (message && typeof message.swipe_id === 'number') {
+      return message.swipe_id;
+    }
+  } catch (error) {
+    console.warn('[CosmosMemory] 读取楼层 swipe_id 失败', { message_id, error });
+  }
+  return 0;
 }
 
 /**
@@ -220,9 +248,13 @@ function getPreviousSummaryContext(
 }
 
 function saveMessageSummary(summary: MessageSummary) {
+  const swipe_id = summary.swipe_id ?? 0;
   window.TavernHelper.updateVariablesWith(
     variables => {
+      // canonical：当前激活分支的摘要，供全部下游消费者读取（每层一条）
       _.set(variables, `${SUMMARY_STORAGE_PATH}.${summary.message_id}`, summary);
+      // 旁路缓存：按分支保留，切回该分支时可直接复用
+      _.set(variables, `${SUMMARY_SWIPE_STORAGE_PATH}.${summary.message_id}.${swipe_id}`, summary);
       return variables;
     },
     { type: 'chat' },
@@ -231,7 +263,83 @@ function saveMessageSummary(summary: MessageSummary) {
   console.info('[CosmosMemory] 已写入聊天变量', {
     path: `${SUMMARY_STORAGE_PATH}.${summary.message_id}`,
     message_id: summary.message_id,
+    swipe_id,
   });
+}
+
+/**
+ * 读取指定楼层某个 swipe 分支已缓存的摘要（若存在）。
+ * 仅做基础结构校验，字段完整性交由 getStoredMessageSummaries 的归一化路径复用处理。
+ */
+function getCachedSwipeSummary(message_id: number, swipe_id: number): MessageSummary | null {
+  const variables = window.TavernHelper.getVariables({ type: 'chat' });
+  const cached = _.get(variables, `${SUMMARY_SWIPE_STORAGE_PATH}.${message_id}.${swipe_id}`) as
+    | MessageSummary
+    | undefined;
+  if (
+    cached &&
+    typeof cached === 'object' &&
+    typeof cached.message_id === 'number' &&
+    typeof cached.summary === 'string'
+  ) {
+    return cached;
+  }
+  return null;
+}
+
+/** 删除指定楼层整棵 swipe 分支缓存子树（楼层被删除或被判无效时清理，避免悬空）。 */
+function deleteSwipeSummaryCache(message_ids: Iterable<number>) {
+  const ids = [...message_ids];
+  if (ids.length === 0) {
+    return;
+  }
+  window.TavernHelper.updateVariablesWith(
+    variables => {
+      for (const message_id of ids) {
+        _.unset(variables, `${SUMMARY_SWIPE_STORAGE_PATH}.${message_id}`);
+      }
+      return variables;
+    },
+    { type: 'chat' },
+  );
+}
+
+/** 删除指定楼层某个分支的缓存项（编辑楼层后该分支内容已变，其余分支缓存保留）。 */
+function deleteSwipeSummaryCacheEntry(message_id: number, swipe_id: number) {
+  window.TavernHelper.updateVariablesWith(
+    variables => {
+      _.unset(variables, `${SUMMARY_SWIPE_STORAGE_PATH}.${message_id}.${swipe_id}`);
+      return variables;
+    },
+    { type: 'chat' },
+  );
+}
+
+/**
+ * 尝试把当前激活 swipe 分支已缓存的摘要还原为 canonical。
+ * 用内容哈希校验缓存与当前分支原文一致（防 swipe 删除/重排造成的 swipe_id 错位），
+ * 一致则写回 canonical 并返回该摘要；无缓存或内容不符返回 null（交由调用方重新生成）。
+ */
+function restoreCachedSummaryForActiveSwipe(message_id: number): MessageSummary | null {
+  const active_swipe_id = getActiveSwipeId(message_id);
+  const cached = getCachedSwipeSummary(message_id, active_swipe_id);
+  if (!cached) {
+    return null;
+  }
+
+  // 缓存若带内容哈希，则校验其与当前分支原文一致；旧缓存无哈希时按 swipe_id 命中即复用
+  if (typeof cached.content_hash === 'number') {
+    const message = getAssistantMessage(message_id);
+    const source = message ? getRegexedAiContent(message) : '';
+    if (!source || getStringHash(source) !== cached.content_hash) {
+      console.info('[CosmosMemory] 分支缓存内容哈希不匹配，视为未命中', { message_id, active_swipe_id });
+      return null;
+    }
+  }
+
+  saveMessageSummary({ ...cached, swipe_id: active_swipe_id });
+  console.info('[CosmosMemory] 已从缓存还原当前 swipe 分支摘要，无需重新总结', { message_id, active_swipe_id });
+  return cached;
 }
 
 function getStoredSummaryIds(): Set<number> {
@@ -301,6 +409,8 @@ export function getStoredMessageSummaries(): MessageSummary[] {
         .safeParse(summary.current_info_update);
       return {
         ...summary,
+        swipe_id: typeof summary.swipe_id === 'number' ? summary.swipe_id : undefined,
+        content_hash: typeof summary.content_hash === 'number' ? summary.content_hash : undefined,
         character_operations: character_operations.success ? character_operations.data : [],
         item_operations: item_operations.success ? item_operations.data : [],
         location_operations: location_operations.success ? location_operations.data : [],
@@ -355,12 +465,60 @@ function pruneInvalidMessageSummaries(
   existing_assistant_message_ids: Set<number>,
 ): MessageSummary[] {
   // 开场白摘要同样视为无效：既清理早期版本误补全的残留，也防止压缩逻辑据此隐藏开场白
-  return removeMessageSummariesMatching(
+  const removed = removeMessageSummariesMatching(
     summary =>
       summary.message_id === OPENING_MESSAGE_ID ||
       summary.message_id > max_message_id ||
       !existing_assistant_message_ids.has(summary.message_id),
   );
+  // 无效楼层的分支缓存一并清理，避免悬空
+  deleteSwipeSummaryCache(removed.map(summary => summary.message_id));
+  return removed;
+}
+
+/**
+ * 将 canonical 摘要收敛到当前激活的 swipe 分支：
+ * swipe 切换只改变激活分支而不触发生成，canonical 仍是切换前分支的内容。
+ * 对每个与激活分支不一致的层，优先从分支缓存还原（不调 AI）；
+ * 无缓存可还原的才删除 canonical，交由后续缺失补全按当前分支生成。
+ * @returns restored_count 从缓存还原的层数（canonical 已变，调用方需重建记忆）；
+ *          removed 无法还原、已被删除待补全的层摘要
+ */
+function reconcileSummariesToActiveSwipe(max_message_id: number): {
+  restored_count: number;
+  removed: MessageSummary[];
+} {
+  const mismatched = getStoredMessageSummaries().filter(
+    summary =>
+      summary.message_id !== OPENING_MESSAGE_ID &&
+      summary.message_id <= max_message_id &&
+      (summary.swipe_id ?? 0) !== getActiveSwipeId(summary.message_id),
+  );
+
+  if (mismatched.length === 0) {
+    return { restored_count: 0, removed: [] };
+  }
+
+  const unrestorable_ids = new Set<number>();
+  let restored_count = 0;
+  for (const summary of mismatched) {
+    if (restoreCachedSummaryForActiveSwipe(summary.message_id)) {
+      restored_count += 1;
+    } else {
+      unrestorable_ids.add(summary.message_id);
+    }
+  }
+
+  if (unrestorable_ids.size === 0) {
+    return { restored_count, removed: [] };
+  }
+
+  const removed = removeMessageSummariesMatching(summary => unrestorable_ids.has(summary.message_id));
+  // 被删层当前激活分支尚无缓存，删除其缓存项以免残留旧分支的错位数据
+  for (const summary of removed) {
+    deleteSwipeSummaryCacheEntry(summary.message_id, getActiveSwipeId(summary.message_id));
+  }
+  return { restored_count, removed };
 }
 
 export function pruneMessageSummariesAfterMessage(message_id: number): MessageSummary[] {
@@ -477,6 +635,8 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
 
   const summary: MessageSummary = {
     message_id,
+    swipe_id: getActiveSwipeId(message_id),
+    content_hash: getStringHash(source),
     summary: result.summary,
     character_operations: settings.characters.enabled ? result.characters : [],
     item_operations: settings.items.enabled ? result.item_operations : [],
@@ -606,17 +766,76 @@ function deleteMessageSummary(message_id: number) {
  * 楼层内容被编辑后调用：取消基于旧内容的进行中任务、删除旧摘要、
  * 全量重放剩余摘要（回滚旧摘要的实体变更），最后基于新内容重新总结。
  * 没有摘要的楼层（如保留窗口内的近期楼层）不受影响。
+ * 同时失效当前激活分支的缓存项（该分支内容已变），其余分支缓存保留以便切回复用。
  */
 export async function invalidateAndResummarizeMessage(message_id: number): Promise<MessageSummary | null> {
   if (!getStoredSummaryIds().has(message_id)) {
     return null;
   }
 
-  console.info('[CosmosMemory] 楼层内容已被编辑，旧摘要失效，回滚其变更后重新总结', { message_id });
+  console.info('[CosmosMemory] 楼层内容失效，回滚其变更后按当前分支重新总结', { message_id });
   cancelSummarizeTask(message_id);
   deleteMessageSummary(message_id);
+  deleteSwipeSummaryCacheEntry(message_id, getActiveSwipeId(message_id));
   rebuildMemoryFromSummaries(getStoredMessageSummaries());
   return summarizeReceivedMessage(message_id);
+}
+
+/**
+ * 切换到其它 swipe 分支后调用。
+ * swipe 切换只改变激活分支内容而不触发生成，canonical 摘要仍是切换前分支的内容，
+ * 用户「重 roll 出分支 2 又切回分支 1 继续聊」时上下文会错用分支 2 的摘要。
+ * 处理逻辑（保留各分支摘要，优先复用而非重生成）：
+ * 1. canonical 已对应当前分支 → 无需处理；
+ * 2. 当前分支已有缓存摘要 → 直接还原为 canonical 并重建记忆，不调用 AI；
+ * 3. 无缓存可复用且原本有其它分支的 canonical → 失效后按当前分支重新生成；
+ * 4. 尚无任何摘要的楼层 → 不处理，交由发送前补全。
+ * - 正在生成新分支的空白楼层（内容为空）不处理，交由 MESSAGE_RECEIVED 路径总结。
+ */
+export async function resummarizeMessageForActiveSwipe(message_id: number): Promise<MessageSummary | null> {
+  if (message_id === OPENING_MESSAGE_ID) {
+    return null;
+  }
+
+  const message = getAssistantMessage(message_id);
+  if (!message) {
+    return null;
+  }
+
+  // 空白新分支（即将生成）不处理，避免误删摘要
+  const source = getRegexedAiContent(message);
+  if (!source) {
+    console.info('[CosmosMemory] 切换到的 swipe 分支正则过滤后为空，跳过处理', { message_id });
+    return null;
+  }
+
+  const active_swipe_id = getActiveSwipeId(message_id);
+  const stored = getStoredMessageSummaries().find(summary => summary.message_id === message_id);
+  if (stored && (stored.swipe_id ?? 0) === active_swipe_id) {
+    console.info('[CosmosMemory] canonical 摘要已对应当前 swipe 分支，无需处理', { message_id, active_swipe_id });
+    return null;
+  }
+
+  // 优先从缓存复用当前分支已生成过的摘要，不重复调用 AI
+  const restored = restoreCachedSummaryForActiveSwipe(message_id);
+  if (restored) {
+    rebuildMemoryFromSummaries(getStoredMessageSummaries());
+    return restored;
+  }
+
+  // 无缓存可复用：仅当原本存在其它分支的 canonical 时才失效并重新生成；
+  // 完全无摘要的楼层交由发送前补全，避免每次浏览新分支都触发生成
+  if (!stored) {
+    console.info('[CosmosMemory] 切换到的 swipe 楼层尚无摘要且无缓存，交由发送前补全处理', { message_id });
+    return null;
+  }
+
+  console.info('[CosmosMemory] 当前分支无缓存摘要，失效旧分支 canonical 并按当前分支重新总结', {
+    message_id,
+    stored_swipe_id: stored.swipe_id ?? 0,
+    active_swipe_id,
+  });
+  return invalidateAndResummarizeMessage(message_id);
 }
 
 /**
@@ -626,7 +845,10 @@ export async function invalidateAndResummarizeMessage(message_id: number): Promi
  * 与 swipe 覆盖旧摘要的处理路径保持一致。
  * @param first_deleted_message_id 删除后的剩余楼层数，即第一个被删除楼层的 id（MESSAGE_DELETED 事件参数）
  */
-export function rollbackSummariesFromMessage(first_deleted_message_id: number): MessageSummary[] {
+export function rollbackSummariesFromMessage(
+  first_deleted_message_id: number,
+  { purge_swipe_cache = true }: { purge_swipe_cache?: boolean } = {},
+): MessageSummary[] {
   // 被删楼层上基于旧内容的进行中任务必须取消，避免其结果写回同楼层的新消息
   for (const pending_message_id of [...summarizing_messages.keys()]) {
     if (pending_message_id >= first_deleted_message_id) {
@@ -636,15 +858,33 @@ export function rollbackSummariesFromMessage(first_deleted_message_id: number): 
 
   const removed_summaries = removeMessageSummariesMatching(summary => summary.message_id >= first_deleted_message_id);
 
+  // 楼层真正被删除时（purge_swipe_cache=true）连同分支缓存一并清理；
+  // 重 roll / 生成新分支的提前回滚（purge_swipe_cache=false）只回滚 canonical，
+  // 保留其余分支缓存，切回旧分支时仍可复用
+  if (purge_swipe_cache) {
+    const cache_ids = getSwipeCacheMessageIds().filter(id => id >= first_deleted_message_id);
+    deleteSwipeSummaryCache(cache_ids);
+  }
+
   if (removed_summaries.length > 0) {
-    console.info('[CosmosMemory] 楼层已被删除，清理对应摘要并回滚其派生变更', {
+    console.info('[CosmosMemory] 楼层回滚，清理对应摘要并回滚其派生变更', {
       first_deleted_message_id,
+      purge_swipe_cache,
       removed_message_ids: removed_summaries.map(summary => summary.message_id),
     });
     rebuildMemoryFromSummaries(getStoredMessageSummaries());
   }
 
   return removed_summaries;
+}
+
+/** 列出分支缓存中现存的全部 message_id（用于删除时按楼层范围清理）。 */
+function getSwipeCacheMessageIds(): number[] {
+  const variables = window.TavernHelper.getVariables({ type: 'chat' });
+  const cache = _.get(variables, SUMMARY_SWIPE_STORAGE_PATH, {}) as Record<string, unknown>;
+  return Object.keys(cache)
+    .map(key => Number(key))
+    .filter(id => Number.isInteger(id));
 }
 
 async function backfillMissingSummaries(
@@ -738,15 +978,31 @@ export async function runMemoryBacktrackCheck(
     existing_assistant_message_ids: [...existing_assistant_message_ids],
   });
 
-  const removed_summaries = pruneInvalidMessageSummaries(max_message_id, existing_assistant_message_ids);
-  if (removed_summaries.length > 0) {
+  const dangling_summaries = pruneInvalidMessageSummaries(max_message_id, existing_assistant_message_ids);
+  if (dangling_summaries.length > 0) {
     console.info('[CosmosMemory] 回溯检查已清理悬空总结', {
       max_message_id,
-      removed_message_ids: removed_summaries.map(summary => summary.message_id),
+      removed_message_ids: dangling_summaries.map(summary => summary.message_id),
     });
   }
 
-  const rebuilt = removed_summaries.length > 0;
+  // 将 canonical 收敛到当前激活 swipe 分支：能从缓存还原的直接复用（不调 AI），
+  // 无缓存可还原的删除后交由下方缺失补全按当前分支生成
+  const { restored_count: swipe_restored_count, removed: swipe_unrestorable_summaries } =
+    reconcileSummariesToActiveSwipe(max_message_id);
+  if (swipe_restored_count > 0 || swipe_unrestorable_summaries.length > 0) {
+    console.info('[CosmosMemory] 回溯检查已按当前 swipe 分支收敛摘要', {
+      max_message_id,
+      restored_count: swipe_restored_count,
+      unrestorable_message_ids: swipe_unrestorable_summaries.map(summary => summary.message_id),
+    });
+  }
+
+  const removed_summaries = [...dangling_summaries, ...swipe_unrestorable_summaries].sort(
+    (left, right) => left.message_id - right.message_id,
+  );
+  // 删除或从缓存还原都改变了 canonical，需重建记忆
+  const rebuilt = removed_summaries.length > 0 || swipe_restored_count > 0;
   if (rebuilt) {
     rebuildMemoryFromSummaries(getStoredMessageSummaries());
   }

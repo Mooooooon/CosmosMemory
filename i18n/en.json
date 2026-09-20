@@ -309,5 +309,21 @@
   "低于该数值的回复将跳过总结；设为 0 表示不限制最小长度。": "Replies below this threshold will skip summarization; set to 0 for no minimum length limit.",
   "过滤关键词": "Filter keywords",
   "每行一个关键词，或以逗号分隔，如：I cannot": "One keyword per line, or comma-separated, e.g.: I cannot",
-  "当 AI 回复包含以上任一关键词时（不区分大小写），将视为报错或拒答并跳过总结。支持换行或逗号分隔。": "When the AI reply contains any of these keywords (case-insensitive), it will be treated as an error or refusal and skip summarization. Supports newlines or commas."
+  "当 AI 回复包含以上任一关键词时（不区分大小写），将视为报错或拒答并跳过总结。支持换行或逗号分隔。": "When the AI reply contains any of these keywords (case-insensitive), it will be treated as an error or refusal and skip summarization. Supports newlines or commas.",
+  "自动重试": "Auto retry",
+  "当符合过滤条件时，自动触发重新生成。": "Automatically trigger regeneration when filter conditions are met.",
+  "当符合过滤条件或遭遇 500/网络等服务器报错时，自动触发重新生成。": "Automatically trigger regeneration when filter conditions are met or when 500/network server errors occur.",
+  "最大重试次数": "Maximum retries",
+  "连续重试达到此上限后将停止，避免因模型持续输出被过滤内容而无限循环。": "Stop after reaching this limit to avoid infinite retry loops when the model repeatedly outputs filtered content.",
+  "回复触发过滤条件（{reason}），正在自动重试 ({attempt}/{max})...": "Reply triggered filter condition ({reason}), auto retrying ({attempt}/{max})...",
+  "回复触发过滤条件（{reason}），已达到最大重试次数 ({max})，已停止自动重试": "Reply triggered filter condition ({reason}), maximum retries reached ({max}), auto retry stopped",
+  "生成报错（{reason}），正在自动重试 ({attempt}/{max})...": "Generation error ({reason}), auto retrying ({attempt}/{max})...",
+  "生成报错（{reason}），已达到最大重试次数 ({max})，已停止自动重试": "Generation error ({reason}), maximum retries reached ({max}), auto retry stopped",
+  "网络请求失败 (Failed to fetch)": "Network request failed (Failed to fetch)",
+  "检测到服务器报错信息": "Server error detected",
+  "未知服务器错误": "Unknown server error",
+  "Cosmos Memory 自动重试": "Cosmos Memory Auto Retry",
+  "Cosmos Memory 自动重试失败": "Cosmos Memory Auto Retry Failed",
+  "Cosmos Memory 自动重试停止": "Cosmos Memory Auto Retry Stopped",
+  "未通过过滤": "Filter check failed"
 }

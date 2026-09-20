@@ -163,6 +163,7 @@ export const VectorRecallSettings = z
 
 export const DEFAULT_FILTER_MIN_LENGTH = 200;
 export const DEFAULT_FILTER_BLOCKED_KEYWORDS = ['I cannot'];
+export const DEFAULT_FILTER_MAX_RETRIES = 3;
 
 export const FILTER_LENGTH_UNIT_OPTIONS = ['token', 'char'] as const;
 export type FilterLengthUnit = (typeof FILTER_LENGTH_UNIT_OPTIONS)[number];
@@ -171,6 +172,8 @@ export type FilterSettings = z.infer<typeof FilterSettings>;
 export const FilterSettings = z
   .object({
     enabled: z.boolean().default(true),
+    auto_retry: z.boolean().default(false),
+    max_retries: z.number().int().min(1).max(20).default(DEFAULT_FILTER_MAX_RETRIES),
     length_unit: z.enum(FILTER_LENGTH_UNIT_OPTIONS).default('token'),
     min_length: z.number().int().min(0).default(DEFAULT_FILTER_MIN_LENGTH),
     blocked_keywords: z.array(z.string()).default(DEFAULT_FILTER_BLOCKED_KEYWORDS),
