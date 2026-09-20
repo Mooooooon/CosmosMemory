@@ -655,8 +655,7 @@ function buildSummaryJsonInstruction(options: SummaryGenerationOptions): string 
     };
   }
   if (options.current_scene_enabled) {
-    example.current_scene =
-      '直接描摹本楼层末尾定格瞬间的环境光影、角色姿态神情与现场细节（100~200字，纯文学画面描摹）';
+    example.current_scene = '直接描摹本楼层末尾定格瞬间的环境光影、角色姿态神情与现场细节（100~200字，纯文学画面描摹）';
   }
   if (options.items_enabled) {
     example.item_operations = [
@@ -812,8 +811,7 @@ function buildStructuredSummarySchema(options: SummaryGenerationOptions): JsonSc
   if (options.current_scene_enabled) {
     properties.current_scene = {
       type: 'string',
-      description:
-        '以纯粹的文学描写笔触直接描摹本楼层末尾定格瞬间的现场画面，呈现环境光影与人物状态，约100~200字。',
+      description: '以纯粹的文学描写笔触直接描摹本楼层末尾定格瞬间的现场画面，呈现环境光影与人物状态，约100~200字。',
     };
     required.push('current_scene');
   }

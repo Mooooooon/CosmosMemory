@@ -150,7 +150,9 @@ export function handleGenerationError(error_text: string, title?: string): boole
     current_retry_count++;
     const attempt = current_retry_count;
     const reason_summary = extractErrorSummary(full_text);
-    console.info(`[CosmosMemory] 检测到生成服务器报错，触发自动重试 (${attempt}/${max_retries})，报错: ${reason_summary}`);
+    console.info(
+      `[CosmosMemory] 检测到生成服务器报错，触发自动重试 (${attempt}/${max_retries})，报错: ${reason_summary}`,
+    );
 
     if (typeof toastr !== 'undefined') {
       const message = t`生成报错（{reason}），正在自动重试 ({attempt}/{max})...`
@@ -169,10 +171,7 @@ export function handleGenerationError(error_text: string, title?: string): boole
       } catch (error) {
         console.error('[CosmosMemory] 自动触发重新生成失败', error);
         if (typeof toastr !== 'undefined') {
-          toastr.error(
-            error instanceof Error ? error.message : String(error),
-            t`Cosmos Memory 自动重试失败`,
-          );
+          toastr.error(error instanceof Error ? error.message : String(error), t`Cosmos Memory 自动重试失败`);
         }
       }
     }, 1000);
@@ -304,7 +303,9 @@ export function triggerFilterAutoRetry(message_id: number, reason?: string): Aut
   if (current_retry_count < max_retries) {
     current_retry_count++;
     const attempt = current_retry_count;
-    console.info(`[CosmosMemory] 回复触发过滤条件，触发自动重试 (${attempt}/${max_retries})，原因: ${reason ?? '未知'}`);
+    console.info(
+      `[CosmosMemory] 回复触发过滤条件，触发自动重试 (${attempt}/${max_retries})，原因: ${reason ?? '未知'}`,
+    );
     const reason_text = reason ?? t`未通过过滤`;
     if (typeof toastr !== 'undefined') {
       const message = t`回复触发过滤条件（{reason}），正在自动重试 ({attempt}/{max})...`
@@ -322,10 +323,7 @@ export function triggerFilterAutoRetry(message_id: number, reason?: string): Aut
       } catch (error) {
         console.error('[CosmosMemory] 自动触发重新生成失败', error);
         if (typeof toastr !== 'undefined') {
-          toastr.error(
-            error instanceof Error ? error.message : String(error),
-            t`Cosmos Memory 自动重试失败`,
-          );
+          toastr.error(error instanceof Error ? error.message : String(error), t`Cosmos Memory 自动重试失败`);
         }
       }
     }, 200);

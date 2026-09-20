@@ -121,8 +121,7 @@ export function getAssistantMessage(message_id: number): ChatMessage | null {
 export function getActiveSwipeId(message_id: number): number {
   try {
     const message = window.TavernHelper.getChatMessages(message_id, { include_swipes: true })[0] as
-      | ChatMessageSwiped
-      | undefined;
+      ChatMessageSwiped | undefined;
     if (message && typeof message.swipe_id === 'number') {
       return message.swipe_id;
     }
@@ -274,8 +273,7 @@ function saveMessageSummary(summary: MessageSummary) {
 function getCachedSwipeSummary(message_id: number, swipe_id: number): MessageSummary | null {
   const variables = window.TavernHelper.getVariables({ type: 'chat' });
   const cached = _.get(variables, `${SUMMARY_SWIPE_STORAGE_PATH}.${message_id}.${swipe_id}`) as
-    | MessageSummary
-    | undefined;
+    MessageSummary | undefined;
   if (
     cached &&
     typeof cached === 'object' &&
