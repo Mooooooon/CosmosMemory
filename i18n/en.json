@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "基础设置": "Settings",
   "剧情总结": "Summary",
   "记忆压缩": "Compression",
@@ -326,4 +327,9 @@
   "Cosmos Memory 自动重试失败": "Cosmos Memory Auto Retry Failed",
   "Cosmos Memory 自动重试停止": "Cosmos Memory Auto Retry Stopped",
   "未通过过滤": "Filter check failed"
+=======
+  "插件示例": "Plugin Example",
+  "示例按钮": "Example Button",
+  "示例开关": "Example Switch"
+>>>>>>> e000f17401bc15121c7e98e8b74f8f69bb0ff16c
 }
