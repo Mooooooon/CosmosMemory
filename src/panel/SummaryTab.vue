@@ -43,6 +43,7 @@
             id="cosmos_memory_include_opening_message_original"
             v-model="settings.summary.include_opening_message_original"
             type="checkbox"
+            @change="handle_include_opening_toggle"
           />
           <label for="cosmos_memory_include_opening_message_original">{{ t`包括开场白` }}</label>
         </div>
@@ -221,6 +222,7 @@
 </template>
 
 <script setup lang="ts">
+import { applySummaryCompressionForNextGeneration } from '@/core/compression';
 import { DEFAULT_FILTER_MAX_RETRIES, DEFAULT_FILTER_MIN_LENGTH } from '@/type/settings';
 import { runMemoryBacktrackCheck, stopSummarizeTasks, type MemoryBacktrackCheckResult } from '@/core/summary';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
@@ -262,6 +264,28 @@ function normalize_filter_max_retries() {
   settings.value.filter.max_retries = Number.isFinite(count)
     ? Math.min(20, Math.max(1, Math.floor(count)))
     : DEFAULT_FILTER_MAX_RETRIES;
+}
+
+async function handle_include_opening_toggle() {
+  const is_enabled = settings.value.summary.include_opening_message_original;
+  settings.value.compression.include_opening_message = is_enabled;
+
+  if (is_enabled) {
+    try {
+      await runMemoryBacktrackCheck();
+      await applySummaryCompressionForNextGeneration(settings.value.compression.enabled);
+    } catch (error) {
+      console.error('[CosmosMemory] 开启开场白压缩失败', error);
+      toastr.error(error instanceof Error ? error.message : String(error), 'Cosmos Memory');
+    }
+  } else {
+    try {
+      await applySummaryCompressionForNextGeneration(settings.value.compression.enabled);
+    } catch (error) {
+      console.error('[CosmosMemory] 恢复开场白隐藏状态失败', error);
+      toastr.error(error instanceof Error ? error.message : String(error), 'Cosmos Memory');
+    }
+  }
 }
 
 function handle_show_summaries() {

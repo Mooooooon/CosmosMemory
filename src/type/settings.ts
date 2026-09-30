@@ -41,6 +41,7 @@ export const CompressionSettings = z
   .object({
     enabled: z.boolean().default(true),
     retained_original_assistant_messages: z.number().int().min(0).default(5),
+    include_opening_message: z.boolean().default(false),
   })
   .prefault({});
 
@@ -200,3 +201,20 @@ export const Settings = z
   .prefault({});
 
 export const setting_field = 'cosmos_memory';
+
+/**
+ * 判断是否开启了包括开场白压缩：
+ * 兼容 compression.include_opening_message 与 summary.include_opening_message_original
+ */
+export function isOpeningMessageCompressionEnabled(settings?: {
+  compression?: { include_opening_message?: boolean };
+  summary?: { include_opening_message_original?: boolean };
+}): boolean {
+  if (!settings) {
+    return false;
+  }
+  return Boolean(
+    settings.compression?.include_opening_message ||
+    settings.summary?.include_opening_message_original,
+  );
+}

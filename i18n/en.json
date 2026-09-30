@@ -82,6 +82,7 @@
   "发送上一条 AI 原文": "Send previous AI reply",
   "开启后，总结请求会附带当前回复之前最近一条 AI 回复的原文；若与已有总结重合，则只发送原文。": "When enabled, summary requests include the most recent AI reply before the current one in full; if it overlaps with an existing summary, only the original reply is sent.",
   "包括开场白": "Include opening message",
+  "开启后，开场白也会被总结并压缩隐藏，将其纳入前情摘要中；未开启时开场白始终保留在上下文中。": "When enabled, opening messages will also be summarized and compressed/hidden into context summaries; when disabled, opening messages always remain in context.",
   "发送上下文": "Send context",
   "开启后，总结请求会附带最近的已有总结，帮助 AI 理解之前的剧情走向。": "When enabled, summary requests will include recent existing summaries to help the AI understand the previous story direction.",
   "发送总结条数": "Summaries to send",

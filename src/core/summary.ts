@@ -39,6 +39,7 @@ import { STORAGE_ROOT } from '@/core/entity-store';
 import { evaluateMessageFilter } from '@/core/filter';
 import { isCosmosMemoryMessage } from '@/core/message-flags';
 import { useSettingsStore } from '@/store/settings';
+import { isOpeningMessageCompressionEnabled } from '@/type/settings';
 import { getCurrentChatId } from '@sillytavern/script';
 import { getStringHash } from '@sillytavern/scripts/utils';
 
@@ -53,7 +54,7 @@ const SUMMARY_BACKFILL_CONCURRENCY = 2;
 export const message_summaries_revision = ref(0);
 /**
  * 开场白所在楼层：first_message 事件始终以楼层 0 触发。
- * 开场白属于角色卡自带内容且始终保留在上下文中，不参与总结，也不计入缺失补全。
+ * 未开启「包括开场白」时，开场白始终保留在上下文中且不参与总结；开启后则参与总结与压缩隐藏。
  */
 export const OPENING_MESSAGE_ID = 0;
 
@@ -359,9 +360,10 @@ function getCurrentLastMessageId(): number {
 async function getMissingAssistantMessageIds(max_message_id: number): Promise<number[]> {
   const stored_summary_ids = getStoredSummaryIds();
   const { settings } = useSettingsStore();
+  const allow_opening = isOpeningMessageCompressionEnabled(settings);
   const candidates = getExistingChatMessages(max_message_id).filter(
     message =>
-      message.message_id !== OPENING_MESSAGE_ID &&
+      (allow_opening || message.message_id !== OPENING_MESSAGE_ID) &&
       message.role === 'assistant' &&
       !isCosmosMemoryMessage(message) &&
       !stored_summary_ids.has(message.message_id),
@@ -462,10 +464,11 @@ function pruneInvalidMessageSummaries(
   max_message_id: number,
   existing_assistant_message_ids: Set<number>,
 ): MessageSummary[] {
-  // 开场白摘要同样视为无效：既清理早期版本误补全的残留，也防止压缩逻辑据此隐藏开场白
+  const { settings } = useSettingsStore();
+  const allow_opening = isOpeningMessageCompressionEnabled(settings);
   const removed = removeMessageSummariesMatching(
     summary =>
-      summary.message_id === OPENING_MESSAGE_ID ||
+      (!allow_opening && summary.message_id === OPENING_MESSAGE_ID) ||
       summary.message_id > max_message_id ||
       !existing_assistant_message_ids.has(summary.message_id),
   );
@@ -486,9 +489,11 @@ function reconcileSummariesToActiveSwipe(max_message_id: number): {
   restored_count: number;
   removed: MessageSummary[];
 } {
+  const { settings } = useSettingsStore();
+  const allow_opening = isOpeningMessageCompressionEnabled(settings);
   const mismatched = getStoredMessageSummaries().filter(
     summary =>
-      summary.message_id !== OPENING_MESSAGE_ID &&
+      (allow_opening || summary.message_id !== OPENING_MESSAGE_ID) &&
       summary.message_id <= max_message_id &&
       (summary.swipe_id ?? 0) !== getActiveSwipeId(summary.message_id),
   );
@@ -681,7 +686,9 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
 }
 
 export function summarizeReceivedMessage(message_id: number): Promise<MessageSummary | null> {
-  if (message_id === OPENING_MESSAGE_ID) {
+  const { settings } = useSettingsStore();
+  const allow_opening = isOpeningMessageCompressionEnabled(settings);
+  if (message_id === OPENING_MESSAGE_ID && !allow_opening) {
     console.info('[CosmosMemory] 开场白楼层不参与总结', { message_id });
     return Promise.resolve(null);
   }
@@ -791,7 +798,9 @@ export async function invalidateAndResummarizeMessage(message_id: number): Promi
  * - 正在生成新分支的空白楼层（内容为空）不处理，交由 MESSAGE_RECEIVED 路径总结。
  */
 export async function resummarizeMessageForActiveSwipe(message_id: number): Promise<MessageSummary | null> {
-  if (message_id === OPENING_MESSAGE_ID) {
+  const { settings } = useSettingsStore();
+  const allow_opening = isOpeningMessageCompressionEnabled(settings);
+  if (message_id === OPENING_MESSAGE_ID && !allow_opening) {
     return null;
   }
 

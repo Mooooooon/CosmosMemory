@@ -19,7 +19,7 @@ import { STORAGE_ROOT } from '@/core/entity-store';
 import { isCosmosMemoryMessage } from '@/core/message-flags';
 import { getRegexedAiContent, getRegexedMessageContent, OPENING_MESSAGE_ID } from '@/core/summary';
 import { useSettingsStore } from '@/store/settings';
-import { DEFAULT_VECTOR_RECALL_API_URL, type VectorRecallSettings } from '@/type/settings';
+import { DEFAULT_VECTOR_RECALL_API_URL, isOpeningMessageCompressionEnabled, type VectorRecallSettings } from '@/type/settings';
 import { getCurrentChatId } from '@sillytavern/script';
 import { getStringHash } from '@sillytavern/scripts/utils';
 
@@ -83,9 +83,10 @@ function getOriginalAssistantMessages(): ChatMessage[] {
  */
 function collectVectorizableItems(settings: VectorRecallSettings): VectorItem[] {
   const { settings: global_settings } = useSettingsStore();
+  const allow_opening = isOpeningMessageCompressionEnabled(global_settings);
   const items: VectorItem[] = [];
   for (const message of getOriginalAssistantMessages()) {
-    if (message.message_id === OPENING_MESSAGE_ID) {
+    if (message.message_id === OPENING_MESSAGE_ID && !allow_opening) {
       continue;
     }
 

@@ -38,6 +38,19 @@
         <div class="cosmos-memory-hint">
           {{ t`保留最近 N 条 AI 回复不隐藏，更早的历史楼层将被折叠并用逐楼总结注入。` }}
         </div>
+
+        <div class="cosmos-memory-row flex-container">
+          <input
+            id="cosmos_memory_compression_include_opening_message"
+            v-model="settings.compression.include_opening_message"
+            type="checkbox"
+            @change="handle_opening_message_toggle"
+          />
+          <label for="cosmos_memory_compression_include_opening_message">{{ t`包括开场白` }}</label>
+        </div>
+        <div class="cosmos-memory-hint">
+          {{ t`开启后，开场白也会被总结并压缩隐藏，将其纳入前情摘要中；未开启时开场白始终保留在上下文中。` }}
+        </div>
       </div>
     </div>
 
@@ -111,6 +124,7 @@
 
 <script setup lang="ts">
 import { applySummaryCompressionForNextGeneration } from '@/core/compression';
+import { runMemoryBacktrackCheck } from '@/core/summary';
 import { isRollupTaskCancelledError, regenerateSummaryRollups, runSummaryRollup } from '@/core/summary-rollup';
 import { useSettingsStore } from '@/store/settings';
 import { storeToRefs } from 'pinia';
@@ -135,6 +149,29 @@ function handle_compression_toggle() {
     void applySummaryCompressionForNextGeneration(false).catch(error => {
       console.error('[CosmosMemory] 关闭压缩时恢复隐藏楼层失败', error);
     });
+  }
+}
+
+async function handle_opening_message_toggle() {
+  const is_enabled = settings.value.compression.include_opening_message;
+  // 同步 Summary 设置保持一致
+  settings.value.summary.include_opening_message_original = is_enabled;
+
+  if (is_enabled) {
+    try {
+      await runMemoryBacktrackCheck();
+      await applySummaryCompressionForNextGeneration(settings.value.compression.enabled);
+    } catch (error) {
+      console.error('[CosmosMemory] 开启开场白压缩失败', error);
+      toastr.error(error instanceof Error ? error.message : String(error), 'Cosmos Memory');
+    }
+  } else {
+    try {
+      await applySummaryCompressionForNextGeneration(settings.value.compression.enabled);
+    } catch (error) {
+      console.error('[CosmosMemory] 恢复开场白隐藏状态失败', error);
+      toastr.error(error instanceof Error ? error.message : String(error), 'Cosmos Memory');
+    }
   }
 }
 

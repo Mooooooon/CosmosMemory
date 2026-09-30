@@ -13,6 +13,7 @@ import {
   wasSummarizeTaskCancelled,
 } from '@/core/summary';
 import { useSettingsStore } from '@/store/settings';
+import { isOpeningMessageCompressionEnabled } from '@/type/settings';
 import { stopSummaryRollupTask, triggerSummaryRollupIfNeeded } from '@/core/summary-rollup';
 import { event_types, eventSource } from '@sillytavern/script';
 import { initStatusBar, triggerUpdateStatusBar } from '@/core/status-bar';
@@ -58,12 +59,13 @@ async function handleMessageReceived(message_id: number, type: string) {
   triggerVectorSyncDebounced();
 
   const message = getAssistantMessage(message_id);
-  if (!message || isCosmosMemoryMessage(message) || message_id === OPENING_MESSAGE_ID) {
+  const { settings } = useSettingsStore();
+  const allow_opening = isOpeningMessageCompressionEnabled(settings);
+  if (!message || isCosmosMemoryMessage(message) || (!allow_opening && message_id === OPENING_MESSAGE_ID)) {
     return;
   }
 
   const source = getRegexedAiContent(message);
-  const { settings } = useSettingsStore();
   const filter_result = await evaluateMessageFilter(source, settings.filter);
 
   if (filter_result.filtered) {
@@ -73,7 +75,9 @@ async function handleMessageReceived(message_id: number, type: string) {
       count: filter_result.count,
       unit: filter_result.unit,
     });
-    triggerFilterAutoRetry(message_id, filter_result.reason);
+    if (message_id !== OPENING_MESSAGE_ID) {
+      triggerFilterAutoRetry(message_id, filter_result.reason);
+    }
     return;
   }
 
@@ -176,7 +180,9 @@ function handleMessageSwiped(message_id: number) {
 
   // 生成新分支会先触发本事件（空白楼层）再走 MESSAGE_RECEIVED 路径，此处不重复处理；
   // 生成过程中的流式楼层同样跳过
-  if (isGenerationActive() || message_id === OPENING_MESSAGE_ID) {
+  const { settings } = useSettingsStore();
+  const allow_opening = isOpeningMessageCompressionEnabled(settings);
+  if (isGenerationActive() || (!allow_opening && message_id === OPENING_MESSAGE_ID)) {
     return;
   }
 
