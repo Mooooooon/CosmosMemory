@@ -19,7 +19,11 @@ import { STORAGE_ROOT } from '@/core/entity-store';
 import { isCosmosMemoryMessage } from '@/core/message-flags';
 import { getRegexedAiContent, getRegexedMessageContent, OPENING_MESSAGE_ID } from '@/core/summary';
 import { useSettingsStore } from '@/store/settings';
-import { DEFAULT_VECTOR_RECALL_API_URL, isOpeningMessageCompressionEnabled, type VectorRecallSettings } from '@/type/settings';
+import {
+  DEFAULT_VECTOR_RECALL_API_URL,
+  isOpeningMessageCompressionEnabled,
+  type VectorRecallSettings,
+} from '@/type/settings';
 import { getCurrentChatId } from '@sillytavern/script';
 import { getStringHash } from '@sillytavern/scripts/utils';
 

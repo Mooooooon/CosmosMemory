@@ -213,8 +213,5 @@ export function isOpeningMessageCompressionEnabled(settings?: {
   if (!settings) {
     return false;
   }
-  return Boolean(
-    settings.compression?.include_opening_message ||
-    settings.summary?.include_opening_message_original,
-  );
+  return Boolean(settings.compression?.include_opening_message || settings.summary?.include_opening_message_original);
 }
