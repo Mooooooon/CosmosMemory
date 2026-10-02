@@ -330,3 +330,27 @@ test('setupGlobalErrorInterceptors：拦截 window.toastr.error 并在生成中�
   assert.equal(toastrCalls.info.length, 1);
   assert.match(toastrCalls.info[0].msg, /正在自动重试 \(1\/3\)/);
 });
+
+test('toastr 错误拦截保持原方法的参数、this 和返回值', () => {
+  const { filterModule, context } = setupFilterContext();
+  const calls = [];
+  const toast = { toastId: 'test-toast' };
+  context.toastr.error = function (...args) {
+    calls.push({ receiver: this, args });
+    return toast;
+  };
+  filterModule.setupGlobalErrorInterceptors();
+  const overrides = { timeOut: 0, preventDuplicates: true };
+  const cases = [
+    ['普通错误'],
+    ['普通错误', '提示标题'],
+    ['普通错误', '提示标题', overrides],
+  ];
+  for (const args of cases) {
+    assert.equal(context.toastr.error(...args), toast);
+    const call = calls.at(-1);
+    assert.equal(call.receiver, context.toastr);
+    assert.deepEqual(call.args, args);
+  }
+  assert.equal(calls.at(-1).args[2], overrides);
+});

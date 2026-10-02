@@ -311,6 +311,7 @@ function mergeLocationOperation(
 const locationStore = defineEntityStore<StoredLocationWorld, LocationOperation, SummaryWithLocationOperations>({
   storagePath: LOCATION_STORAGE_PATH,
   entityName: '地点',
+  operationSchema: LocationOperationResponse,
   isValidEntity: isStoredLocationWorld,
   getEntityKey: world => normalizeLocationKey(world.name),
   // 元数据记录在世界级实体上：一条地点操作可能触及世界下的任意层级，
@@ -329,12 +330,22 @@ export function getStoredLocations(): StoredLocationWorld[] {
   return locationStore.getAll();
 }
 
+export function getLocationsAtMessage(
+  summaries: SummaryWithLocationOperations[],
+  message_id: number,
+): StoredLocationWorld[] {
+  return locationStore.getAtMessage(summaries, message_id);
+}
+
 export function applyLocationOperations(operations: LocationOperation[], meta: EntityMeta = {}): StoredLocationWorld[] {
   return locationStore.applyOperations(operations, meta);
 }
 
-export function rebuildStoredLocationsFromSummaries(summaries: SummaryWithLocationOperations[]): StoredLocationWorld[] {
-  return locationStore.rebuildFromSummaries(summaries);
+export function rebuildStoredLocationsFromSummaries(
+  summaries: SummaryWithLocationOperations[],
+  max_message_id?: number,
+): StoredLocationWorld[] {
+  return locationStore.rebuildFromSummaries(summaries, max_message_id);
 }
 
 /**
@@ -361,7 +372,7 @@ export function migrateStoredLocationsIfNeeded(summaries: SummaryWithLocationOpe
 /**
  * 手动应用一条地点操作（编辑各层级 brief 或删除节点）。
  * LocationOperation 本身支持任意层级的 set/delete，直接复用；
- * 操作进入手动日志，rebuild 时重放，用户修正不被回滚冲掉。
+ * 操作绑定当前楼层和分支，重建时按时间顺序重放。
  */
 export function manualApplyLocationOperation(operation: LocationOperation): StoredLocationWorld[] {
   return locationStore.applyManualOperation(operation);

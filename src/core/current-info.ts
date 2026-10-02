@@ -1,4 +1,5 @@
 import { normalizeText, STORAGE_ROOT } from '@/core/entity-store';
+import { defineFloorHistory, replayFloorTimeline } from '@/core/floor-history';
 
 const CURRENT_INFO_STORAGE_PATH = `${STORAGE_ROOT}.current_info`;
 export const CURRENT_INFO_PROMPT_ID = 'cosmos_memory_current_info';
@@ -21,6 +22,7 @@ export type CurrentInfoUpdate = CurrentInfo & {
 };
 
 type SummaryWithCurrentInfoUpdate = {
+  message_id?: number;
   current_info_update?: CurrentInfoUpdate | null;
 };
 
@@ -36,6 +38,10 @@ export const CurrentInfoUpdateResponse = z.object({
   elapsed_time: z.string().trim().optional().default(''),
   reason: z.string().trim().optional().default(''),
 });
+const history = defineFloorHistory(
+  `${CURRENT_INFO_STORAGE_PATH}_manual_ops`,
+  CurrentInfoUpdateResponse.pick({ current_time: true, location: true, characters: true }),
+);
 
 function normalizeCurrentCharacters(value: unknown): Record<string, CurrentCharacterInfo> {
   if (!_.isPlainObject(value)) {
@@ -123,26 +129,47 @@ export function applyCurrentInfoUpdate(update: CurrentInfoUpdate | null | undefi
 
 /**
  * 手动整体覆盖当前信息。
- * 当前信息是快照型数据，随每次总结自然演进，手动修正会作为下一次演进的基线；
- * 不需要手动操作日志——rebuild 场景下按摘要重放出的快照本就是期望结果。
+ * 完整快照绑定到当前楼层，允许清空字段；后续总结可以继续演进。
  */
 export function manualSaveCurrentInfo(current_info: CurrentInfo): CurrentInfo {
   const normalized_info = normalizeCurrentInfo(current_info);
+  history.append(normalized_info);
   saveStoredCurrentInfo(normalized_info);
   console.info('[CosmosMemory] 已手动更新当前信息');
   return normalized_info;
 }
 
-export function rebuildStoredCurrentInfoFromSummaries(summaries: SummaryWithCurrentInfoUpdate[]): CurrentInfo {
-  const current_info = summaries.reduce<CurrentInfo>((info, summary) => {
-    const next_info = normalizeCurrentInfo(summary.current_info_update);
-    return {
-      current_time: next_info.current_time || info.current_time,
-      location: next_info.location || info.location,
-      characters: Object.keys(next_info.characters).length > 0 ? next_info.characters : info.characters,
-    };
-  }, normalizeCurrentInfo(''));
+export function getCurrentInfoAtMessage(
+  summaries: SummaryWithCurrentInfoUpdate[],
+  max_message_id?: number,
+): CurrentInfo {
+  let current_info = normalizeCurrentInfo('');
+  replayFloorTimeline(
+    summaries,
+    history.active(max_message_id),
+    summary => summary.message_id ?? -1,
+    summary => {
+      const next_info = normalizeCurrentInfo(summary.current_info_update);
+      current_info = {
+        current_time: next_info.current_time || current_info.current_time,
+        location: next_info.location || current_info.location,
+        characters: Object.keys(next_info.characters).length > 0 ? next_info.characters : current_info.characters,
+      };
+    },
+    edit => {
+      current_info = normalizeCurrentInfo(edit.value);
+    },
+    max_message_id,
+  );
 
+  return current_info;
+}
+
+export function rebuildStoredCurrentInfoFromSummaries(
+  summaries: SummaryWithCurrentInfoUpdate[],
+  max_message_id?: number,
+): CurrentInfo {
+  const current_info = getCurrentInfoAtMessage(summaries, max_message_id);
   saveStoredCurrentInfo(current_info);
   return current_info;
 }

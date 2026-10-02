@@ -1,5 +1,6 @@
 import type { AiSettings, ReasoningEffortOption } from '@/type/settings';
 import { retryAiRequest } from '@/api/retry';
+import { formatMemoryInstructions, type MemoryInstruction } from '@/core/memory-instructions';
 import {
   CharacterOperationsResponse,
   StoredCharactersResponse,
@@ -97,6 +98,7 @@ export type OriginalMessageContextEntry = {
 };
 
 export type SummaryGenerationOptions = {
+  memory_instructions?: MemoryInstruction[];
   characters_enabled?: boolean;
   stored_characters?: StoredCharacter[];
   items_enabled?: boolean;
@@ -363,7 +365,7 @@ function buildReasoningRequestOverride(settings: AiSettings): ReasoningRequestOv
  * TavernHelper 暂未在 generateRaw 参数中暴露思考级别，因此在其请求体就绪事件中只覆盖
  * 当前 CosmosMemory 自定义端点请求。用 source + model 双重匹配，避免影响其他并发生成。
  */
-async function generateRawWithSettings(settings: AiSettings, config: Omit<GenerateRawOptions, 'custom_api'>) {
+export async function generateRawWithSettings(settings: AiSettings, config: Omit<GenerateRawOptions, 'custom_api'>) {
   const custom_api = buildCustomApi(settings);
   const reasoning_override = buildReasoningRequestOverride(settings);
 
@@ -576,6 +578,8 @@ function buildSummarySystemPrompt(options: SummaryGenerationOptions): string {
     instructions.push(CHARACTER_EXTRACTION_INSTRUCTION);
   }
 
+  const memory_instructions = formatMemoryInstructions(options.memory_instructions ?? []);
+  if (memory_instructions) instructions.push(memory_instructions);
   return instructions.join('\n\n');
 }
 
@@ -641,8 +645,9 @@ function buildSummaryJsonInstruction(options: SummaryGenerationOptions): string 
   }
   if (options.current_info_enabled) {
     example.current_info_update = {
-      current_time:
-        '本楼层结束后的当前故事时间，必须精确到分钟；现代/现实背景必须包含星期（如“2026年6月20日 星期六 21:16”，方便判断是否为工作日），架空背景如“银历3年 霜月·月望日 申时二刻（约21:16）”',
+      current_time: options.memory_instructions?.length
+        ? '本楼层结束后的当前故事时间，遵循系统提示词中用户指定的时间格式规则；没有指定格式时使用默认格式'
+        : '本楼层结束后的当前故事时间，必须精确到分钟；现代/现实背景必须包含星期（如“2026年6月20日 星期六 21:16”，方便判断是否为工作日），架空背景如“银历3年 霜月·月望日 申时二刻（约21:16）”',
       location: '本楼层结束后的当前地点',
       characters: {
         角色名: {
@@ -764,8 +769,9 @@ function buildStructuredSummarySchema(options: SummaryGenerationOptions): JsonSc
       properties: {
         current_time: {
           type: 'string',
-          description:
-            '本楼层结束后的当前故事时间，必须精确到分钟。现代/现实背景使用包含星期的公历格式（现代作品必须包含星期几以判断是否是工作日，例如"2026年6月20日 星期六 21:16"）；架空背景使用符合世界观的历法，例如"银历3年 霜月·月望日 申时二刻（约21:16）"。禁止使用"不久""傍晚时分"等模糊描述。',
+          description: options.memory_instructions?.length
+            ? '本楼层结束后的当前故事时间。优先遵循系统提示词中用户指定的时间格式规则；保持日期及时间演进自洽。'
+            : '本楼层结束后的当前故事时间，必须精确到分钟。现代/现实背景使用包含星期的公历格式（现代作品必须包含星期几以判断是否是工作日，例如"2026年6月20日 星期六 21:16"）；架空背景使用符合世界观的历法，例如"银历3年 霜月·月望日 申时二刻（约21:16）"。禁止使用"不久""傍晚时分"等模糊描述。',
         },
         location: {
           type: 'string',

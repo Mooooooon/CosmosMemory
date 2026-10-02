@@ -164,6 +164,7 @@ function mergeCharacterOperation(
 const characterStore = defineEntityStore<StoredCharacter, CharacterOperation, SummaryWithCharacterOperations>({
   storagePath: CHARACTER_STORAGE_PATH,
   entityName: '人物',
+  operationSchema: CharacterOperationResponse,
   isValidEntity: isStoredCharacter,
   getEntityKey: character => normalizeCharacterKey(character.name),
   applyOperation: (record, operation) => {
@@ -180,12 +181,22 @@ export function getStoredCharacters(): StoredCharacter[] {
   return characterStore.getAll();
 }
 
+export function getCharactersAtMessage(
+  summaries: SummaryWithCharacterOperations[],
+  message_id: number,
+): StoredCharacter[] {
+  return characterStore.getAtMessage(summaries, message_id);
+}
+
 export function applyCharacterOperations(operations: CharacterOperation[], meta: EntityMeta = {}): StoredCharacter[] {
   return characterStore.applyOperations(operations, meta);
 }
 
-export function rebuildStoredCharactersFromSummaries(summaries: SummaryWithCharacterOperations[]): StoredCharacter[] {
-  return characterStore.rebuildFromSummaries(summaries);
+export function rebuildStoredCharactersFromSummaries(
+  summaries: SummaryWithCharacterOperations[],
+  max_message_id?: number,
+): StoredCharacter[] {
+  return characterStore.rebuildFromSummaries(summaries, max_message_id);
 }
 
 export function replaceStoredCharacters(characters: StoredCharacter[]): StoredCharacter[] {
@@ -196,7 +207,7 @@ export function replaceStoredCharacters(characters: StoredCharacter[]): StoredCh
  * 手动保存一个人物（新建或整体覆盖编辑）。
  * 先 delete 再 set 实现干净替换：set 语义只覆盖非空字段，无法清空既有字段；
  * original_name 用于改名场景下删除旧键记录。
- * 所有操作都会进入手动操作日志，rebuild 时按序重放，用户修正不被回滚冲掉。
+ * 所有操作绑定到当前楼层和分支，重建时按时间顺序重放。
  */
 export function manualSaveCharacter(character: StoredCharacter, original_name?: string): StoredCharacter[] {
   const delete_name = normalizeText(original_name) || character.name;
@@ -224,9 +235,13 @@ export function manualSaveCharacter(character: StoredCharacter, original_name?: 
   return characterStore.applyManualOperation(operation);
 }
 
-/** 手动删除一个人物（进入手动操作日志，rebuild 后依然保持删除） */
+/** 手动删除一个人物，当前楼层仍在时间线上时保持删除。 */
 export function manualDeleteCharacter(name: string, character_type: CharacterKind): StoredCharacter[] {
   return characterStore.applyManualOperation({ type: 'delete', character_type, name });
+}
+
+export function manualApplyCharacterOperation(operation: CharacterOperation): StoredCharacter[] {
+  return characterStore.applyManualOperation(CharacterOperationResponse.parse(operation));
 }
 
 export function formatCharactersForPrompt(characters: StoredCharacter[] = getStoredCharacters()): string {

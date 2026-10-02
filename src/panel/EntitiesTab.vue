@@ -1,5 +1,6 @@
 <template>
   <div class="cosmos-settings-tab-panel">
+    <MemoryEditCard />
     <!-- 1. 当前信息卡片 -->
     <div class="cosmos-section-card cosmos-entity-card">
       <div class="cosmos-entity-title-row">
@@ -168,6 +169,7 @@
 
 <script setup lang="ts">
 import { regenerateCharactersFromChat } from '@/core/character-regeneration';
+import MemoryEditCard from '@/panel/MemoryEditCard.vue';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
 import CharacterDialog from '@/panel/CharacterDialog.vue';
 import CurrentInfoDialog from '@/panel/CurrentInfoDialog.vue';

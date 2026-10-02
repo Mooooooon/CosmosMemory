@@ -17,6 +17,7 @@ function harness(responses, settings_patch = {}) {
   const state = { cancelled: false, on_wait: () => {} };
   const context = createContext({
     z,
+    ref: value => ({ value }),
     Error,
     DOMException,
     console: { info() {}, warn() {} },
@@ -40,6 +41,7 @@ function harness(responses, settings_patch = {}) {
   const modules = new Map();
   function load(id) {
     if (id === '@sillytavern/script') return { event_types: {}, eventSource: {} };
+    if (id === '@sillytavern/scripts/utils') return { getStringHash: value => value.length };
     assert.ok(id.startsWith('@/'), `Unexpected import: ${id}`);
     const filename = resolve(root, 'src', `${id.slice(2)}.ts`);
     if (modules.has(filename)) return modules.get(filename);

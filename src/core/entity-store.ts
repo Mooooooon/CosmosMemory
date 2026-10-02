@@ -1,11 +1,12 @@
+import { defineFloorHistory, getFloorBinding, replayFloorTimeline, type FloorBinding } from '@/core/floor-history';
+
 /**
  * 通用实体数据层：characters / items / locations 共享的存储骨架。
  *
  * 职责：
  * - 聊天变量的读取、校验（脏数据打日志并忽略）与写回；
  * - 操作日志的增量应用与按摘要全量重放（rebuild）；
- * - 手动编辑覆盖层：用户修改持久化为覆盖记录，重放后再应用，
- *   使删楼/编辑触发的 rebuild 不会冲掉用户的手动修正；
+ * - 手动编辑按楼层与分支保存，和摘要按时间顺序重放；
  * - 为被操作触及的实体写入来源元数据（source_message_id / updated_at），
  *   供后续剧情检索、删除楼层级联失效和向量化召回使用。
  *
@@ -38,6 +39,7 @@ export type EntityStoreConfig<TEntity, TOperation, TSummary> = {
   storagePath: string;
   /** 日志中展示的实体名称，例如 '人物' */
   entityName: string;
+  operationSchema: z.ZodType<TOperation>;
   /** 校验存储恢复的单条实体是否结构完整 */
   isValidEntity: (value: unknown) => value is TEntity;
   /** 从实体本身计算存储键（用于整体替换） */
@@ -58,8 +60,11 @@ export type EntityStoreConfig<TEntity, TOperation, TSummary> = {
 export function defineEntityStore<TEntity extends object, TOperation, TSummary>(
   config: EntityStoreConfig<TEntity, TOperation, TSummary>,
 ) {
-  /** 手动操作日志的存储路径：rebuild 重放摘要后再重放手动操作，使手动编辑不被回滚冲掉 */
-  const manual_ops_path = `${config.storagePath}_manual_ops`;
+  const edit_schema = z.discriminatedUnion('type', [
+    z.object({ type: z.literal('operations'), operations: z.array(config.operationSchema) }),
+    z.object({ type: z.literal('replace'), entities: z.array(z.custom<TEntity>(config.isValidEntity)) }),
+  ]);
+  const history = defineFloorHistory(`${config.storagePath}_manual_ops`, edit_schema);
 
   function getStoredRecord(): Record<string, TEntity> {
     const variables = window.TavernHelper.getVariables({ type: 'chat' });
@@ -121,37 +126,6 @@ export function defineEntityStore<TEntity extends object, TOperation, TSummary>(
     }
   }
 
-  function getManualOperations(): TOperation[] {
-    const variables = window.TavernHelper.getVariables({ type: 'chat' });
-    const operations = _.get(variables, manual_ops_path, []);
-    return Array.isArray(operations) ? (operations as TOperation[]) : [];
-  }
-
-  function saveManualOperations(operations: TOperation[]) {
-    window.TavernHelper.updateVariablesWith(
-      variables => {
-        if (operations.length > 0) {
-          _.set(variables, manual_ops_path, operations);
-        } else {
-          _.unset(variables, manual_ops_path);
-        }
-        return variables;
-      },
-      { type: 'chat' },
-    );
-  }
-
-  /** 重放手动操作日志；单条损坏的操作跳过并告警，不影响其余 */
-  function replayManualOperations(record: Record<string, TEntity>) {
-    for (const operation of getManualOperations()) {
-      try {
-        config.applyOperation(record, operation);
-      } catch (error) {
-        console.warn(`[CosmosMemory] 重放${config.entityName}手动操作失败，已跳过`, { operation, error });
-      }
-    }
-  }
-
   function getAll(): TEntity[] {
     return Object.values(getStoredRecord()).sort(config.sortEntities);
   }
@@ -164,20 +138,39 @@ export function defineEntityStore<TEntity extends object, TOperation, TSummary>(
     return Object.values(record).sort(config.sortEntities);
   }
 
-  /** 按现存摘要全量重放操作日志（swipe 回滚、清理悬空摘要后使用）；手动操作最后重放，保证用户修正不被回滚 */
-  function rebuildFromSummaries(summaries: TSummary[]): TEntity[] {
-    const record: Record<string, TEntity> = {};
-    for (const summary of summaries) {
-      applyOperationsToRecord(record, config.getSummaryOperations(summary) ?? [], config.getSummaryMeta(summary));
-    }
+  /** 按楼层重放摘要与当前分支上的手动修改。 */
+  function buildRecordFromSummaries(summaries: TSummary[], max_message_id?: number): Record<string, TEntity> {
+    let record: Record<string, TEntity> = {};
+    replayFloorTimeline(
+      summaries,
+      history.active(max_message_id),
+      summary => config.getSummaryMeta(summary).source_message_id ?? -1,
+      summary =>
+        applyOperationsToRecord(record, config.getSummaryOperations(summary) ?? [], config.getSummaryMeta(summary)),
+      edit => {
+        const meta = { source_message_id: edit.message_id, updated_at: edit.updated_at };
+        if (edit.value.type === 'replace') {
+          record = Object.fromEntries(edit.value.entities.map(entity => [config.getEntityKey(entity), klona(entity)]));
+          applyMeta(record, Object.keys(record), meta);
+        } else applyOperationsToRecord(record, edit.value.operations, meta);
+      },
+      max_message_id,
+    );
+    return record;
+  }
 
-    replayManualOperations(record);
+  function getAtMessage(summaries: TSummary[], max_message_id: number): TEntity[] {
+    return Object.values(buildRecordFromSummaries(summaries, max_message_id)).sort(config.sortEntities);
+  }
+
+  function rebuildFromSummaries(summaries: TSummary[], max_message_id?: number): TEntity[] {
+    const record = buildRecordFromSummaries(summaries, max_message_id);
     saveRecord(record);
     return Object.values(record).sort(config.sortEntities);
   }
 
-  /** 整体替换实体表（手动重新生成时使用）；全量替换意味着旧的手动修正已失去基准，一并清空 */
-  function replaceAll(entities: TEntity[], meta: EntityMeta = {}): TEntity[] {
+  /** 整体替换也作为当前楼层的修改，回溯时能恢复替换前的数据。 */
+  function replaceAll(entities: TEntity[], meta: EntityMeta = {}, binding = getFloorBinding()): TEntity[] {
     const record: Record<string, TEntity> = {};
     for (const entity of entities) {
       const key = config.getEntityKey(entity);
@@ -188,25 +181,28 @@ export function defineEntityStore<TEntity extends object, TOperation, TSummary>(
       record[key] = entity;
     }
 
-    applyMeta(record, Object.keys(record), meta);
-    saveManualOperations([]);
+    applyMeta(record, Object.keys(record), { ...meta, source_message_id: binding.message_id });
+    history.append({ type: 'replace', entities }, binding);
     saveRecord(record);
     return Object.values(record).sort(config.sortEntities);
   }
 
   /**
    * 应用一条用户手动编辑操作：立即生效并追加进手动操作日志，
-   * 后续任何 rebuild 都会在重放摘要后重放该日志。
+   * 重建时仅在绑定楼层仍位于当前时间线且分支一致时重放。
    * 同一实体的多次编辑天然覆盖（后写胜出），无需去重。
    */
-  function applyManualOperation(operation: TOperation): TEntity[] {
+  function applyManualOperation(operation: TOperation, binding: FloorBinding = getFloorBinding()): TEntity[] {
     const record = getStoredRecord();
-    config.applyOperation(record, operation);
-    saveManualOperations([...getManualOperations(), operation]);
+    applyOperationsToRecord(record, [operation], {
+      source_message_id: binding.message_id,
+      updated_at: new Date().toISOString(),
+    });
+    history.append({ type: 'operations', operations: [operation] }, binding);
     saveRecord(record);
     console.info(`[CosmosMemory] 已应用${config.entityName}手动编辑`, { operation });
     return Object.values(record).sort(config.sortEntities);
   }
 
-  return { getAll, applyOperations, rebuildFromSummaries, replaceAll, applyManualOperation };
+  return { getAll, getAtMessage, applyOperations, rebuildFromSummaries, replaceAll, applyManualOperation };
 }

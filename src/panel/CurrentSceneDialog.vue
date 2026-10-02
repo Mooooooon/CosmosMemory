@@ -69,11 +69,16 @@ function handle_edit() {
 
 function handle_save() {
   const next_scene = (editing_scene.value ?? '').trim();
-  manualSaveCurrentScene(next_scene);
-  scene.value = next_scene;
-  editing_scene.value = null;
-  triggerUpdateStatusBar();
-  toastr.success(t`已更新当前画面`, 'Cosmos Memory');
+  try {
+    manualSaveCurrentScene(next_scene);
+    scene.value = next_scene;
+    editing_scene.value = null;
+    triggerUpdateStatusBar();
+    toastr.success(t`已更新当前画面`, 'Cosmos Memory');
+  } catch (error) {
+    console.error('[CosmosMemory] 保存当前画面失败', error);
+    toastr.error(error instanceof Error ? error.message : String(error), t`Cosmos Memory 保存当前画面失败`);
+  }
 }
 
 defineExpose({ open, show, close });

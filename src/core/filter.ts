@@ -199,15 +199,18 @@ export function setupGlobalErrorInterceptors(): void {
   // 1. 包装 window.toastr.error 捕获酒馆前端弹出错误
   if (window.toastr && typeof window.toastr.error === 'function') {
     const original_toastr_error = window.toastr.error;
-    window.toastr.error = function (message: any, title?: any, ...args: any[]) {
+    window.toastr.error = function (...args: Parameters<typeof original_toastr_error>) {
+      const [message, title] = args;
       try {
-        const msg_str = typeof message === 'string' ? message : String(message?.message ?? message ?? '');
+        const error_message =
+          typeof message === 'object' && message !== null && 'message' in message ? message.message : message;
+        const msg_str = typeof error_message === 'string' ? error_message : String(error_message ?? '');
         const title_str = typeof title === 'string' ? title : '';
         handleGenerationError(msg_str, title_str);
       } catch (err) {
         console.warn('[CosmosMemory] 报错拦截处理异常', err);
       }
-      return original_toastr_error.apply(this, [message, title, ...args]);
+      return original_toastr_error.apply(this, args);
     };
   }
 

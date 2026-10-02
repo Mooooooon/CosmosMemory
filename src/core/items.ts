@@ -78,6 +78,7 @@ function mergeItemOperation(items: Record<string, StoredItem>, operation: ItemOp
 const itemStore = defineEntityStore<StoredItem, ItemOperation, SummaryWithItemOperations>({
   storagePath: ITEM_STORAGE_PATH,
   entityName: '物品',
+  operationSchema: ItemOperationResponse,
   isValidEntity: isStoredItem,
   getEntityKey: item => normalizeItemKey(item.name),
   applyOperation: (record, operation) => {
@@ -94,12 +95,19 @@ export function getStoredItems(): StoredItem[] {
   return itemStore.getAll();
 }
 
+export function getItemsAtMessage(summaries: SummaryWithItemOperations[], message_id: number): StoredItem[] {
+  return itemStore.getAtMessage(summaries, message_id);
+}
+
 export function applyItemOperations(operations: ItemOperation[], meta: EntityMeta = {}): StoredItem[] {
   return itemStore.applyOperations(operations, meta);
 }
 
-export function rebuildStoredItemsFromSummaries(summaries: SummaryWithItemOperations[]): StoredItem[] {
-  return itemStore.rebuildFromSummaries(summaries);
+export function rebuildStoredItemsFromSummaries(
+  summaries: SummaryWithItemOperations[],
+  max_message_id?: number,
+): StoredItem[] {
+  return itemStore.rebuildFromSummaries(summaries, max_message_id);
 }
 
 /**
@@ -113,9 +121,13 @@ export function manualSaveItem(item: Pick<StoredItem, 'name' | 'brief'>, origina
   return itemStore.applyManualOperation({ type: 'set', name: item.name, brief: item.brief });
 }
 
-/** 手动删除一个物品（进入手动操作日志，rebuild 后依然保持删除） */
+/** 手动删除一个物品，当前楼层仍在时间线上时保持删除。 */
 export function manualDeleteItem(name: string): StoredItem[] {
   return itemStore.applyManualOperation({ type: 'delete', name });
+}
+
+export function manualApplyItemOperation(operation: ItemOperation): StoredItem[] {
+  return itemStore.applyManualOperation(ItemOperationResponse.parse(operation));
 }
 
 export function formatItemsForPrompt(items: StoredItem[] = getStoredItems()): string {

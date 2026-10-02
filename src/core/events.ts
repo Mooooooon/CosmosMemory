@@ -1,4 +1,5 @@
 import { applySummaryCompressionForNextGeneration } from '@/core/compression';
+import { resetMemoryEditForChatChange } from '@/core/memory-edit';
 import {
   cancelSummarizationForChatChange,
   getAssistantMessage,
@@ -7,6 +8,7 @@ import {
   invalidateAndResummarizeMessage,
   OPENING_MESSAGE_ID,
   resummarizeMessageForActiveSwipe,
+  refreshMemoryForCurrentChat,
   rollbackSummariesFromMessage,
   runMemoryBacktrackCheck,
   summarizeReceivedMessage,
@@ -134,6 +136,8 @@ function handleMessageEdited(message_id: number) {
     return;
   }
 
+  handleMemoryTimelineChanged();
+
   // 编辑楼层后触发防抖同步：增量 diff 会自动删除旧文本向量并写入新文本向量
   triggerVectorSyncDebounced();
 
@@ -177,6 +181,8 @@ function handleMessageSwiped(message_id: number) {
   if (!window.TavernHelper) {
     return;
   }
+
+  if (!isGenerationActive()) handleMemoryTimelineChanged();
 
   // 生成新分支会先触发本事件（空白楼层）再走 MESSAGE_RECEIVED 路径，此处不重复处理；
   // 生成过程中的流式楼层同样跳过
@@ -374,6 +380,8 @@ export function registerSummaryEvents() {
     eventSource.on(event_types.GENERATION_STOPPED, handleGenerationStopped);
   }
   eventSource.on(event_types.CHAT_CHANGED, cancelSummarizationForChatChange);
+  eventSource.on(event_types.CHAT_CHANGED, resetMemoryEditForChatChange);
+  eventSource.on(event_types.CHAT_CHANGED, handleMemoryTimelineChanged);
   eventSource.on(event_types.CHAT_CHANGED, stopSummaryRollupTask);
   eventSource.on(event_types.CHAT_CHANGED, handleChatChangedForVectorSync);
   eventSource.on(event_types.CHAT_CHANGED, migrateLocationStorageForCurrentChat);
@@ -382,8 +390,20 @@ export function registerSummaryEvents() {
   eventSource.on(event_types.CHAT_CHANGED, cancelPendingSwipeResummarize);
   initStatusBar();
   migrateLocationStorageForCurrentChat();
+  handleMemoryTimelineChanged();
   setupGlobalErrorInterceptors();
   is_summary_listener_registered = true;
+}
+
+function handleMemoryTimelineChanged() {
+  if (!window.TavernHelper) return;
+  try {
+    refreshMemoryForCurrentChat();
+    triggerUpdateStatusBar();
+  } catch (error) {
+    console.error('[CosmosMemory] 同步楼层修改记录失败', error);
+    toastr.error(error instanceof Error ? error.message : String(error), t`同步楼层修改记录失败`);
+  }
 }
 
 function handleChatChangedForVectorSync() {

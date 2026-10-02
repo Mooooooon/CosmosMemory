@@ -1,37 +1,32 @@
 import { summarizeMessage, type OriginalMessageContextEntry, type SummaryContextEntry } from '@/api/ai';
 import {
   CharacterOperationsResponse,
-  applyCharacterOperations,
-  getStoredCharacters,
+  getCharactersAtMessage,
   rebuildStoredCharactersFromSummaries,
   type CharacterOperation,
 } from '@/core/characters';
 import {
   ItemOperationsResponse,
-  applyItemOperations,
-  getStoredItems,
+  getItemsAtMessage,
   rebuildStoredItemsFromSummaries,
   type ItemOperation,
 } from '@/core/items';
 import {
   LocationOperationsResponse,
-  applyLocationOperations,
-  getStoredLocations,
+  getLocationsAtMessage,
   rebuildStoredLocationsFromSummaries,
   type LocationOperation,
 } from '@/core/locations';
 import {
   CurrentInfoUpdateResponse,
-  applyCurrentInfoUpdate,
-  getStoredCurrentInfo,
+  getCurrentInfoAtMessage,
   rebuildStoredCurrentInfoFromSummaries,
   type CurrentInfoUpdate,
 } from '@/core/current-info';
-import { rebuildStoredCurrentSceneFromSummaries, saveStoredCurrentScene } from '@/core/current-scene';
+import { rebuildStoredCurrentSceneFromSummaries } from '@/core/current-scene';
 import {
   SettingChangeOperationsResponse,
-  applySettingChangeOperations,
-  getSettingChanges,
+  getSettingChangesAtMessage,
   rebuildSettingChangesFromSummaries,
   type SettingChangeOperation,
 } from '@/core/setting-changes';
@@ -41,6 +36,8 @@ import { isCosmosMemoryMessage } from '@/core/message-flags';
 import { useSettingsStore } from '@/store/settings';
 import { isOpeningMessageCompressionEnabled } from '@/type/settings';
 import { getCurrentChatId } from '@sillytavern/script';
+import { getMemoryInstructions, rebuildMemoryInstructions } from '@/core/memory-instructions';
+import { floor_history_revision, reconcileFloorHistories } from '@/core/floor-history';
 import { getStringHash } from '@sillytavern/scripts/utils';
 
 const SUMMARY_STORAGE_PATH = `${STORAGE_ROOT}.summaries`;
@@ -422,13 +419,38 @@ export function getStoredMessageSummaries(): MessageSummary[] {
     .sort((left, right) => left.message_id - right.message_id);
 }
 
-function rebuildMemoryFromSummaries(summaries: MessageSummary[]) {
-  rebuildStoredCharactersFromSummaries(summaries);
-  rebuildStoredItemsFromSummaries(summaries);
-  rebuildStoredLocationsFromSummaries(summaries);
-  rebuildSettingChangesFromSummaries(summaries);
-  rebuildStoredCurrentInfoFromSummaries(summaries);
-  rebuildStoredCurrentSceneFromSummaries(summaries);
+function getActiveMemorySummaries(summaries: MessageSummary[], max_message_id: number): MessageSummary[] {
+  return summaries.filter(summary => {
+    if (summary.message_id > max_message_id) return false;
+    const message = window.TavernHelper.getChatMessages(summary.message_id, { include_swipes: true })[0];
+    if (!message || (message.swipe_id ?? 0) !== (summary.swipe_id ?? 0)) return false;
+    if (summary.content_hash !== undefined) {
+      const current = window.TavernHelper.getChatMessages(summary.message_id, { include_swipes: false })[0];
+      if (!current || getStringHash(getRegexedAiContent(current)) !== summary.content_hash) return false;
+    }
+    return true;
+  });
+}
+
+function rebuildMemoryFromSummaries(
+  summaries: MessageSummary[],
+  max_message_id = window.TavernHelper.getLastMessageId(),
+) {
+  const active = getActiveMemorySummaries(summaries, max_message_id);
+  rebuildStoredCharactersFromSummaries(active, max_message_id);
+  rebuildStoredItemsFromSummaries(active, max_message_id);
+  rebuildStoredLocationsFromSummaries(active, max_message_id);
+  rebuildSettingChangesFromSummaries(active, max_message_id);
+  rebuildStoredCurrentInfoFromSummaries(active, max_message_id);
+  rebuildStoredCurrentSceneFromSummaries(active, max_message_id);
+  rebuildMemoryInstructions(max_message_id);
+  floor_history_revision.value++;
+}
+
+/** 没有摘要的楼层也可能有修改；聊天/分支变化时同步所有类别。 */
+export function refreshMemoryForCurrentChat() {
+  reconcileFloorHistories();
+  rebuildMemoryFromSummaries(getStoredMessageSummaries());
 }
 
 function removeMessageSummariesMatching(shouldRemove: (summary: MessageSummary) => boolean): MessageSummary[] {
@@ -531,14 +553,17 @@ export function pruneMessageSummariesAfterMessage(message_id: number): MessageSu
       .map(message => message.message_id),
   );
   const removed_summaries = pruneInvalidMessageSummaries(message_id, existing_assistant_message_ids);
+  const removed_edits = reconcileFloorHistories();
 
-  if (removed_summaries.length > 0) {
+  if (removed_summaries.length > 0 || removed_edits) {
     console.info('[CosmosMemory] 已清理高于当前发送楼层的悬空总结', {
       current_message_id: message_id,
       removed_message_ids: removed_summaries.map(summary => summary.message_id),
     });
-    rebuildMemoryFromSummaries(getStoredMessageSummaries());
   }
+
+  // 按调用方指定的楼层截断记忆，即使更高楼层尚未物理删除、或没有摘要。
+  rebuildMemoryFromSummaries(getStoredMessageSummaries(), message_id);
 
   return removed_summaries;
 }
@@ -602,17 +627,25 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
   const previous_summaries = settings.summary.send_summary_context
     ? getPreviousSummaryContext(message_id, settings.summary.summary_context_count, original_message_ids)
     : [];
+  // 只读取本楼层之前的时间线，不改写当前聊天快照，避免并发补全时互相污染。
+  const context_message_id = message_id - 1;
+  const memory_summaries = getActiveMemorySummaries(getStoredMessageSummaries(), context_message_id);
   const result = await summarizeMessage(settings.ai, source, {
+    memory_instructions: getMemoryInstructions(context_message_id),
     characters_enabled: settings.characters.enabled,
-    stored_characters: settings.characters.enabled ? getStoredCharacters() : [],
+    stored_characters: settings.characters.enabled ? getCharactersAtMessage(memory_summaries, context_message_id) : [],
     items_enabled: settings.items.enabled,
-    stored_items: settings.items.enabled ? getStoredItems() : [],
+    stored_items: settings.items.enabled ? getItemsAtMessage(memory_summaries, context_message_id) : [],
     locations_enabled: settings.locations.enabled,
-    stored_locations: settings.locations.enabled ? getStoredLocations() : [],
+    stored_locations: settings.locations.enabled ? getLocationsAtMessage(memory_summaries, context_message_id) : [],
     setting_changes_enabled: settings.setting_changes.enabled,
-    setting_changes: settings.setting_changes.enabled ? getSettingChanges() : [],
+    setting_changes: settings.setting_changes.enabled
+      ? getSettingChangesAtMessage(memory_summaries, context_message_id)
+      : [],
     current_info_enabled: settings.current_info.enabled,
-    current_info: settings.current_info.enabled ? getStoredCurrentInfo() : undefined,
+    current_info: settings.current_info.enabled
+      ? getCurrentInfoAtMessage(memory_summaries, context_message_id)
+      : undefined,
     current_scene_enabled: settings.current_scene.enabled,
     send_descriptions_and_world_info: settings.summary.send_descriptions_and_world_info,
     world_info_scan_messages: settings.summary.send_descriptions_and_world_info
@@ -650,38 +683,9 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
     updated_at: new Date().toISOString(),
   };
 
-  // swipe / regenerate / continue 会覆盖同楼层旧摘要：旧摘要派生的实体变更必须回滚，
-  // 因此覆盖时按现存摘要全量重放，而不是增量应用新摘要的操作
-  const had_previous_summary = getStoredSummaryIds().has(message_id);
   saveMessageSummary(summary);
-  if (had_previous_summary) {
-    console.info('[CosmosMemory] 同楼层旧摘要已被覆盖，重建记忆以回滚旧分支变更', { message_id });
-    rebuildMemoryFromSummaries(getStoredMessageSummaries());
-  } else {
-    const entity_meta = { source_message_id: message_id, updated_at: summary.updated_at };
-    if (settings.characters.enabled && summary.character_operations && summary.character_operations.length > 0) {
-      applyCharacterOperations(summary.character_operations, entity_meta);
-    }
-    if (settings.items.enabled && summary.item_operations && summary.item_operations.length > 0) {
-      applyItemOperations(summary.item_operations, entity_meta);
-    }
-    if (settings.locations.enabled && summary.location_operations && summary.location_operations.length > 0) {
-      applyLocationOperations(summary.location_operations, entity_meta);
-    }
-    if (
-      settings.setting_changes.enabled &&
-      summary.setting_change_operations &&
-      summary.setting_change_operations.length > 0
-    ) {
-      applySettingChangeOperations(summary.setting_change_operations, entity_meta);
-    }
-    if (settings.current_info.enabled) {
-      applyCurrentInfoUpdate(summary.current_info_update);
-    }
-    if (settings.current_scene.enabled && summary.current_scene) {
-      saveStoredCurrentScene(summary.current_scene);
-    }
-  }
+  // 统一按楼层重放，避免补全较早楼层或重新总结时打乱手动修改与后续剧情的顺序。
+  rebuildMemoryFromSummaries(getStoredMessageSummaries());
   return summary;
 }
 
@@ -871,6 +875,7 @@ export function rollbackSummariesFromMessage(
   if (purge_swipe_cache) {
     const cache_ids = getSwipeCacheMessageIds().filter(id => id >= first_deleted_message_id);
     deleteSwipeSummaryCache(cache_ids);
+    reconcileFloorHistories(first_deleted_message_id);
   }
 
   if (removed_summaries.length > 0) {
@@ -879,8 +884,14 @@ export function rollbackSummariesFromMessage(
       purge_swipe_cache,
       removed_message_ids: removed_summaries.map(summary => summary.message_id),
     });
-    rebuildMemoryFromSummaries(getStoredMessageSummaries());
   }
+
+  // 即使没有被删除的摘要，也必须回滚绑定在该楼层的修改。
+  // 生成新分支前暂时只重放更早楼层，保留旧分支日志供切回时恢复。
+  rebuildMemoryFromSummaries(
+    getStoredMessageSummaries(),
+    purge_swipe_cache ? window.TavernHelper.getLastMessageId() : first_deleted_message_id - 1,
+  );
 
   return removed_summaries;
 }
@@ -1009,10 +1020,9 @@ export async function runMemoryBacktrackCheck(
     (left, right) => left.message_id - right.message_id,
   );
   // 删除或从缓存还原都改变了 canonical，需重建记忆
-  const rebuilt = removed_summaries.length > 0 || swipe_restored_count > 0;
-  if (rebuilt) {
-    rebuildMemoryFromSummaries(getStoredMessageSummaries());
-  }
+  reconcileFloorHistories();
+  const rebuilt = true;
+  rebuildMemoryFromSummaries(getStoredMessageSummaries(), max_message_id);
 
   const missing_message_ids = await getMissingAssistantMessageIds(max_message_id);
   if (missing_message_ids.length === 0) {

@@ -3,6 +3,8 @@ import { replaceStoredCharacters, type StoredCharacter } from '@/core/characters
 import { isCosmosMemoryMessage } from '@/core/message-flags';
 import { getRegexedAiContent } from '@/core/summary';
 import type { AiSettings } from '@/type/settings';
+import { getFloorBinding } from '@/core/floor-history';
+import { getCurrentChatId } from '@sillytavern/script';
 
 function getAssistantChatContent(): string {
   const messages = window.TavernHelper.getChatMessages('0-{{lastMessageId}}', {
@@ -24,11 +26,16 @@ function getAssistantChatContent(): string {
 }
 
 export async function regenerateCharactersFromChat(settings: AiSettings): Promise<StoredCharacter[]> {
+  const chat_id = getCurrentChatId();
+  const binding = getFloorBinding();
   const content = getAssistantChatContent();
   if (!content) {
     throw new Error(t`当前聊天没有可用于生成人物信息的 AI 回复。`);
   }
 
   const characters = await extractCharactersFromChatContent(settings, content);
+  if (getCurrentChatId() !== chat_id || !_.isEqual(binding, getFloorBinding())) {
+    throw new Error(t`绑定楼层或分支已变化，请重新执行修改。`);
+  }
   return replaceStoredCharacters(characters);
 }

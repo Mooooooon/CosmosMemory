@@ -1,4 +1,5 @@
 import { normalizeEntityKey, normalizeText, STORAGE_ROOT, type EntityMeta } from '@/core/entity-store';
+import { defineFloorHistory, getFloorBinding, replayFloorTimeline } from '@/core/floor-history';
 
 const SETTING_CHANGE_STORAGE_PATH = `${STORAGE_ROOT}.setting_changes`;
 const SETTING_CHANGE_MANUAL_OPERATIONS_PATH = `${STORAGE_ROOT}.setting_changes_manual_ops`;
@@ -43,6 +44,7 @@ const SettingChangeResponse = z.object({
 });
 
 const SettingChangesResponse = z.array(SettingChangeResponse);
+const history = defineFloorHistory(SETTING_CHANGE_MANUAL_OPERATIONS_PATH, SettingChangeOperationResponse);
 
 type SummaryWithSettingChangeOperations = {
   message_id?: number;
@@ -95,41 +97,6 @@ function saveSettingChanges(changes: SettingChange[]) {
   );
 }
 
-function saveManualOperations(operations: SettingChangeOperation[]) {
-  const validated = SettingChangeOperationsResponse.parse(operations);
-  window.TavernHelper.updateVariablesWith(
-    variables => {
-      // 即使为空也保留初始化标记，避免自动生成的记录被误迁移为手动覆盖。
-      _.set(variables, SETTING_CHANGE_MANUAL_OPERATIONS_PATH, validated);
-      return variables;
-    },
-    { type: 'chat' },
-  );
-}
-
-function getManualOperations(changes: SettingChange[]): SettingChangeOperation[] {
-  const variables = window.TavernHelper.getVariables({ type: 'chat' });
-  if (_.has(variables, SETTING_CHANGE_MANUAL_OPERATIONS_PATH)) {
-    const result = SettingChangeOperationsResponse.safeParse(_.get(variables, SETTING_CHANGE_MANUAL_OPERATIONS_PATH));
-    if (result.success) {
-      return result.data;
-    }
-
-    console.warn('[CosmosMemory] 存储的设定变更手动操作格式异常，已按空操作处理', result.error);
-    saveManualOperations([]);
-    return [];
-  }
-
-  // 1.3.1 只支持手动记录：首次启用自动维护时把已有条目迁移为手动覆盖，避免重建后丢失。
-  const migrated_operations = changes.map<SettingChangeOperation>(change => ({
-    type: 'set',
-    key: change.id,
-    content: change.content,
-  }));
-  saveManualOperations(migrated_operations);
-  return migrated_operations;
-}
-
 function changesToRecord(changes: SettingChange[]): Map<string, SettingChange> {
   return new Map(changes.map(change => [normalizeKey(change.id), change]));
 }
@@ -173,79 +140,76 @@ function recordToChanges(record: Map<string, SettingChange>): SettingChange[] {
   );
 }
 
-function replayManualOperations(
-  record: Map<string, SettingChange>,
-  manual_operations: SettingChangeOperation[],
-  updated_at = new Date().toISOString(),
-) {
-  applyOperationsToRecord(record, manual_operations, { updated_at });
-}
-
-function removeManualOperationsSupersededByAutomaticChanges(
-  manual_operations: SettingChangeOperation[],
-  automatic_operations: SettingChangeOperation[],
-): SettingChangeOperation[] {
-  const touched_keys = new Set(
-    automatic_operations
-      .filter(operation => operation.type === 'delete' || Boolean(normalizeText(operation.content)))
-      .map(operation => normalizeKey(operation.key)),
-  );
-  return manual_operations.filter(operation => !touched_keys.has(normalizeKey(operation.key)));
-}
-
 export function getSettingChanges(): SettingChange[] {
   return readSettingChanges();
 }
 
 /**
  * 增量应用一条新摘要提取出的自动操作。
- * 手动修正会覆盖此前的自动结果；若后续剧情再次明确改变同一 key，则新的自动操作按时间顺序接管，
- * 并清理该 key 的旧手动覆盖，避免未来 rebuild 时把角色恢复到过时状态。
+ * 后续剧情自然接管先前状态；保留完整手动日志，以便回到先前楼层时恢复。
  */
 export function applySettingChangeOperations(
   operations: SettingChangeOperation[],
   meta: EntityMeta = {},
 ): SettingChange[] {
   const changes = readSettingChanges();
-  const manual_operations = getManualOperations(changes);
-  const remaining_manual_operations = removeManualOperationsSupersededByAutomaticChanges(manual_operations, operations);
   const record = changesToRecord(changes);
   applyOperationsToRecord(record, operations, meta);
-  replayManualOperations(record, remaining_manual_operations);
-  saveManualOperations(remaining_manual_operations);
   const next_changes = recordToChanges(record);
   saveSettingChanges(next_changes);
   return next_changes;
 }
 
 /** 按现存摘要全量重放，供编辑、删楼、Swipe 和记忆修复回滚自动变更。 */
-export function rebuildSettingChangesFromSummaries(summaries: SummaryWithSettingChangeOperations[]): SettingChange[] {
-  const stored_changes = readSettingChanges();
-  const manual_operations = getManualOperations(stored_changes);
+export function getSettingChangesAtMessage(
+  summaries: SummaryWithSettingChangeOperations[],
+  max_message_id?: number,
+): SettingChange[] {
   const record = new Map<string, SettingChange>();
+  replayFloorTimeline(
+    summaries,
+    history.active(max_message_id),
+    summary => summary.message_id ?? -1,
+    summary =>
+      applyOperationsToRecord(record, summary.setting_change_operations ?? [], {
+        source_message_id: summary.message_id,
+        updated_at: summary.updated_at,
+      }),
+    edit =>
+      applyOperationsToRecord(record, [edit.value], {
+        source_message_id: edit.message_id,
+        updated_at: edit.updated_at,
+      }),
+    max_message_id,
+  );
+  return recordToChanges(record);
+}
 
-  for (const summary of summaries) {
-    applyOperationsToRecord(record, summary.setting_change_operations ?? [], {
-      source_message_id: summary.message_id,
-      updated_at: summary.updated_at,
-    });
-  }
-
-  replayManualOperations(record, manual_operations);
-  const changes = recordToChanges(record);
+export function rebuildSettingChangesFromSummaries(
+  summaries: SummaryWithSettingChangeOperations[],
+  max_message_id?: number,
+): SettingChange[] {
+  const changes = getSettingChangesAtMessage(summaries, max_message_id);
   saveSettingChanges(changes);
   return changes;
 }
 
 function applyManualOperation(operation: SettingChangeOperation): SettingChange[] {
   const changes = readSettingChanges();
-  const manual_operations = getManualOperations(changes);
+  const binding = getFloorBinding();
   const record = changesToRecord(changes);
-  applyOperationsToRecord(record, [operation], { updated_at: new Date().toISOString() });
-  saveManualOperations([...manual_operations, operation]);
+  applyOperationsToRecord(record, [operation], {
+    source_message_id: binding.message_id,
+    updated_at: new Date().toISOString(),
+  });
+  history.append(operation, binding);
   const next_changes = recordToChanges(record);
   saveSettingChanges(next_changes);
   return next_changes;
+}
+
+export function manualApplySettingChangeOperation(operation: SettingChangeOperation): SettingChange[] {
+  return applyManualOperation(SettingChangeOperationResponse.parse(operation));
 }
 
 export function addSettingChange(content: string): SettingChange[] {
