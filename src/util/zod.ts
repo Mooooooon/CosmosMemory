@@ -1,9 +1,13 @@
 export function validateInplace<T>(schema: z.ZodType<T>, data: unknown): T {
+<<<<<<< HEAD
   const result = parsePrettified(schema, data ?? {});
   if (typeof data !== 'object' || data === null) {
     return result;
   }
 
+=======
+  const result = parsePrettified(schema, data);
+>>>>>>> 29792ccc77088474d2c4eeb7c42285cd2b57f1e7
   return _.assign(data, result) as T;
 }
 

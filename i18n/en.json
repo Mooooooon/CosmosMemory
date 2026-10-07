@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "基础设置": "Settings",
   "剧情总结": "Summary",
   "记忆压缩": "Compression",
@@ -366,4 +367,9 @@
   "绑定楼层": "Attached message",
   "所有修改均绑定当前楼层及分支，回溯时一起撤销，切回原分支时恢复。对应剧情要素需启用才会用于后续总结和注入。": "All edits are attached to the current message and swipe. They are rolled back together, and restored when returning to the original swipe. Enable the corresponding entities to use them in future summaries and prompt injection.",
   "Cosmos Memory 保存当前画面失败": "Cosmos Memory: failed to save current scene"
+=======
+  "插件示例": "Plugin Example",
+  "示例按钮": "Example Button",
+  "示例开关": "Example Switch"
+>>>>>>> 29792ccc77088474d2c4eeb7c42285cd2b57f1e7
 }
