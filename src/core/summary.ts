@@ -32,6 +32,7 @@ import {
 } from '@/core/setting-changes';
 import { STORAGE_ROOT } from '@/core/entity-store';
 import { evaluateMessageFilter } from '@/core/filter';
+import { filterBodyContent } from '@/core/body-filter';
 import { isCosmosMemoryMessage } from '@/core/message-flags';
 import { useSettingsStore } from '@/store/settings';
 import { isOpeningMessageCompressionEnabled } from '@/type/settings';
@@ -167,7 +168,10 @@ export function getRegexedContent(
 }
 
 export function getRegexedAiContent(message: ChatMessage): string {
-  const regexed_content = getRegexedContent(message.message, 'ai_output', message.name);
+  const { summary } = useSettingsStore().settings;
+  // 在酒馆显示正则移除标签之前提取正文，避免标签被剥离后无法匹配。
+  const body = filterBodyContent(message.message, summary?.filter_body ?? false, summary?.body_tag ?? '');
+  const regexed_content = getRegexedContent(body, 'ai_output', message.name);
 
   console.info('[CosmosMemory] 完成酒馆正则过滤', {
     message_id: message.message_id,

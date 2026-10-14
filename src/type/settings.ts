@@ -57,8 +57,11 @@ export const SummaryRollupSettings = z
   .prefault({});
 
 export type SummarySettings = z.infer<typeof SummarySettings>;
+export const DEFAULT_BODY_FILTER_TAG = '<content>';
 export const SummarySettings = z
   .object({
+    filter_body: z.boolean().default(false),
+    body_tag: z.string().default(DEFAULT_BODY_FILTER_TAG),
     show_in_message: z.boolean().default(true),
     resummarize_on_edit: z.boolean().default(false),
     send_descriptions_and_world_info: z.boolean().default(false),

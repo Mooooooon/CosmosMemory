@@ -7,6 +7,7 @@ import { getSettingChanges, manualApplySettingChangeOperation } from '@/core/set
 import { getMemoryInstructions, saveMemoryInstructions } from '@/core/memory-instructions';
 import { STORAGE_ROOT } from '@/core/entity-store';
 import { isCosmosMemoryMessage } from '@/core/message-flags';
+import { filterBodyContent } from '@/core/body-filter';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
 import { MemoryEditResponse, type MemoryEditResult } from '@/type/memory-edit';
 import type { Settings } from '@/type/settings';
@@ -63,8 +64,12 @@ export async function generateMemoryEdit(request: string, settings: Settings): P
             message_id: message.message_id,
             role: message.role,
             name: message.name,
-            content: message.message,
-          }));
+            content:
+              message.role === 'assistant'
+                ? filterBodyContent(message.message, settings.summary.filter_body, settings.summary.body_tag)
+                : message.message,
+          }))
+          .filter(message => message.content.trim());
   const context = {
     characters: getStoredCharacters(),
     items: getStoredItems(),

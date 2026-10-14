@@ -1,4 +1,8 @@
 {
+  "过滤正文": "Filter body content",
+  "正文标签": "Body tag",
+  "正文标签无效，请填写 content 或 <content> 形式的标签名。": "Invalid body tag. Enter a tag name such as content or <content>.",
+  "开启后，总结、人物重新生成、记忆修改和向量召回只使用指定标签内的 AI 正文；多段正文按顺序合并，没有完整标签的 AI 楼层将跳过。用户消息不受影响。": "When enabled, summaries, character regeneration, memory edits, and vector recall use only AI body content inside the specified tag. Multiple blocks are combined in order; AI messages without a complete tag pair are skipped. User messages are unaffected.",
   "基础设置": "Settings",
   "剧情总结": "Summary",
   "记忆压缩": "Compression",

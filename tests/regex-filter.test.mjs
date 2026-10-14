@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
-function setupContext(mockFormatAsTavernRegexedString) {
+function setupContext(mockFormatAsTavernRegexedString, summarySettings = {}) {
   const context = createContext({
     z,
     Error,
@@ -32,8 +32,10 @@ function setupContext(mockFormatAsTavernRegexedString) {
   function load(id) {
     if (id === '@sillytavern/script') return { event_types: {}, eventSource: {}, getCurrentChatId: () => 'chat-1' };
     if (id === '@sillytavern/scripts/utils') return { getStringHash: s => `hash_${s}` };
-    if (id === '@sillytavern/scripts/tokenizers') return { getTokenCountAsync: async text => Math.ceil(text.length / 3) };
-    if (id === '@/store/settings') return { useSettingsStore: () => ({ settings: { filter: { enabled: false } } }) };
+    if (id === '@sillytavern/scripts/tokenizers')
+      return { getTokenCountAsync: async text => Math.ceil(text.length / 3) };
+    if (id === '@/store/settings')
+      return { useSettingsStore: () => ({ settings: { filter: { enabled: false }, summary: summarySettings } }) };
     assert.ok(id.startsWith('@/'), `Unexpected import: ${id}`);
     const filename = resolve(root, 'src', `${id.slice(2)}.ts`);
     if (modules.has(filename)) return modules.get(filename);
@@ -46,8 +48,47 @@ function setupContext(mockFormatAsTavernRegexedString) {
     return exports;
   }
 
-  return load('@/core/summary');
+  return { ...load('@/core/summary'), ...load('@/core/body-filter') };
 }
+
+test('正文过滤：合并多段、多行及嵌套正文，排除标签外内容', () => {
+  const { filterBodyContent } = setupContext();
+  const text = '思考<content> 第一行\n第二行 </content>状态栏<CONTENT>第三段</CONTENT>尾部';
+  assert.equal(filterBodyContent(text, true, '<content>'), '第一行\n第二行\n\n第三段');
+  assert.equal(filterBodyContent('<content>甲<content>乙</content>丙</content>', true, 'content'), '甲乙丙');
+  assert.equal(filterBodyContent(text, false, '<content>'), text);
+});
+
+test('正文过滤：空、缺失、不完整或无效标签均不发送原文，自定义标签按字面匹配', () => {
+  const { filterBodyContent, normalizeBodyTag } = setupContext();
+  for (const text of ['', '无标签正文', '<content>未闭合', '</content>只有结束标签', '<content> </content>']) {
+    assert.equal(filterBodyContent(text, true, '<content>'), '');
+  }
+  assert.equal(
+    filterBodyContent('<story.body>正文</story.body><storyXbody>外部</storyXbody>', true, 'story.body'),
+    '正文',
+  );
+  assert.equal(filterBodyContent('<content>正文</content>', true, '.*'), '');
+  assert.equal(normalizeBodyTag(''), '<content>');
+  assert.equal(normalizeBodyTag(' story '), '<story>');
+  assert.equal(normalizeBodyTag('<content attr="x">'), null);
+});
+
+test('正文过滤在酒馆正则之前执行，正则异常回退也不会泄露标签外文本，用户消息保持原有处理', () => {
+  const settings = { filter_body: true, body_tag: '<content>' };
+  const message = { message_id: 1, name: 'Alice', role: 'assistant', message: '思考<content>正文</content>状态栏' };
+  const summary = setupContext(text => {
+    assert.equal(text, '正文');
+    return text;
+  }, settings);
+  assert.equal(summary.getRegexedAiContent(message), '正文');
+  const failing = setupContext(() => {
+    throw new Error('Regex error');
+  }, settings);
+  assert.equal(failing.getRegexedAiContent(message), '正文');
+  const noRegex = setupContext(undefined, settings);
+  assert.equal(noRegex.getRegexedMessageContent({ ...message, role: 'user', message: '用户原文' }), '用户原文');
+});
 
 test('getRegexedContent：依次调用 display 与 prompt，并传递角色名且不限制 depth', () => {
   const calls = [];

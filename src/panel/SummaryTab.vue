@@ -10,6 +10,28 @@
       </div>
 
       <div class="cosmos-memory-row flex-container">
+        <input id="cosmos_memory_filter_body" v-model="settings.summary.filter_body" type="checkbox" />
+        <label for="cosmos_memory_filter_body">{{ t`过滤正文` }}</label>
+      </div>
+
+      <div class="cosmos-memory-hint">
+        {{
+          t`开启后，总结、人物重新生成、记忆修改和向量召回只使用指定标签内的 AI 正文；多段正文按顺序合并，没有完整标签的 AI 楼层将跳过。用户消息不受影响。`
+        }}
+      </div>
+
+      <label v-if="settings.summary.filter_body" class="cosmos-memory-field">
+        <span>{{ t`正文标签` }}</span>
+        <input
+          v-model.trim="settings.summary.body_tag"
+          class="text_pole"
+          type="text"
+          :placeholder="DEFAULT_BODY_FILTER_TAG"
+          @change="normalize_body_tag"
+        />
+      </label>
+
+      <div class="cosmos-memory-row flex-container">
         <input
           id="cosmos_memory_send_descriptions_and_world_info"
           v-model="settings.summary.send_descriptions_and_world_info"
@@ -223,7 +245,8 @@
 
 <script setup lang="ts">
 import { applySummaryCompressionForNextGeneration } from '@/core/compression';
-import { DEFAULT_FILTER_MAX_RETRIES, DEFAULT_FILTER_MIN_LENGTH } from '@/type/settings';
+import { DEFAULT_BODY_FILTER_TAG, DEFAULT_FILTER_MAX_RETRIES, DEFAULT_FILTER_MIN_LENGTH } from '@/type/settings';
+import { normalizeBodyTag } from '@/core/body-filter';
 import { runMemoryBacktrackCheck, stopSummarizeTasks, type MemoryBacktrackCheckResult } from '@/core/summary';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
 import SummaryDialog from '@/panel/SummaryDialog.vue';
@@ -234,6 +257,16 @@ const { settings } = storeToRefs(useSettingsStore());
 
 const is_checking_memory = ref(false);
 const summary_dialog = ref<InstanceType<typeof SummaryDialog> | null>(null);
+
+function normalize_body_tag() {
+  const tag = normalizeBodyTag(settings.value.summary.body_tag);
+  if (!tag) {
+    toastr.warning(t`正文标签无效，请填写 content 或 <content> 形式的标签名。`, 'Cosmos Memory');
+    settings.value.summary.body_tag = DEFAULT_BODY_FILTER_TAG;
+    return;
+  }
+  settings.value.summary.body_tag = tag;
+}
 
 const blocked_keywords_text = computed({
   get() {
