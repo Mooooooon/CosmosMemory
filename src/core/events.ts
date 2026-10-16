@@ -44,6 +44,33 @@ const SKIPPED_COMPRESSION_GENERATION_TYPES = new Set(['quiet']);
 
 let is_summary_listener_registered = false;
 
+const received_message_timers = new Map<number, ReturnType<typeof setTimeout>>();
+
+function cancelPendingReceivedMessages(first_message_id = 0) {
+  for (const [message_id, timer] of received_message_timers) {
+    if (message_id >= first_message_id) {
+      clearTimeout(timer);
+      received_message_timers.delete(message_id);
+    }
+  }
+}
+
+function scheduleMessageReceived(message_id: number, type: string) {
+  if (!SUMMARIZABLE_MESSAGE_TYPES.has(type)) return;
+  const existing_timer = received_message_timers.get(message_id);
+  if (existing_timer !== undefined) clearTimeout(existing_timer);
+  // MESSAGE_RECEIVED 的其他监听器可能提取思考内容、改写正文；非流式回复此时也尚未渲染。
+  // 下一轮事件循环再读取最终正文，避免总结刚启动就因消息后处理而被内容校验取消。
+  const timer = setTimeout(() => {
+    received_message_timers.delete(message_id);
+    void handleMessageReceived(message_id, type).catch(error => {
+      console.error('[CosmosMemory] 处理自动总结事件失败', error);
+      toastr.error(error instanceof Error ? error.message : String(error), t`Cosmos Memory 剧情总结失败`);
+    });
+  }, 0);
+  received_message_timers.set(message_id, timer);
+}
+
 async function handleMessageReceived(message_id: number, type: string) {
   console.info('[CosmosMemory] 收到 MESSAGE_RECEIVED 事件', { message_id, type });
 
@@ -232,6 +259,7 @@ function handleMessageSwiped(message_id: number) {
 
 function handleMessageDeleted(new_chat_length: number) {
   console.info('[CosmosMemory] 收到 MESSAGE_DELETED 事件', { new_chat_length });
+  cancelPendingReceivedMessages(new_chat_length);
 
   if (!window.TavernHelper) {
     console.warn('[CosmosMemory] TavernHelper 尚未初始化，跳过本次删除回滚处理', { new_chat_length });
@@ -362,7 +390,7 @@ export function registerSummaryEvents() {
   console.info(
     '[CosmosMemory] 注册 MESSAGE_RECEIVED / MESSAGE_EDITED / MESSAGE_DELETED / MESSAGE_SENT / GENERATION_AFTER_COMMANDS / CHAT_CHANGED 剧情总结监听',
   );
-  eventSource.on(event_types.MESSAGE_RECEIVED, handleMessageReceived);
+  eventSource.on(event_types.MESSAGE_RECEIVED, scheduleMessageReceived);
   eventSource.on(event_types.MESSAGE_EDITED, handleMessageEdited);
   eventSource.on(event_types.MESSAGE_DELETED, handleMessageDeleted);
   eventSource.on(event_types.MESSAGE_SENT, handleMessageSent);
@@ -379,6 +407,7 @@ export function registerSummaryEvents() {
   if (event_types.GENERATION_STOPPED) {
     eventSource.on(event_types.GENERATION_STOPPED, handleGenerationStopped);
   }
+  eventSource.on(event_types.CHAT_CHANGED, () => cancelPendingReceivedMessages());
   eventSource.on(event_types.CHAT_CHANGED, cancelSummarizationForChatChange);
   eventSource.on(event_types.CHAT_CHANGED, resetMemoryEditForChatChange);
   eventSource.on(event_types.CHAT_CHANGED, handleMemoryTimelineChanged);

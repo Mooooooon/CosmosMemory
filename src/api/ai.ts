@@ -28,6 +28,7 @@ import {
   type SettingChangeOperation,
 } from '@/core/setting-changes';
 import { parsePrettified } from '@/util/zod';
+import { parseAiJson } from '@/util/ai-json';
 import { event_types, eventSource } from '@sillytavern/script';
 
 const TEST_MESSAGE = '!ping';
@@ -222,7 +223,7 @@ const ITEM_EXTRACTION_INSTRUCTION = [
 ].join('\n');
 
 const LOCATION_EXTRACTION_INSTRUCTION = [
-  '【地点记忆】提取本楼层明确新增、更新或删除的可重复使用地点信息，返回 location_operations 数组；没有变化时返回空数组。地点结构固定为世界/大陆级-国家/地区级-城市/城镇级-场景/建筑级-房间/具体地点级；顶部可以有多个世界/大陆。没有对应设定的中间层可以留空字符串跳过（例如架空城市没有所属国家时 country 留空），系统仍会保存其下级地点；只记录到某一级时，更低层级全部留空。非空的上级名称必须与已记录的层级名称完全一致，否则会建出重复的分支。',
+  '【地点记忆】提取本楼层明确新增、更新或删除的可重复使用地点信息，返回 location_operations 数组；没有变化时返回空数组。地点结构固定为世界/大陆级-国家/地区级-城市/城镇级-场景/建筑级-房间/具体地点级；顶部可以有多个世界/大陆。未知或没有对应设定的任意层级（包括 world）可以留空字符串跳过（例如世界名称未知时 world 留空，城市没有所属国家时 country 留空）；每条操作至少包含一个非空地点名称，禁止虚构世界名或使用占位名称，系统仍会保存其下级地点；只记录到某一级时，更低层级全部留空。非空的上级名称必须与已记录的层级名称完全一致，否则会建出重复的分支。',
   '',
   '应该记录的地点：角色的住所或据点、反复前往的场所（酒馆、公会、学校、教堂、市场）、任务目的地、有重要事件发生过的地点、地下城/迷宫的已探索区域。',
   '',
@@ -452,10 +453,7 @@ export async function sendPing(settings: AiSettings): Promise<string> {
 }
 
 function parseSummaryJson(raw: string, options: SummaryGenerationOptions = {}): SummaryGenerationResult {
-  const text = raw.trim();
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1]?.trim();
-  const json_text = fenced ?? text.match(/\{[\s\S]*\}/)?.[0] ?? text;
-  const parsed = JSON.parse(json_text);
+  const parsed = parseAiJson(raw);
 
   if (!hasMemoryExtraction(options)) {
     return {
@@ -864,7 +862,7 @@ function buildStructuredSummarySchema(options: SummaryGenerationOptions): JsonSc
           },
           world: {
             type: 'string',
-            description: '世界/大陆名；地点记录的顶层名称',
+            description: '世界/大陆名；未知或无对应设定时返回空字符串，其他层级至少有一个非空名称',
           },
           world_brief: {
             type: 'string',
@@ -1038,10 +1036,7 @@ function buildFullCharacterExtractionSchema(): JsonSchema {
 }
 
 function parseFullCharacterExtractionJson(raw: string): StoredCharacter[] {
-  const text = raw.trim();
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1]?.trim();
-  const json_text = fenced ?? text.match(/\{[\s\S]*\}/)?.[0] ?? text;
-  return parsePrettified(CharacterExtractionResponse, JSON.parse(json_text)).characters;
+  return parsePrettified(CharacterExtractionResponse, parseAiJson(raw)).characters;
 }
 
 async function summarizeMessageWithStructuredOutput(
@@ -1210,10 +1205,7 @@ function buildSummaryRollupSchema(): JsonSchema {
 }
 
 function parseSummaryRollupJson(raw: string): string {
-  const text = raw.trim();
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1]?.trim();
-  const json_text = fenced ?? text.match(/\{[\s\S]*\}/)?.[0] ?? text;
-  return parsePrettified(SummaryRollupResponse, JSON.parse(json_text)).article;
+  return parsePrettified(SummaryRollupResponse, parseAiJson(raw)).article;
 }
 
 async function rollupSummariesWithStructuredOutput(

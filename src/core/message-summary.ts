@@ -1,5 +1,13 @@
-import { getStoredMessageSummaries } from '@/core/summary';
+import {
+  getMessageSummaryStatus,
+  getStoredMessageSummaries,
+  OPENING_MESSAGE_ID,
+  summarizeReceivedMessage,
+} from '@/core/summary';
+import { isCosmosMemoryMessage } from '@/core/message-flags';
+import { triggerSummaryRollupIfNeeded } from '@/core/summary-rollup';
 import { useSettingsStore } from '@/store/settings';
+import { isOpeningMessageCompressionEnabled } from '@/type/settings';
 
 const MESSAGE_SUMMARY_CLASS = 'cosmos-memory-message-summary';
 
@@ -14,9 +22,20 @@ export function updateMessageSummary(message_id: number | null): boolean {
 
   try {
     const summary = getStoredMessageSummaries().find(summary => summary.message_id === message_id);
-    if (!summary?.summary.trim()) {
-      $existing.remove();
-      return true;
+    const status = getMessageSummaryStatus(message_id);
+    const missing_summary = !summary?.summary.trim();
+    if (!status && missing_summary) {
+      const message = window.TavernHelper.getChatMessages(message_id, { include_swipes: false })[0];
+      if (
+        !message ||
+        message.role !== 'assistant' ||
+        !message.message.trim() ||
+        isCosmosMemoryMessage(message) ||
+        (message_id === OPENING_MESSAGE_ID && !isOpeningMessageCompressionEnabled(settings))
+      ) {
+        $existing.remove();
+        return true;
+      }
     }
 
     const $message = window.TavernHelper.retrieveDisplayedMessage(message_id);
@@ -34,10 +53,48 @@ export function updateMessageSummary(message_id: number | null): boolean {
         .append($('<div class="cosmos-memory-message-summary-content">'));
     }
 
+    const state = status?.state ?? (missing_summary ? 'missing' : 'complete');
+    const state_changed = $details.attr('data-state') !== state;
+    $details.attr('data-state', state);
+    $details
+      .children('summary')
+      .text(
+        status?.state === 'summarizing'
+          ? t`正在总结…`
+          : status?.state === 'failed'
+            ? t`总结失败`
+            : missing_summary
+              ? t`尚未生成本楼总结`
+              : t`本楼总结`,
+      );
     const $content = $details.children('.cosmos-memory-message-summary-content');
-    if ($content.text() !== summary.summary) {
+    $content.empty();
+    if (status?.state === 'summarizing') {
+      $content.append($('<div role="status">').text(t`正在总结…`));
+    } else if (status?.state === 'failed' || missing_summary) {
+      if (state_changed) $details.prop('open', true);
+      if (status?.state === 'failed' && status.error.trim()) {
+        $content.append($('<div role="alert">').text(status.error));
+      }
+      const $retry = $('<button type="button" class="menu_button cosmos-memory-summary-retry">').text(t`重试总结`);
+      $retry.on('click', () => {
+        if ($retry.prop('disabled') || getMessageSummaryStatus(message_id) !== status) return;
+        $retry.prop('disabled', true);
+        void summarizeReceivedMessage(message_id)
+          .then(result => {
+            if (result) triggerSummaryRollupIfNeeded();
+          })
+          .catch(error => {
+            if (getMessageSummaryStatus(message_id)?.state !== 'failed') return;
+            console.error('[CosmosMemory] 重试楼层总结失败', error);
+            toastr.error(error instanceof Error ? error.message : String(error), t`Cosmos Memory 剧情总结失败`);
+          });
+        updateMessageSummary(message_id);
+      });
+      $content.append($retry);
+    } else {
       // 摘要来自 AI，作为纯文本展示，避免执行其中的 HTML。
-      $content.text(summary.summary);
+      $content.text(summary?.summary ?? '');
     }
 
     const $scene = $message.children('.cosmos-memory-message-scene').first();

@@ -62,6 +62,24 @@ type SummarizingTask = {
 };
 
 const summarizing_messages = new Map<number, SummarizingTask>();
+type MessageSummaryStatus = {
+  chat_id: string | null;
+  swipe_id: number;
+  content: string;
+} & ({ state: 'summarizing' } | { state: 'failed'; error: string });
+
+// 请求状态只在内存中保留，不作为剧情数据保存。
+const message_summary_statuses = new Map<number, MessageSummaryStatus>();
+
+export function getMessageSummaryStatus(message_id: number): MessageSummaryStatus | undefined {
+  const status = message_summary_statuses.get(message_id);
+  if (!status || status.chat_id !== safeGetCurrentChatId() || status.swipe_id !== getActiveSwipeId(message_id)) {
+    return undefined;
+  }
+  const message = window.TavernHelper.getChatMessages(message_id, { include_swipes: false })[0];
+  return message?.message === status.content ? status : undefined;
+}
+
 const cancelled_message_ids = new Set<number>();
 let backfill_abort_signal: { aborted: boolean } | null = null;
 
@@ -581,7 +599,11 @@ function safeGetCurrentChatId(): string | null {
   }
 }
 
-async function summarizeReceivedMessageCore(message_id: number, generation_id: string): Promise<MessageSummary | null> {
+async function summarizeReceivedMessageCore(
+  message_id: number,
+  generation_id: string,
+  should_cancel: () => boolean,
+): Promise<MessageSummary | null> {
   const chat_id = safeGetCurrentChatId();
 
   const message = getAssistantMessage(message_id);
@@ -658,11 +680,11 @@ async function summarizeReceivedMessageCore(message_id: number, generation_id: s
     previous_original_messages,
     previous_summaries,
     generation_id,
-    should_cancel: () => cancelled_message_ids.has(message_id),
+    should_cancel,
   });
 
   // 异步请求期间任务可能被手动停止：直接丢弃结果，不再写入变量
-  if (cancelled_message_ids.has(message_id)) {
+  if (should_cancel()) {
     console.info('[CosmosMemory] 总结任务已被取消，丢弃总结结果', { message_id });
     return null;
   }
@@ -709,11 +731,41 @@ export function summarizeReceivedMessage(message_id: number): Promise<MessageSum
 
   cancelled_message_ids.delete(message_id);
   const generation_id = `cosmos-memory-summary-${message_id}-${Date.now()}`;
-  const promise = summarizeReceivedMessageCore(message_id, generation_id).finally(() => {
-    summarizing_messages.delete(message_id);
-  });
+  const status: MessageSummaryStatus = {
+    chat_id: safeGetCurrentChatId(),
+    swipe_id: getActiveSwipeId(message_id),
+    content: window.TavernHelper.getChatMessages(message_id, { include_swipes: false })[0]?.message ?? '',
+    state: 'summarizing',
+  };
+  const is_current_task = (): boolean => summarizing_messages.get(message_id)?.promise === promise;
+  const promise: Promise<MessageSummary | null> = summarizeReceivedMessageCore(
+    message_id,
+    generation_id,
+    () => !is_current_task() || getMessageSummaryStatus(message_id) !== status,
+  )
+    .catch(error => {
+      if (is_current_task() && getMessageSummaryStatus(message_id) === status) {
+        message_summary_statuses.set(message_id, {
+          ...status,
+          state: 'failed',
+          error: error instanceof Error ? error.message : error == null ? '' : String(error),
+        });
+      }
+      throw error;
+    })
+    .finally(() => {
+      // 旧任务完成不能清除同楼层新请求的状态。
+      if (!is_current_task()) return;
+      summarizing_messages.delete(message_id);
+      if (message_summary_statuses.get(message_id)?.state === 'summarizing') {
+        message_summary_statuses.delete(message_id);
+      }
+      message_summaries_revision.value++;
+    });
 
   summarizing_messages.set(message_id, { promise, generation_id });
+  message_summary_statuses.set(message_id, status);
+  message_summaries_revision.value++;
   return promise;
 }
 
@@ -732,10 +784,16 @@ export function stopSummarizeTasks() {
     }
   }
   summarizing_messages.clear();
+  for (const [message_id, status] of message_summary_statuses) {
+    if (status.state === 'summarizing') message_summary_statuses.delete(message_id);
+  }
+  message_summaries_revision.value++;
 }
 
 /** 聊天切换时调用：取消未完成的总结任务，防止结果写入新聊天 */
 export function cancelSummarizationForChatChange() {
+  message_summary_statuses.clear();
+  message_summaries_revision.value++;
   if (summarizing_messages.size === 0 && backfill_abort_signal === null) {
     return;
   }
@@ -750,6 +808,8 @@ export function wasSummarizeTaskCancelled(message_id: number): boolean {
 
 /** 取消指定楼层正在进行的总结任务（编辑楼层后，基于旧内容的任务结果必须丢弃） */
 function cancelSummarizeTask(message_id: number) {
+  message_summary_statuses.delete(message_id);
+  message_summaries_revision.value++;
   const task = summarizing_messages.get(message_id);
   if (!task) {
     return;
@@ -864,6 +924,9 @@ export function rollbackSummariesFromMessage(
   first_deleted_message_id: number,
   { purge_swipe_cache = true }: { purge_swipe_cache?: boolean } = {},
 ): MessageSummary[] {
+  for (const message_id of message_summary_statuses.keys()) {
+    if (message_id >= first_deleted_message_id) message_summary_statuses.delete(message_id);
+  }
   // 被删楼层上基于旧内容的进行中任务必须取消，避免其结果写回同楼层的新消息
   for (const pending_message_id of [...summarizing_messages.keys()]) {
     if (pending_message_id >= first_deleted_message_id) {

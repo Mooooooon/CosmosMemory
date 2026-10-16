@@ -17,6 +17,7 @@ function harness(responses, settings_patch = {}) {
   const state = { cancelled: false, on_wait: () => {} };
   const context = createContext({
     z,
+    _: { isPlainObject: value => value !== null && typeof value === 'object' && !Array.isArray(value) },
     ref: value => ({ value }),
     Error,
     DOMException,
@@ -86,6 +87,59 @@ const generation_cases = [
     invalid: '{"characters":"错误类型"}',
   },
 ];
+
+test('总结 JSON：修复 characters 末尾多余引号并保留后续时间和地点字段', async () => {
+  const raw =
+    '{"summary":"剧情摘要","current_info_update":{"current_time":"辰时","location":"赵府正堂","characters":{"赵管家":{"clothing":"绸衫","status":"侍立"},"},"elapsed_time":"18小时","reason":"次日进城"},"location_operations":[]}';
+  const h = harness([raw], { retry_enabled: false });
+  const result = await h.api.summarizeMessage(h.settings, '剧情', { current_info_enabled: true });
+  assert.equal(result.summary, '剧情摘要');
+  assert.equal(result.current_info_update.characters.赵管家.status, '侍立');
+  assert.equal(Object.keys(result.current_info_update.characters).length, 1);
+  assert.equal(result.current_info_update.elapsed_time, '18小时');
+  assert.equal(result.current_info_update.reason, '次日进城');
+  assert.equal(result.current_info_update.location, '赵府正堂');
+  assert.equal(h.calls.length, 1);
+});
+
+test('地点总结：未知世界名称不影响具体地点入库前的解析校验', async () => {
+  const h = harness(
+    [
+      JSON.stringify({
+        summary: '李行在岩洞取火',
+        location_operations: [{ type: 'add', world: '', city: '风语部落', scene: '白霜的岩洞' }],
+      }),
+    ],
+    { retry_enabled: false },
+  );
+  const result = await h.api.summarizeMessage(h.settings, '剧情', { locations_enabled: true, locations: [] });
+  assert.equal(result.location_operations[0].world, '');
+  assert.equal(result.location_operations[0].scene, '白霜的岩洞');
+  assert.equal(h.calls.length, 1);
+});
+
+test('总结 JSON：仅修复字符串外尾逗号，保留正文中的引号、反斜杠及分隔符', async () => {
+  const summary = '原文 ,} ,] ,"}, 和转义引号 "、反斜杠 \\';
+  for (const suffix of ['', ',']) {
+    const raw = `\`\`\`json\n{"summary":${JSON.stringify(summary)}${suffix}}\n\`\`\``;
+    const h = harness([raw], { retry_enabled: false });
+    assert.equal((await generation_cases[0].run(h)).summary, summary);
+  }
+  const h = harness(['{"characters": [{"type":"secondary","name":"管家","brief":"侍立",},],}']);
+  assert.equal((await generation_cases[2].run(h))[0].name, '管家');
+});
+
+test('总结 JSON：格式修复后仍校验字段；截断和缺失字段值明确报错', async () => {
+  for (const raw of ['{"summary":42,}', '{"summary":" " ,}']) {
+    const h = harness([raw], { retry_enabled: false });
+    await assert.rejects(generation_cases[0].run(h));
+  }
+  for (const raw of ['{"summary":}', '{"summary":"截断', '{"summary":"摘要","current_info_update":']) {
+    const h = harness([raw], { retry_enabled: false });
+    await assert.rejects(generation_cases[0].run(h), /JSON 格式无效/);
+    assert.equal(h.calls.length, 1);
+  }
+});
 
 for (const entry of generation_cases) {
   test(`${entry.name}：空内容、JSON 错误和校验失败后第三次重试成功`, async () => {

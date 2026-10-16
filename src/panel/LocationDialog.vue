@@ -32,7 +32,7 @@
         :key="world.name"
         class="cosmos-memory-summary-item cosmos-memory-location-item"
       >
-        <div class="cosmos-memory-summary-meta">
+        <div v-if="world.name" class="cosmos-memory-summary-meta">
           <b>{{ t`世界/大陆` }}：{{ world.name }}</b>
           <span class="cosmos-memory-inline-actions">
             <button class="menu_button" type="button" @click="handle_edit([world.name], world.brief)">

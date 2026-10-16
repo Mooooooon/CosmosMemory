@@ -11,7 +11,7 @@ const LOCATION_STORAGE_VERSION_PATH = `${STORAGE_ROOT}.locations_storage_version
 const LOCATION_STORAGE_VERSION = 2;
 /**
  * 存储模型是固定五级树，但现实设定不一定包含每一级（例如架空城市可能没有国家）。
- * 缺失的中间层使用仅供内部寻址的虚拟节点承接；节点 name 保持为空，展示和注入时跳过该层。
+ * 缺失的层级（含世界）使用仅供内部寻址的虚拟节点承接；节点 name 保持为空，展示和注入时跳过该层。
  */
 const IMPLICIT_LOCATION_KEY = '__cosmos_memory_implicit__';
 export const LOCATION_PROMPT_ID = 'cosmos_memory_locations';
@@ -72,24 +72,36 @@ type SummaryWithLocationOperations = {
   location_operations?: LocationOperation[];
 };
 
-export const LocationOperationResponse = z.object({
-  type: z.enum(['add', 'set', 'delete']),
-  world: z.string().trim().min(1),
-  world_brief: z.string().trim().optional().default(''),
-  country: z.string().trim().optional().default(''),
-  country_brief: z.string().trim().optional().default(''),
-  city: z.string().trim().optional().default(''),
-  city_brief: z.string().trim().optional().default(''),
-  scene: z.string().trim().optional().default(''),
-  scene_brief: z.string().trim().optional().default(''),
-  room: z.string().trim().optional().default(''),
-  room_brief: z.string().trim().optional().default(''),
-});
+export const LocationOperationResponse = z
+  .object({
+    type: z.enum(['add', 'set', 'delete']),
+    world: z.string().trim(),
+    world_brief: z.string().trim().optional().default(''),
+    country: z.string().trim().optional().default(''),
+    country_brief: z.string().trim().optional().default(''),
+    city: z.string().trim().optional().default(''),
+    city_brief: z.string().trim().optional().default(''),
+    scene: z.string().trim().optional().default(''),
+    scene_brief: z.string().trim().optional().default(''),
+    room: z.string().trim().optional().default(''),
+    room_brief: z.string().trim().optional().default(''),
+  })
+  .refine(
+    operation => [operation.world, operation.country, operation.city, operation.scene, operation.room].some(Boolean),
+    {
+      message: t`地点路径至少需要一个非空名称`,
+      path: ['world'],
+    },
+  );
 
 export const LocationOperationsResponse = z.array(LocationOperationResponse).default([]);
 
 function normalizeLocationKey(name: string): string {
   return normalizeEntityKey(name);
+}
+
+function getWorldKey(name: string): string {
+  return name ? normalizeLocationKey(name) : IMPLICIT_LOCATION_KEY;
 }
 
 function isStoredLocationRoom(value: unknown): value is StoredLocationRoom {
@@ -141,7 +153,7 @@ function isStoredLocationWorld(value: unknown): value is StoredLocationWorld {
 }
 
 function getOrCreateWorld(locations: Record<string, StoredLocationWorld>, world_name: string): StoredLocationWorld {
-  const world_key = normalizeLocationKey(world_name);
+  const world_key = getWorldKey(world_name);
   const existing = locations[world_key];
   if (existing) {
     return existing;
@@ -213,9 +225,9 @@ function mergeLocationOperation(
   const city_name = normalizeText(operation.city);
   const scene_name = normalizeText(operation.scene);
   const room_name = normalizeText(operation.room);
-  const world_key = normalizeLocationKey(world_name);
+  const world_key = getWorldKey(world_name);
 
-  if (!world_key) {
+  if (![world_name, country_name, city_name, scene_name, room_name].some(Boolean)) {
     return locations;
   }
 
@@ -313,13 +325,16 @@ const locationStore = defineEntityStore<StoredLocationWorld, LocationOperation, 
   entityName: '地点',
   operationSchema: LocationOperationResponse,
   isValidEntity: isStoredLocationWorld,
-  getEntityKey: world => normalizeLocationKey(world.name),
+  getEntityKey: world => getWorldKey(world.name),
   // 元数据记录在世界级实体上：一条地点操作可能触及世界下的任意层级，
   // 以世界为粒度记录来源楼层，足以支撑后续按楼层检索和级联失效
   applyOperation: (record, operation) => {
-    const world_key = normalizeLocationKey(normalizeText(operation.world));
+    if (![operation.world, operation.country, operation.city, operation.scene, operation.room].some(normalizeText)) {
+      return [];
+    }
+    const world_key = getWorldKey(normalizeText(operation.world));
     mergeLocationOperation(record, operation);
-    return world_key ? [world_key] : [];
+    return [world_key];
   },
   sortEntities: (left, right) => left.name.localeCompare(right.name),
   getSummaryOperations: summary => summary.location_operations,
@@ -389,13 +404,13 @@ export function formatLocationsForPrompt(locations: StoredLocationWorld[] = getS
   ];
 
   for (const world of locations) {
-    lines.push(`- 世界/大陆：${world.name}`);
+    if (world.name) lines.push(`- 世界/大陆：${world.name}`);
     if (world.brief) {
       lines.push(`  简介：${world.brief}`);
     }
 
     for (const country of Object.values(world.countries).sort((left, right) => left.name.localeCompare(right.name))) {
-      const country_depth = 1;
+      const country_depth = world.name ? 1 : 0;
       if (country.name) {
         lines.push(`${'  '.repeat(country_depth)}- 国家/地区：${country.name}`);
       }

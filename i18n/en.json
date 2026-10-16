@@ -1,4 +1,6 @@
 {
+  "地点路径至少需要一个非空名称": "A location path must contain at least one non-empty name.",
+  "AI 返回的 JSON 格式无效，无法安全修复，请重试。": "The AI returned invalid JSON that could not be safely repaired. Please retry.",
   "过滤正文": "Filter body content",
   "正文标签": "Body tag",
   "正文标签无效，请填写 content 或 <content> 形式的标签名。": "Invalid body tag. Enter a tag name such as content or <content>.",
@@ -369,5 +371,9 @@
   "同步楼层修改记录失败": "Failed to synchronize message edit history",
   "绑定楼层": "Attached message",
   "所有修改均绑定当前楼层及分支，回溯时一起撤销，切回原分支时恢复。对应剧情要素需启用才会用于后续总结和注入。": "All edits are attached to the current message and swipe. They are rolled back together, and restored when returning to the original swipe. Enable the corresponding entities to use them in future summaries and prompt injection.",
-  "Cosmos Memory 保存当前画面失败": "Cosmos Memory: failed to save current scene"
+  "Cosmos Memory 保存当前画面失败": "Cosmos Memory: failed to save current scene",
+  "正在总结…": "Summarizing…",
+  "总结失败": "Summary failed",
+  "重试总结": "Retry summary",
+  "尚未生成本楼总结": "No summary has been generated for this message yet"
 }

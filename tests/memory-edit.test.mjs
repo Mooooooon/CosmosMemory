@@ -10,6 +10,68 @@ import * as ts from 'typescript';
 import { z } from 'zod';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+
+test('楼层总结状态：失败保留原因，重试清除错误，并复用进行中的请求', async () => {
+  let fail = true;
+  const h = harness(() => {
+    if (fail) throw new Error('测试接口不可用');
+    return JSON.stringify({ summary: '重试后的总结' });
+  });
+  h.settings.ai.retry_enabled = false;
+  const core = h.load('@/core/summary');
+  const first = core.summarizeReceivedMessage(80);
+  assert.equal(core.getMessageSummaryStatus(80).state, 'summarizing');
+  assert.equal(core.summarizeReceivedMessage(80), first);
+  await assert.rejects(first, /测试接口不可用/);
+  assert.equal(core.getMessageSummaryStatus(80).state, 'failed');
+  assert.match(core.getMessageSummaryStatus(80).error, /测试接口不可用/);
+  fail = false;
+  const retry = core.summarizeReceivedMessage(80);
+  assert.equal(core.getMessageSummaryStatus(80).state, 'summarizing');
+  assert.equal(core.getMessageSummaryStatus(80).error, undefined);
+  assert.equal((await retry).summary, '重试后的总结');
+  assert.equal(core.getMessageSummaryStatus(80), undefined);
+  assert.equal(h.calls.length, 2);
+});
+
+test('失败状态仅属于当前聊天、楼层原文及分支；切换聊天清除失败状态', async () => {
+  const h = harness(() => { throw new Error('请求失败'); });
+  h.settings.ai.retry_enabled = false;
+  const core = h.load('@/core/summary');
+  await assert.rejects(core.summarizeReceivedMessage(80));
+  h.state.messages.get(80).swipe_id = 1;
+  assert.equal(core.getMessageSummaryStatus(80), undefined);
+  h.state.messages.get(80).swipe_id = 0;
+  assert.equal(core.getMessageSummaryStatus(80).state, 'failed');
+  h.state.messages.get(80).swipes[0] += '已编辑';
+  assert.equal(core.getMessageSummaryStatus(80), undefined);
+  h.state.chat_id = 'chat-b';
+  core.cancelSummarizationForChatChange();
+  h.state.chat_id = 'chat-a';
+  assert.equal(core.getMessageSummaryStatus(80), undefined);
+});
+
+test('取消后旧请求的完成不会清除新请求状态或写入旧结果', async () => {
+  const pending = [];
+  const h = harness(() => new Promise(resolve => pending.push(resolve)));
+  const core = h.load('@/core/summary');
+  const old = core.summarizeReceivedMessage(80);
+  // 等待真实 AI 请求构造完毕。
+  while (pending.length < 1) await new Promise(resolve => setImmediate(resolve));
+  core.stopSummarizeTasks();
+  assert.equal(core.getMessageSummaryStatus(80), undefined);
+  const current = core.summarizeReceivedMessage(80);
+  while (pending.length < 2) await new Promise(resolve => setImmediate(resolve));
+  pending[0](JSON.stringify({ summary: '旧结果' }));
+  await old.catch(() => {});
+  assert.equal(core.getMessageSummaryStatus(80).state, 'summarizing');
+  assert.equal(core.summarizeReceivedMessage(80), current);
+  assert.equal(core.getStoredMessageSummaries().length, 0);
+  pending[1](JSON.stringify({ summary: '新结果' }));
+  assert.equal((await current).summary, '新结果');
+  assert.equal(core.getMessageSummaryStatus(80), undefined);
+});
+
 const pathParts = path => (Array.isArray(path) ? path : path.split('.'));
 const lodash = {
   get(object, path, fallback) {
@@ -263,10 +325,14 @@ test('修改与 swipe 绑定：切换停用，切回恢复，清空规则也能�
 });
 
 test('显式回溯到80楼，即使100楼尚未物理删除，也不保留100楼修改', async () => {
-  const h = harness(() => JSON.stringify(result({
-    character_operations: [{ type: 'set', character_type: 'primary', name: '林秋', personality: '沉稳' }],
-    instructions: [{ key: 'tracking', content: '持续跟踪林秋境界' }],
-  })));
+  const h = harness(() =>
+    JSON.stringify(
+      result({
+        character_operations: [{ type: 'set', character_type: 'primary', name: '林秋', personality: '沉稳' }],
+        instructions: [{ key: 'tracking', content: '持续跟踪林秋境界' }],
+      }),
+    ),
+  );
   seedSummary(h);
   await h.core.generateMemoryEdit('修改角色', h.settings);
   h.core.applyMemoryEditPreview();
@@ -420,6 +486,41 @@ test('时间格式与追踪规则：预览不写入，应用后传给后续总�
     summary_request.json_schema.value.properties.current_info_update.properties.current_time.description,
     /用户指定/,
   );
+});
+
+test('未知世界的地点可保存、恢复、编辑及定向删除，不影响具名世界', () => {
+  const h = harness(() => '');
+  const locations = h.load('@/core/locations');
+  const operation = locations.LocationOperationResponse.parse({
+    type: 'add',
+    world: '',
+    city: '风语部落',
+    scene: '白霜的岩洞',
+    scene_brief: '巨兽肋骨搭成的洞穴',
+  });
+  assert.equal(locations.LocationOperationResponse.safeParse({ type: 'delete', world: ' ' }).success, false);
+  const summaries = [
+    {
+      message_id: 80,
+      location_operations: [operation, { type: 'add', world: '具名世界', city: '风语部落', scene: '白霜的岩洞' }],
+    },
+  ];
+  locations.rebuildStoredLocationsFromSummaries(summaries);
+  const stored = locations.getStoredLocations();
+  assert.equal(stored.length, 2);
+  assert.equal(stored.find(world => !world.name).source_message_id, 80);
+  let text = locations.formatLocationsForPrompt();
+  assert.match(text, /巨兽肋骨搭成的洞穴/);
+  assert.doesNotMatch(text, /__cosmos_memory_implicit__/);
+  assert.equal((text.match(/世界\/大陆：/g) ?? []).length, 1);
+  locations.manualApplyLocationOperation({ ...operation, type: 'set', scene_brief: '点燃篝火的岩洞' });
+  locations.rebuildStoredLocationsFromSummaries(summaries);
+  assert.match(locations.formatLocationsForPrompt(), /点燃篝火的岩洞/);
+  locations.manualApplyLocationOperation({ ...operation, type: 'delete' });
+  locations.rebuildStoredLocationsFromSummaries(summaries);
+  text = locations.formatLocationsForPrompt();
+  assert.equal((text.match(/场景\/建筑：白霜的岩洞/g) ?? []).length, 1);
+  assert.doesNotMatch(text, /点燃篝火的岩洞|巨兽肋骨搭成的洞穴/);
 });
 
 test('地点删除只作用于指定房间，角色修改在摘要重建后保留', async () => {

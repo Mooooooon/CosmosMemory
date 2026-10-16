@@ -20,6 +20,18 @@
   overflow-wrap: anywhere;
 }
 
+.cosmos-memory-message-summary-content > .cosmos-memory-summary-retry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: max-content;
+  max-width: 100%;
+  margin-top: 8px;
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
 .cosmos-memory-message-scene {
   margin-top: 12px;
   border: 1px solid var(--SmartThemeBorderColor);
