@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "地点路径至少需要一个非空名称": "A location path must contain at least one non-empty name.",
   "AI 返回的 JSON 格式无效，无法安全修复，请重试。": "The AI returned invalid JSON that could not be safely repaired. Please retry.",
   "过滤正文": "Filter body content",
@@ -376,4 +377,9 @@
   "总结失败": "Summary failed",
   "重试总结": "Retry summary",
   "尚未生成本楼总结": "No summary has been generated for this message yet"
+=======
+  "插件示例": "Plugin Example",
+  "示例按钮": "Example Button",
+  "示例开关": "Example Switch"
+>>>>>>> 9bca52dd36679cda6c5f77f1ce516c320d3bae32
 }
