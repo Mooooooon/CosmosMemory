@@ -11,6 +11,7 @@ function harness() {
   const calls = [];
   const errors = [];
   const messages = new Map([[2, '<think>思考过程</think>最终剧情']]);
+  const settings = { filter: {}, summary: { resummarize_on_edit: false } };
   let timer_id = 0;
   const noop = () => {};
   const eventSource = {
@@ -30,6 +31,10 @@ function harness() {
     refreshMemoryForCurrentChat: noop,
     rollbackSummariesFromMessage: noop,
     cancelSummarizationForChatChange: noop,
+    invalidateAndResummarizeMessage: async message_id => {
+      calls.push({ message_id, resummarize: true });
+      return null;
+    },
     summarizeReceivedMessage: async message_id => {
       calls.push({ message_id, content: messages.get(message_id) });
       return null;
@@ -38,7 +43,7 @@ function harness() {
   const imports = {
     '@sillytavern/script': { eventSource, event_types: new Proxy({}, { get: (_, key) => key }) },
     '@/core/summary': summary,
-    '@/store/settings': { useSettingsStore: () => ({ settings: { filter: {} } }) },
+    '@/store/settings': { useSettingsStore: () => ({ settings }) },
     '@/type/settings': { isOpeningMessageCompressionEnabled: () => false },
     '@/core/message-flags': { isCosmosMemoryMessage: () => false },
     '@/core/filter': {
@@ -83,6 +88,7 @@ function harness() {
     calls,
     errors,
     summary,
+    settings,
     async flush() {
       for (const [id, callback] of [...timers]) {
         timers.delete(id);
@@ -134,4 +140,15 @@ test('事件预处理异常有用户提示，不留下未处理的 Promise 拒�
   await h.eventSource.emit('MESSAGE_RECEIVED', 2, 'normal');
   await h.flush();
   assert.deepEqual(h.errors, ['消息读取失败']);
+});
+
+test('编辑事件只在开启编辑后重新总结时调用失效与重新生成逻辑', async () => {
+  const h = harness();
+  h.messages.set(2, '编辑后的正文');
+  await h.eventSource.emit('MESSAGE_EDITED', 2);
+  assert.equal(h.calls.length, 0);
+  h.settings.summary.resummarize_on_edit = true;
+  await h.eventSource.emit('MESSAGE_EDITED', 2);
+  assert.deepEqual(h.calls, [{ message_id: 2, resummarize: true }]);
+  assert.deepEqual(h.errors, []);
 });

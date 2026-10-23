@@ -72,6 +72,76 @@ test('取消后旧请求的完成不会清除新请求状态或写入旧结果',
   assert.equal(core.getMessageSummaryStatus(80), undefined);
 });
 
+test('关闭编辑后重新总结时，正文变化不取消进行中的请求或失败重试', async () => {
+  for (const fail_first of [false, true]) {
+    let resolve_request;
+    let reject_request;
+    const h = harness(() => {
+      if (h.calls.length > 1) return JSON.stringify({ summary: '原快照的摘要' });
+      return new Promise((resolve, reject) => {
+        resolve_request = resolve;
+        reject_request = reject;
+      });
+    });
+    assert.equal(h.settings.summary.resummarize_on_edit, false);
+    const core = h.load('@/core/summary');
+    const task = core.summarizeReceivedMessage(80);
+    while (!resolve_request) await new Promise(resolve => setImmediate(resolve));
+    h.state.messages.get(80).swipes[0] = '编辑后的正文';
+    assert.equal(core.getMessageSummaryStatus(80).state, 'summarizing');
+    assert.equal(core.summarizeReceivedMessage(80), task);
+    if (fail_first) reject_request(new Error('临时网络错误'));
+    else resolve_request(JSON.stringify({ summary: '原快照的摘要' }));
+    assert.equal((await task).summary, '原快照的摘要');
+    assert.equal(core.getStoredMessageSummaries()[0].summary, '原快照的摘要');
+    assert.equal(h.calls.length, fail_first ? 2 : 1);
+    assert.equal(h.stopped.length, 0);
+    assert.equal(core.getMessageSummaryStatus(80), undefined);
+  }
+});
+
+test('开启编辑后重新总结时，首次总结尚未保存也会停止旧请求并生成新正文摘要', async () => {
+  const pending = [];
+  const h = harness(() => new Promise(resolve => pending.push(resolve)));
+  h.settings.summary.resummarize_on_edit = true;
+  const core = h.load('@/core/summary');
+  const old = core.summarizeReceivedMessage(80);
+  const old_finished = old.catch(() => null);
+  while (pending.length < 1) await new Promise(resolve => setImmediate(resolve));
+  h.state.messages.get(80).swipes[0] = '编辑后的正文';
+  const current = core.invalidateAndResummarizeMessage(80);
+  while (pending.length < 2) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.stopped.length, 1);
+  assert.equal(h.stopped[0], h.calls[0].generation_id);
+  assert.ok(h.calls[1].ordered_prompts.some(prompt => prompt.content.includes('编辑后的正文')));
+  pending[0](JSON.stringify({ summary: '旧正文摘要' }));
+  await old_finished;
+  assert.equal(core.getStoredMessageSummaries().length, 0);
+  assert.equal(core.getMessageSummaryStatus(80).state, 'summarizing');
+  pending[1](JSON.stringify({ summary: '新正文摘要' }));
+  assert.equal((await current).summary, '新正文摘要');
+  assert.equal(core.getStoredMessageSummaries()[0].summary, '新正文摘要');
+});
+
+test('正文编辑不影响请求时，切换聊天、切换分支和删除楼层仍阻止旧结果保存', async () => {
+  for (const change of [
+    h => { h.state.chat_id = 'chat-b'; },
+    h => { h.state.messages.get(80).swipe_id = 1; },
+    h => { h.state.messages.delete(80); },
+  ]) {
+    let resolve_request;
+    const h = harness(() => new Promise(resolve => { resolve_request = resolve; }));
+    const core = h.load('@/core/summary');
+    const task = core.summarizeReceivedMessage(80);
+    while (!resolve_request) await new Promise(resolve => setImmediate(resolve));
+    change(h);
+    resolve_request(JSON.stringify({ summary: '过期摘要' }));
+    await assert.rejects(task, { name: 'AbortError' });
+    assert.equal(core.getStoredMessageSummaries().length, 0);
+    assert.equal(core.getMessageSummaryStatus(80), undefined);
+  }
+});
+
 const pathParts = path => (Array.isArray(path) ? path : path.split('.'));
 const lodash = {
   get(object, path, fallback) {

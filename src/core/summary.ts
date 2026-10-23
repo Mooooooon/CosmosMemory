@@ -77,7 +77,9 @@ export function getMessageSummaryStatus(message_id: number): MessageSummaryStatu
     return undefined;
   }
   const message = window.TavernHelper.getChatMessages(message_id, { include_swipes: false })[0];
-  return message?.message === status.content ? status : undefined;
+  // 进行中的请求使用启动时的正文快照；编辑是否重启请求由编辑事件和设置决定。
+  // 失败状态仍只属于原正文，避免编辑后显示旧内容的错误。
+  return message && (status.state === 'summarizing' || message.message === status.content) ? status : undefined;
 }
 
 const cancelled_message_ids = new Set<number>();
@@ -738,13 +740,16 @@ export function summarizeReceivedMessage(message_id: number): Promise<MessageSum
     state: 'summarizing',
   };
   const is_current_task = (): boolean => summarizing_messages.get(message_id)?.promise === promise;
-  const promise: Promise<MessageSummary | null> = summarizeReceivedMessageCore(
-    message_id,
-    generation_id,
-    () => !is_current_task() || getMessageSummaryStatus(message_id) !== status,
-  )
+  // 任务生命周期独立于展示状态：关闭「编辑后重新总结」时，正文变化不应取消请求。
+  // 即使没有收到对应事件，聊天切换、分支切换或删楼也不能让旧结果落库。
+  const should_cancel = (): boolean =>
+    !is_current_task() ||
+    safeGetCurrentChatId() !== status.chat_id ||
+    getActiveSwipeId(message_id) !== status.swipe_id ||
+    window.TavernHelper.getChatMessages(message_id, { include_swipes: false })[0]?.role !== 'assistant';
+  const promise: Promise<MessageSummary | null> = summarizeReceivedMessageCore(message_id, generation_id, should_cancel)
     .catch(error => {
-      if (is_current_task() && getMessageSummaryStatus(message_id) === status) {
+      if (!should_cancel() && message_summary_statuses.get(message_id) === status) {
         message_summary_statuses.set(message_id, {
           ...status,
           state: 'failed',
@@ -838,11 +843,11 @@ function deleteMessageSummary(message_id: number) {
 /**
  * 楼层内容被编辑后调用：取消基于旧内容的进行中任务、删除旧摘要、
  * 全量重放剩余摘要（回滚旧摘要的实体变更），最后基于新内容重新总结。
- * 没有摘要的楼层（如保留窗口内的近期楼层）不受影响。
+ * 尚无摘要且没有进行中任务的楼层不受影响；首次总结期间编辑也会重启任务。
  * 同时失效当前激活分支的缓存项（该分支内容已变），其余分支缓存保留以便切回复用。
  */
 export async function invalidateAndResummarizeMessage(message_id: number): Promise<MessageSummary | null> {
-  if (!getStoredSummaryIds().has(message_id)) {
+  if (!getStoredSummaryIds().has(message_id) && !summarizing_messages.has(message_id)) {
     return null;
   }
 
