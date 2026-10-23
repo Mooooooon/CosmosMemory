@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createContext, runInContext } from 'node:vm';
 import * as ts from 'typescript';
 import { z } from 'zod';
+import * as yaml from 'yaml';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -30,6 +31,7 @@ function setupContext(mockFormatAsTavernRegexedString, summarySettings = {}) {
 
   const modules = new Map();
   function load(id) {
+    if (id === 'yaml') return yaml;
     if (id === '@sillytavern/script') return { event_types: {}, eventSource: {}, getCurrentChatId: () => 'chat-1' };
     if (id === '@sillytavern/scripts/utils') return { getStringHash: s => `hash_${s}` };
     if (id === '@sillytavern/scripts/tokenizers')

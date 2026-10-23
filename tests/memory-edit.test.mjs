@@ -8,6 +8,7 @@ import { createContext, runInContext } from 'node:vm';
 import { webcrypto } from 'node:crypto';
 import * as ts from 'typescript';
 import { z } from 'zod';
+import * as yaml from 'yaml';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -231,6 +232,7 @@ function harness(responder) {
   });
   const modules = new Map();
   function load(id) {
+    if (id === 'yaml') return yaml;
     if (id === '@sillytavern/script')
       return { getCurrentChatId: () => state.chat_id, event_types: {}, eventSource: {} };
     if (id === '@sillytavern/scripts/utils')

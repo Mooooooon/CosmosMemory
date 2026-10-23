@@ -11,6 +11,7 @@ export type ReasoningEffortOption = (typeof REASONING_EFFORT_OPTIONS)[number];
 export const CUSTOM_API_SOURCE_OPTIONS = [
   'auto',
   'openai',
+  'custom',
   'deepseek',
   'claude',
   'openrouter',
@@ -27,6 +28,9 @@ export const AiSettings = z
     custom_api_url: z.string().default(DEFAULT_CUSTOM_API_URL),
     custom_api_key: z.string().default(''),
     custom_api_source: z.enum(CUSTOM_API_SOURCE_OPTIONS).default('auto'),
+    custom_include_body: z.string().default(''),
+    custom_exclude_body: z.string().default(''),
+    custom_include_headers: z.string().default(''),
     selected_model: z.string().default(''),
     available_models: z.array(z.string()).default([]),
     max_output_tokens: z.number().int().min(1).default(DEFAULT_MAX_OUTPUT_TOKENS),

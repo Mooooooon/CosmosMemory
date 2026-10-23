@@ -1,5 +1,6 @@
 import type { AiSettings, ReasoningEffortOption } from '@/type/settings';
 import { retryAiRequest } from '@/api/retry';
+import { parseCustomApiParameters } from '@/api/custom-parameters';
 import { formatMemoryInstructions, type MemoryInstruction } from '@/core/memory-instructions';
 import {
   CharacterOperationsResponse,
@@ -423,12 +424,20 @@ function buildCustomApi(settings: AiSettings): CustomApi | undefined {
     throw new Error(t`请选择模型。`);
   }
 
+  const custom_parameters =
+    resolveCustomApiSource(settings) === 'custom' ? parseCustomApiParameters(settings) : undefined;
+
   return {
     apiurl,
     key: key || undefined,
     model,
     source: resolveCustomApiSource(settings),
     max_tokens: settings.max_output_tokens,
+    ...(custom_parameters && {
+      ...custom_parameters,
+      // 显式覆盖酒馆全局自定义源参数，包括空配置，避免继承无关请求头和密钥。
+      custom_include_headers: { Authorization: `Bearer ${key}`, ...custom_parameters.custom_include_headers },
+    }),
   };
 }
 

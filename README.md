@@ -29,6 +29,7 @@
 6. **双语支持与自定义 API**
    - 拥有完整的中英双语本地化支持（i18n）。
    - 默认直接复用酒馆当前启用的 API，也支持配置自定义独立的 OpenAI 兼容端点（如 DeepSeek 等），支持模型列表拉取与连接测试。
+   - API 源选择“自定义”后，可用 YAML / JSON 追加请求体、排除根字段和追加请求头。例如支持该参数的接口可填写 `enable_thinking: false` 关闭思考；具体参数以服务商文档为准。
 
 ### 工作原理
 
@@ -64,6 +65,7 @@ By analyzing the narrative context of the chat, the extension extracts key story
 6. **Localization & Custom API Support**
    - Full i18n support for both Simplified Chinese and English.
    - Seamlessly uses the active SillyTavern API configuration, or connects to a custom OpenAI-compatible endpoint (e.g., DeepSeek) with model fetching and connectivity tests.
+   - Select the Custom API source to add body parameters, exclude root fields, and add request headers using YAML / JSON. For example, APIs that support it can use `enable_thinking: false` to disable thinking; consult your provider's documentation for the exact parameters.
 
 ### How It Works
 

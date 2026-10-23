@@ -399,6 +399,12 @@ type CustomApiConfig = {
   presence_penalty?: 'same_as_preset' | 'unset' | number;
   top_p?: 'same_as_preset' | 'unset' | number;
   top_k?: 'same_as_preset' | 'unset' | number;
+  /** 仅 source === 'custom' 时有效：额外覆盖请求体参数 */
+  custom_include_body?: Record<string, unknown>;
+  /** 仅 source === 'custom' 时有效：排除请求体的根字段 */
+  custom_exclude_body?: string[];
+  /** 仅 source === 'custom' 时有效：额外覆盖请求头 */
+  custom_include_headers?: Record<string, unknown>;
 };
 
 /**

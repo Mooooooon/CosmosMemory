@@ -57,13 +57,17 @@
           <span>{{ t`API 源` }}</span>
           <select v-model="settings.ai.custom_api_source" class="text_pole">
             <option value="auto">{{ t`自动推断` }}</option>
-            <option v-for="source in custom_api_source_options" :key="source" :value="source">{{ source }}</option>
+            <option v-for="source in custom_api_source_options" :key="source" :value="source">
+              {{ source === 'custom' ? t`自定义` : source }}
+            </option>
           </select>
         </label>
 
         <div class="cosmos-memory-hint">
           {{ t`自定义端点的 API 类型。自动推断只能识别 deepseek，其他端点请求失败时请手动选择。` }}
         </div>
+
+        <CustomApiParameters v-if="resolved_custom_api_source === 'custom'" />
 
         <label class="cosmos-memory-field">
           <span>{{ t`思考级别` }}</span>
@@ -86,6 +90,9 @@
         </div>
         <div v-else-if="resolved_custom_api_source === 'openai'" class="cosmos-memory-hint">
           {{ t`OpenAI：级别会转换为 Chat Completions 的 reasoning_effort 参数。` }}
+        </div>
+        <div v-else-if="resolved_custom_api_source === 'custom'" class="cosmos-memory-hint">
+          {{ t`自定义源请通过追加请求体配置思考参数。` }}
         </div>
         <div v-else class="cosmos-memory-hint">
           {{ t`思考级别暂支持 OpenAI 和 DeepSeek API 源。` }}
@@ -203,6 +210,7 @@
 import { fetchCustomModelNames, resolveCustomApiSource, sendPing } from '@/api/ai';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
 import ModelSelectInput from '@/panel/ModelSelectInput.vue';
+import CustomApiParameters from '@/panel/CustomApiParameters.vue';
 import { useSettingsStore } from '@/store/settings';
 import {
   CUSTOM_API_SOURCE_OPTIONS,

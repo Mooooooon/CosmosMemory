@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { createContext, runInContext } from 'node:vm';
 import * as ts from 'typescript';
 import { z } from 'zod';
+import * as yaml from 'yaml';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -41,6 +42,7 @@ function harness(responses, settings_patch = {}) {
   });
   const modules = new Map();
   function load(id) {
+    if (id === 'yaml') return yaml;
     if (id === '@sillytavern/script') return { event_types: {}, eventSource: {} };
     if (id === '@sillytavern/scripts/utils') return { getStringHash: value => value.length };
     assert.ok(id.startsWith('@/'), `Unexpected import: ${id}`);
@@ -229,4 +231,91 @@ test('自定义端点缺少配置时直接报错', async () => {
   await assert.rejects(generation_cases[0].run(h), /端点/);
   assert.equal(h.calls.length, 0);
   assert.equal(h.notices.length, 0);
+});
+
+const custom_settings = {
+  use_tavern_api: false,
+  custom_api_source: 'custom',
+  selected_model: 'test-model',
+  custom_api_key: 'test-key',
+};
+
+test('自定义源：YAML / JSON 参数传给酒馆助手，保留 false、嵌套对象和排除字段', async () => {
+  for (const body of [
+    'enable_thinking: false\nthinking:\n  type: disabled\ntemperature: 0',
+    '{"enable_thinking":false,"thinking":{"type":"disabled"},"temperature":0}',
+  ]) {
+    const h = harness(['pong'], {
+      ...custom_settings,
+      custom_include_body: body,
+      custom_exclude_body: '- frequency_penalty\n- presence_penalty',
+      custom_include_headers: 'X-Test: custom-value',
+      reasoning_effort: 'off',
+    });
+    await h.api.sendPing(h.settings);
+    const options = h.calls[0].custom_api;
+    assert.equal(options.source, 'custom');
+    assert.equal(options.custom_include_body.enable_thinking, false);
+    assert.equal(options.custom_include_body.thinking.type, 'disabled');
+    assert.equal(options.custom_include_body.temperature, 0);
+    assert.equal(options.custom_exclude_body.join(','), 'frequency_penalty,presence_penalty');
+    assert.equal(options.custom_include_headers.Authorization, 'Bearer test-key');
+    assert.equal(options.custom_include_headers['X-Test'], 'custom-value');
+  }
+});
+
+test('自定义源：留空显式清除酒馆附加配置，不继承全局自定义源密钥', async () => {
+  const h = harness(['pong'], { ...custom_settings, custom_api_key: '' });
+  await h.api.sendPing(h.settings);
+  const options = h.calls[0].custom_api;
+  assert.equal(Object.keys(options.custom_include_body).length, 0);
+  assert.equal(options.custom_exclude_body.length, 0);
+  assert.equal(options.custom_include_headers.Authorization, 'Bearer ');
+});
+
+test('自定义源：追加请求头可以覆盖密钥自动生成的 Authorization', async () => {
+  for (const name of ['Authorization', 'authorization']) {
+    const h = harness(['pong'], {
+      ...custom_settings,
+      custom_include_headers: `${name}: Bearer override\ncontent-type: application/json`,
+    });
+    await h.api.sendPing(h.settings);
+    const headers = h.calls[0].custom_api.custom_include_headers;
+    assert.equal(headers.Authorization, 'Bearer override');
+    assert.equal(headers['Content-Type'], 'application/json');
+    assert.equal(Object.keys(headers).length, 2);
+  }
+});
+
+test('自定义源：错误配置在发送前拒绝，不重试且不回显原始值', async () => {
+  for (const patch of [
+    { custom_include_body: 'secret: [sensitive-value' },
+    { custom_include_body: '["sensitive-value"]' },
+    { custom_include_body: 'null' },
+    { custom_exclude_body: '{"sensitive-value":true}' },
+    { custom_exclude_body: '[42]' },
+    { custom_include_headers: 'Authorization: [sensitive-value]' },
+  ]) {
+    const h = harness(['pong'], { ...custom_settings, ...patch });
+    await assert.rejects(h.api.summarizeMessage(h.settings, '剧情'), error => {
+      assert.match(error.message, /无效/);
+      assert.doesNotMatch(error.message, /sensitive-value/);
+      return true;
+    });
+    assert.equal(h.calls.length, 0);
+    assert.equal(h.notices.length, 0);
+  }
+});
+
+test('酒馆 API 与其他源忽略自定义参数；切回自定义源仍保留配置', async () => {
+  for (const patch of [{ use_tavern_api: true }, { custom_api_source: 'openai' }]) {
+    const h = harness(['pong'], { ...custom_settings, custom_include_body: 'invalid: [', ...patch });
+    await h.api.sendPing(h.settings);
+    assert.equal(h.calls.length, 1);
+    assert.equal(h.calls[0].custom_api?.custom_include_body, undefined);
+    h.settings.use_tavern_api = false;
+    h.settings.custom_api_source = 'custom';
+    await assert.rejects(h.api.sendPing(h.settings), /追加请求体无效/);
+    assert.equal(h.calls.length, 1);
+  }
 });

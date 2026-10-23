@@ -20,6 +20,9 @@ importers:
       vue:
         specifier: ^3.5.44
         version: 3.5.44(typescript@6.0.0-dev.20250807)
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -96,9 +99,6 @@ importers:
       vue-eslint-parser:
         specifier: ^10.4.1
         version: 10.4.1(eslint@9.39.5)
-      yaml:
-        specifier: ^2.9.1
-        version: 2.9.1
 
 packages:
 
