@@ -28,7 +28,7 @@
     "globals": "^16.5.0",
     "prettier": "^3.9.10",
     "terser": "^5.51.2",
-    "tslib": "^2.8.1",
+    "tslib": "^2.9.1",
     "typescript": "6.0.0-dev.20250807",
     "typescript-eslint": "^8.72.1",
     "unplugin-auto-import": "^20.3.0",
