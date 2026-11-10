@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import type {
   LiteralUnion as TypeFestLiteralUnion,
   PartialDeep as TypeFestPartialDeep,
@@ -28,3 +29,7 @@ declare global {
 }
 
 export {};
+=======
+declare const hljs: typeof import('highlight.js').default;
+declare const Popper: typeof import('@popperjs/core');
+>>>>>>> 6661c4bed4631109d0e13dccff2d6cc5b5b85fd9
