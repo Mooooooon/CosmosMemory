@@ -20,9 +20,20 @@
 
       <div v-else class="cosmos-sub-card">
         <label class="cosmos-memory-field">
+          <span>{{ t`API 源` }}</span>
+          <select v-model="settings.ai.custom_api_source" class="text_pole">
+            <option value="auto">{{ t`自动推断` }}</option>
+            <option v-for="source in custom_api_source_options" :key="source" :value="source">
+              {{ source === 'opencode' ? 'OpenCode Go' : source === 'custom' ? t`自定义` : source }}
+            </option>
+          </select>
+        </label>
+
+        <label class="cosmos-memory-field">
           <span>{{ t`自定义端点` }}</span>
           <input
-            v-model.trim="settings.ai.custom_api_url"
+            v-model.trim="custom_api_url"
+            :readonly="is_opencode_source"
             class="text_pole"
             type="url"
             placeholder="https://api.deepseek.com/v1"
@@ -39,7 +50,7 @@
             class="menu_button"
             type="button"
             :value="is_fetching_models ? t`获取中...` : t`获取模型列表`"
-            :disabled="is_fetching_models || !settings.ai.custom_api_url.trim()"
+            :disabled="is_fetching_models || !custom_api_url"
             @click="handle_fetch_models"
           />
         </div>
@@ -53,18 +64,13 @@
           />
         </label>
 
-        <label class="cosmos-memory-field">
-          <span>{{ t`API 源` }}</span>
-          <select v-model="settings.ai.custom_api_source" class="text_pole">
-            <option value="auto">{{ t`自动推断` }}</option>
-            <option v-for="source in custom_api_source_options" :key="source" :value="source">
-              {{ source === 'custom' ? t`自定义` : source }}
-            </option>
-          </select>
-        </label>
-
-        <div class="cosmos-memory-hint">
-          {{ t`自定义端点的 API 类型。自动推断只能识别 deepseek，其他端点请求失败时请手动选择。` }}
+        <div v-if="is_opencode_source" class="cosmos-memory-hint">
+          {{
+            t`OpenCode Go 使用官方端点，自动携带 CosmosMemory/版本号和当前聊天的 x-opencode-session。请填写 Go 套餐密钥并获取模型列表。`
+          }}
+        </div>
+        <div v-else class="cosmos-memory-hint">
+          {{ t`自定义端点的 API 类型。自动推断支持 OpenCode Go 和 deepseek，其他端点请求失败时请手动选择。` }}
         </div>
 
         <CustomApiParameters v-if="resolved_custom_api_source === 'custom'" />
@@ -207,7 +213,7 @@
 </template>
 
 <script setup lang="ts">
-import { fetchCustomModelNames, resolveCustomApiSource, sendPing } from '@/api/ai';
+import { fetchCustomModelNames, resolveCustomApiSource, resolveCustomApiUrl, sendPing } from '@/api/ai';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
 import ModelSelectInput from '@/panel/ModelSelectInput.vue';
 import CustomApiParameters from '@/panel/CustomApiParameters.vue';
@@ -240,6 +246,13 @@ const model_options = computed(() => {
 });
 
 const resolved_custom_api_source = computed(() => resolveCustomApiSource(settings.value.ai));
+const is_opencode_source = computed(() => resolved_custom_api_source.value === 'opencode');
+const custom_api_url = computed({
+  get: () => resolveCustomApiUrl(settings.value.ai),
+  set: value => {
+    if (!is_opencode_source.value) settings.value.ai.custom_api_url = value;
+  },
+});
 const is_reasoning_effort_supported = computed(() => ['openai', 'deepseek'].includes(resolved_custom_api_source.value));
 
 const is_ai_request_disabled = computed(() => {
@@ -247,7 +260,11 @@ const is_ai_request_disabled = computed(() => {
     return false;
   }
 
-  return !settings.value.ai.custom_api_url.trim() || !settings.value.ai.selected_model.trim();
+  return (
+    !custom_api_url.value ||
+    !settings.value.ai.selected_model.trim() ||
+    (is_opencode_source.value && !settings.value.ai.custom_api_key.trim())
+  );
 });
 
 const is_test_disabled = computed(() => {

@@ -1,6 +1,12 @@
 import type { AiSettings, ReasoningEffortOption } from '@/type/settings';
 import { retryAiRequest } from '@/api/retry';
 import { parseCustomApiParameters } from '@/api/custom-parameters';
+import {
+  buildOpenCodeHeaders,
+  fetchOpenCodeModelNames,
+  OPENCODE_API_SOURCE,
+  OPENCODE_GO_API_URL,
+} from '@/api/opencode';
 import { formatMemoryInstructions, type MemoryInstruction } from '@/core/memory-instructions';
 import {
   CharacterOperationsResponse,
@@ -321,9 +327,18 @@ const FULL_CHARACTER_JSON_INSTRUCTION =
   '请从以下剧情记录中整理所有需要保存的人物，输出去重、去噪后的最终列表，只返回 JSON。规则：同一角色若有更名，只保留最终名称；重复条目须合并；已死亡或永久离场的角色不输出；每个角色只出现一次。格式：{"characters":[{"type":"primary|secondary","name":"姓名或身份（仅最终名称）","background":"主要角色背景：身份地位、种族、职业、家庭关系、重要经历，没有则为空字符串","appearance":"主要角色外貌：身高体型、发色发型、瞳色肤色、面部特征、标志性穿着，没有则为空字符串","personality":"主要角色性格：核心特质、说话方式、行为习惯、价值观，没有则为空字符串","brief":"次要角色简介，没有则为空字符串"}]}。不要使用 Markdown 代码块，不要返回额外解释。';
 
 export function resolveCustomApiSource(settings: AiSettings): string {
-  // 用户手动指定的源优先；自动推断仅作兜底：识别 deepseek，其余一律按 openai 处理
+  // 用户手动指定的源优先；OpenCode Go 必须先于模型名推断，避免 DeepSeek 模型被误判。
   if (settings.custom_api_source !== 'auto') {
     return settings.custom_api_source;
+  }
+
+  try {
+    const url = new URL(settings.custom_api_url.trim());
+    if (url.hostname === 'opencode.ai' && /^\/(?:inference\/go|zen\/go)(?:\/|$)/.test(url.pathname)) {
+      return OPENCODE_API_SOURCE;
+    }
+  } catch {
+    // 未填写完整 URL 时仍允许按模型名推断。
   }
 
   const target = `${settings.custom_api_url} ${settings.selected_model}`.toLowerCase();
@@ -332,6 +347,12 @@ export function resolveCustomApiSource(settings: AiSettings): string {
   }
 
   return DEFAULT_CUSTOM_API_SOURCE;
+}
+
+export function resolveCustomApiUrl(settings: AiSettings): string {
+  return resolveCustomApiSource(settings) === OPENCODE_API_SOURCE
+    ? OPENCODE_GO_API_URL
+    : settings.custom_api_url.trim();
 }
 
 function buildReasoningRequestOverride(settings: AiSettings): ReasoningRequestOverride | undefined {
@@ -413,7 +434,7 @@ function buildCustomApi(settings: AiSettings): CustomApi | undefined {
     return undefined;
   }
 
-  const apiurl = settings.custom_api_url.trim();
+  const apiurl = resolveCustomApiUrl(settings);
   if (!apiurl) {
     throw new Error(t`请先填写自定义端点。`);
   }
@@ -422,6 +443,19 @@ function buildCustomApi(settings: AiSettings): CustomApi | undefined {
   const model = settings.selected_model.trim();
   if (!model) {
     throw new Error(t`请选择模型。`);
+  }
+
+  if (resolveCustomApiSource(settings) === OPENCODE_API_SOURCE) {
+    return {
+      apiurl,
+      key,
+      model,
+      source: 'custom',
+      max_tokens: settings.max_output_tokens,
+      custom_include_body: {},
+      custom_exclude_body: [],
+      custom_include_headers: buildOpenCodeHeaders(key),
+    };
   }
 
   const custom_parameters =
@@ -442,6 +476,10 @@ function buildCustomApi(settings: AiSettings): CustomApi | undefined {
 }
 
 export async function fetchCustomModelNames(settings: AiSettings): Promise<string[]> {
+  if (resolveCustomApiSource(settings) === OPENCODE_API_SOURCE) {
+    return fetchOpenCodeModelNames(settings.custom_api_key);
+  }
+
   const apiurl = settings.custom_api_url.trim();
   if (!apiurl) {
     throw new Error(t`请先填写自定义端点。`);

@@ -1,4 +1,9 @@
 {
+  "请先填写 OpenCode Go 密钥。": "Enter your OpenCode Go API key first.",
+  "OpenCode Go 模型列表获取失败。": "Failed to fetch OpenCode Go models.",
+  "OpenCode Go 模型列表无效或为空，请检查密钥和套餐状态。": "The OpenCode Go model list is invalid or empty. Check your API key and subscription.",
+  "OpenCode Go 使用官方端点，自动携带 CosmosMemory/版本号和当前聊天的 x-opencode-session。请填写 Go 套餐密钥并获取模型列表。": "OpenCode Go uses the official endpoint and automatically sends CosmosMemory/version and the current chat's x-opencode-session. Enter your Go API key and fetch the model list.",
+  "自定义端点的 API 类型。自动推断支持 OpenCode Go 和 deepseek，其他端点请求失败时请手动选择。": "API type for the custom endpoint. Auto-detection supports OpenCode Go and deepseek. Select other sources manually if requests fail.",
   "自定义": "Custom",
   "追加请求体": "Include body parameters",
   "排除请求体字段": "Exclude body parameters",

@@ -1,5 +1,6 @@
 import vue from '@vitejs/plugin-vue';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import unpluginAutoImport from 'unplugin-auto-import/vite';
 import unpluginVueComponents from 'unplugin-vue-components/vite';
 import { defineConfig } from 'vite';
@@ -17,6 +18,11 @@ const relative_sillytavern_path = path.relative(
 );
 
 export default defineConfig(({ mode }) => ({
+  define: {
+    __COSMOS_MEMORY_VERSION__: JSON.stringify(
+      JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version,
+    ),
+  },
   plugins: [
     vue({
       features: {

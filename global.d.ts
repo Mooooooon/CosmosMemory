@@ -7,6 +7,7 @@ import type {
 } from 'type-fest';
 
 declare global {
+  const __COSMOS_MEMORY_VERSION__: string;
   // 酒馆源码中的 toastr.options 赋值会推断出不完整的同名命名空间，
   // 显式采用 @types/toastr 的完整 API，同时声明浏览器全局属性。
   const toastr: typeof import('toastr');

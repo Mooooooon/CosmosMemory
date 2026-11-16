@@ -30,6 +30,7 @@
    - 拥有完整的中英双语本地化支持（i18n）。
    - 默认直接复用酒馆当前启用的 API，也支持配置自定义独立的 OpenAI 兼容端点（如 DeepSeek 等），支持模型列表拉取与连接测试。
    - API 源选择“自定义”后，可用 YAML / JSON 追加请求体、排除根字段和追加请求头。例如支持该参数的接口可填写 `enable_thinking: false` 关闭思考；具体参数以服务商文档为准。
+   - 接入 OpenCode Go：关闭“是否使用酒馆API”，将 API 源选为“OpenCode Go”，填写 Go 套餐密钥，获取模型列表并选择模型。插件使用官方 OpenAI 兼容端点，经酒馆后端自动发送 `User-Agent: CosmosMemory/当前版本号` 和 `x-opencode-session`；会话标识随当前聊天保存，切换聊天会分别使用各自标识，无聊天时的连接测试使用页面级标识。OpenCode Go 的[使用范围说明](https://opencode.ai/docs/console/go/#where-can-i-use-it)要求编程代理类流量，剧情总结用途是否可用以服务方规则为准。
 
 ### 工作原理
 

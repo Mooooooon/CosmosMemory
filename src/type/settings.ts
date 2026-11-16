@@ -7,11 +7,12 @@ export const MAX_AI_RETRY_COUNT = 10;
 export const REASONING_EFFORT_OPTIONS = ['auto', 'off', 'low', 'medium', 'high', 'max'] as const;
 export type ReasoningEffortOption = (typeof REASONING_EFFORT_OPTIONS)[number];
 
-/** 自定义端点的 API 源选项；auto 表示按端点/模型名自动推断（仅识别 deepseek，其余按 openai 处理） */
+/** 自定义端点的 API 源选项；auto 按端点/模型名推断，OpenCode Go 使用专用源 */
 export const CUSTOM_API_SOURCE_OPTIONS = [
   'auto',
   'openai',
   'custom',
+  'opencode',
   'deepseek',
   'claude',
   'openrouter',
