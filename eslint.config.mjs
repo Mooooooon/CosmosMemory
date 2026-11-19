@@ -1,6 +1,10 @@
 import js from '@eslint/js';
 import tsParser from '@typescript-eslint/parser';
 import eslintConfigPrettier from 'eslint-config-prettier';
+<<<<<<< HEAD
+=======
+import eslintPluginBetterTailwindcss from 'eslint-plugin-better-tailwindcss';
+>>>>>>> 6b6b4f6935e1060610dc27bba322796bd0e2ce27
 import importx from 'eslint-plugin-import-x';
 import pinia from 'eslint-plugin-pinia';
 import vue from 'eslint-plugin-vue';
@@ -18,6 +22,26 @@ export default [
   ...vue.configs['flat/recommended'],
   pinia.configs['recommended-flat'],
   {
+<<<<<<< HEAD
+=======
+    plugins: {
+      'better-tailwindcss': eslintPluginBetterTailwindcss,
+    },
+    rules: {
+      ...eslintPluginBetterTailwindcss.configs['recommended-warn'].rules,
+      ...eslintPluginBetterTailwindcss.configs['recommended-error'].rules,
+      'better-tailwindcss/enforce-consistent-line-wrapping': ['off', { printWidth: 120 }],
+      'better-tailwindcss/no-unregistered-classes': ['off', { ignore: ['fa-*'] }],
+    },
+    settings: {
+      'better-tailwindcss': {
+        entryPoint: 'src/global.css',
+        tailwindConfig: 'tailwind.config.js',
+      },
+    },
+  },
+  {
+>>>>>>> 6b6b4f6935e1060610dc27bba322796bd0e2ce27
     languageOptions: {
       parser: vueParser,
       parserOptions: {
@@ -56,5 +80,9 @@ export default [
     },
   },
   eslintConfigPrettier,
+<<<<<<< HEAD
   globalIgnores(['dist/**', 'node_modules/**', 'eslint.config.mjs', 'vite.config.ts']),
+=======
+  globalIgnores(['dist/**', 'node_modules/**', 'eslint.config.mjs', 'postcss.config.js', 'vite.config.ts']),
+>>>>>>> 6b6b4f6935e1060610dc27bba322796bd0e2ce27
 ];
