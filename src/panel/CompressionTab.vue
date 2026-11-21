@@ -107,14 +107,14 @@
           class="menu_button"
           type="button"
           :value="is_rolling_up ? t`二次总结中...` : t`立即二次总结`"
-          :disabled="is_rollup_request_running || is_ai_request_disabled"
+          :disabled="settings.summary_paused || is_rollup_request_running || is_ai_request_disabled"
           @click="handle_run_rollup"
         />
         <input
           class="menu_button"
           type="button"
           :value="is_regenerating_rollups ? t`重新生成二次总结中...` : t`重新生成二次总结`"
-          :disabled="is_rollup_request_running || is_ai_request_disabled"
+          :disabled="settings.summary_paused || is_rollup_request_running || is_ai_request_disabled"
           @click="handle_regenerate_rollups"
         />
       </div>
@@ -153,6 +153,7 @@ function handle_compression_toggle() {
 }
 
 async function handle_opening_message_toggle() {
+  const signal = useSettingsStore().getMemoryGenerationSignal();
   const is_enabled = settings.value.compression.include_opening_message;
   // 同步 Summary 设置保持一致
   settings.value.summary.include_opening_message_original = is_enabled;
@@ -160,6 +161,7 @@ async function handle_opening_message_toggle() {
   if (is_enabled) {
     try {
       await runMemoryBacktrackCheck();
+      if (signal.aborted) return;
       await applySummaryCompressionForNextGeneration(settings.value.compression.enabled);
     } catch (error) {
       console.error('[CosmosMemory] 开启开场白压缩失败', error);

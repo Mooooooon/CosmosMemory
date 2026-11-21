@@ -1,4 +1,4 @@
-import { applySummaryCompressionForNextGeneration } from '@/core/compression';
+import { applySummaryCompressionForNextGeneration, clearInjectedSummaryPrompts } from '@/core/compression';
 import { resetMemoryEditForChatChange } from '@/core/memory-edit';
 import {
   cancelSummarizationForChatChange,
@@ -19,11 +19,10 @@ import { isOpeningMessageCompressionEnabled } from '@/type/settings';
 import { stopSummaryRollupTask, triggerSummaryRollupIfNeeded } from '@/core/summary-rollup';
 import { event_types, eventSource } from '@sillytavern/script';
 import { initStatusBar, triggerUpdateStatusBar } from '@/core/status-bar';
-import { applyRuntimeMemoryPromptInjection } from '@/core/runtime-memory';
+import { applyRuntimeMemoryPromptInjection, clearRuntimeMemoryPrompts } from '@/core/runtime-memory';
 import { migrateStoredLocationsIfNeeded } from '@/core/locations';
-import { isCosmosMemoryMessage } from '@/core/message-flags';
+import { excludeReplyFromMemory, isCosmosMemoryMessage, isExcludedFromMemory } from '@/core/message-flags';
 import {
-  cancelPendingAutoRetry,
   evaluateMessageFilter,
   isGenerationActive,
   markGenerationStoppedByUser,
@@ -35,6 +34,7 @@ import {
 import {
   applyVectorRecallForNextGeneration,
   cancelVectorSyncForChatChange,
+  clearVectorRecallPrompt,
   triggerVectorSyncDebounced,
 } from '@/core/vector-recall';
 
@@ -57,6 +57,24 @@ function cancelPendingReceivedMessages(first_message_id = 0) {
 
 function scheduleMessageReceived(message_id: number, type: string) {
   if (!SUMMARIZABLE_MESSAGE_TYPES.has(type)) return;
+  if (useSettingsStore().settings.summary_paused) {
+    // 在回复事件中保存标记，立即恢复开关也不会把这条回复加入补全队列。
+    if (!window.TavernHelper) return;
+    try {
+      const message = getAssistantMessage(message_id);
+      if (message && !isCosmosMemoryMessage(message) && !isExcludedFromMemory(message)) {
+        excludeReplyFromMemory(message_id);
+        if (getStoredMessageSummaries().some(summary => summary.message_id === message_id)) {
+          handleMemoryTimelineChanged();
+        }
+        triggerUpdateStatusBar();
+      }
+    } catch (error) {
+      console.error('[CosmosMemory] 保存跳过总结标记失败', error);
+      toastr.error(error instanceof Error ? error.message : String(error), t`保存跳过总结标记失败`);
+    }
+    return;
+  }
   const existing_timer = received_message_timers.get(message_id);
   if (existing_timer !== undefined) clearTimeout(existing_timer);
   // MESSAGE_RECEIVED 的其他监听器可能提取思考内容、改写正文；非流式回复此时也尚未渲染。
@@ -72,6 +90,9 @@ function scheduleMessageReceived(message_id: number, type: string) {
 }
 
 async function handleMessageReceived(message_id: number, type: string) {
+  const { settings, getMemoryGenerationSignal } = useSettingsStore();
+  const signal = getMemoryGenerationSignal();
+  if (signal.aborted) return;
   console.info('[CosmosMemory] 收到 MESSAGE_RECEIVED 事件', { message_id, type });
 
   if (!SUMMARIZABLE_MESSAGE_TYPES.has(type)) {
@@ -88,14 +109,19 @@ async function handleMessageReceived(message_id: number, type: string) {
   triggerVectorSyncDebounced();
 
   const message = getAssistantMessage(message_id);
-  const { settings } = useSettingsStore();
   const allow_opening = isOpeningMessageCompressionEnabled(settings);
-  if (!message || isCosmosMemoryMessage(message) || (!allow_opening && message_id === OPENING_MESSAGE_ID)) {
+  if (
+    !message ||
+    isCosmosMemoryMessage(message) ||
+    isExcludedFromMemory(message) ||
+    (!allow_opening && message_id === OPENING_MESSAGE_ID)
+  ) {
     return;
   }
 
   const source = getRegexedAiContent(message);
   const filter_result = await evaluateMessageFilter(source, settings.filter);
+  if (signal.aborted) return;
 
   if (filter_result.filtered) {
     console.info('[CosmosMemory] 楼层内容被过滤规则拦截，跳过AI总结等功能', {
@@ -122,6 +148,7 @@ async function handleMessageReceived(message_id: number, type: string) {
   console.info('[CosmosMemory] 开始处理楼层总结', { message_id, type });
   void summarizeReceivedMessage(message_id)
     .then(summary => {
+      if (signal.aborted) return;
       if (!summary) {
         console.info('[CosmosMemory] 楼层没有生成总结，可能不是 assistant 消息或过滤后为空', { message_id });
         return;
@@ -145,7 +172,7 @@ async function handleMessageReceived(message_id: number, type: string) {
       triggerSummaryRollupIfNeeded();
     })
     .catch(error => {
-      if (wasSummarizeTaskCancelled(message_id)) {
+      if (signal.aborted || wasSummarizeTaskCancelled(message_id)) {
         console.info('[CosmosMemory] 楼层总结任务已被取消，跳过失败提示', { message_id });
         return;
       }
@@ -156,6 +183,7 @@ async function handleMessageReceived(message_id: number, type: string) {
 }
 
 function handleMessageEdited(message_id: number) {
+  const signal = useSettingsStore().getMemoryGenerationSignal();
   console.info('[CosmosMemory] 收到 MESSAGE_EDITED 事件', { message_id });
 
   if (!window.TavernHelper) {
@@ -164,6 +192,7 @@ function handleMessageEdited(message_id: number) {
   }
 
   handleMemoryTimelineChanged();
+  if (signal.aborted) return;
 
   // 编辑楼层后触发防抖同步：增量 diff 会自动删除旧文本向量并写入新文本向量
   triggerVectorSyncDebounced();
@@ -176,12 +205,12 @@ function handleMessageEdited(message_id: number) {
 
   void invalidateAndResummarizeMessage(message_id)
     .then(summary => {
-      if (summary) {
+      if (summary && !signal.aborted) {
         triggerUpdateStatusBar();
       }
     })
     .catch(error => {
-      if (wasSummarizeTaskCancelled(message_id)) {
+      if (signal.aborted || wasSummarizeTaskCancelled(message_id)) {
         console.info('[CosmosMemory] 编辑后的重新总结已被取消', { message_id });
         return;
       }
@@ -213,9 +242,10 @@ function handleMessageSwiped(message_id: number) {
 
   // 生成新分支会先触发本事件（空白楼层）再走 MESSAGE_RECEIVED 路径，此处不重复处理；
   // 生成过程中的流式楼层同样跳过
-  const { settings } = useSettingsStore();
+  const { settings, getMemoryGenerationSignal } = useSettingsStore();
+  const signal = getMemoryGenerationSignal();
   const allow_opening = isOpeningMessageCompressionEnabled(settings);
-  if (isGenerationActive() || (!allow_opening && message_id === OPENING_MESSAGE_ID)) {
+  if (signal.aborted || isGenerationActive() || (!allow_opening && message_id === OPENING_MESSAGE_ID)) {
     return;
   }
 
@@ -235,7 +265,7 @@ function handleMessageSwiped(message_id: number) {
     }
     void resummarizeMessageForActiveSwipe(message_id)
       .then(summary => {
-        if (!summary) {
+        if (!summary || signal.aborted) {
           return;
         }
         // 多数情况为从缓存瞬时还原（不调 AI）；仅当前分支从未总结过时才会真正重新生成
@@ -244,7 +274,7 @@ function handleMessageSwiped(message_id: number) {
         triggerSummaryRollupIfNeeded();
       })
       .catch(error => {
-        if (wasSummarizeTaskCancelled(message_id)) {
+        if (signal.aborted || wasSummarizeTaskCancelled(message_id)) {
           console.info('[CosmosMemory] 切换 swipe 分支后的重新总结已被取消', { message_id });
           return;
         }
@@ -275,6 +305,8 @@ function handleMessageDeleted(new_chat_length: number) {
 }
 
 async function handleMessageSent(message_id: number) {
+  const signal = useSettingsStore().getMemoryGenerationSignal();
+  if (signal.aborted) return;
   // 用户发送新消息，重置可能存在的过滤连续重试计数
   resetFilterRetryCount();
 
@@ -284,6 +316,7 @@ async function handleMessageSent(message_id: number) {
   try {
     console.info('[CosmosMemory] 收到 MESSAGE_SENT 事件，发送前执行回溯检查', { message_id });
     const result = await runMemoryBacktrackCheck({ max_message_id: message_id });
+    if (signal.aborted) return;
     if (result.removed_summaries.length > 0) {
       console.info('[CosmosMemory] 发送前已清理悬空总结', {
         trigger_message_id: message_id,
@@ -301,6 +334,7 @@ async function handleMessageSent(message_id: number) {
     // 补全或清理后未合并摘要数量可能已达阈值，检查是否需要自动二次总结
     triggerSummaryRollupIfNeeded();
   } catch (error) {
+    if (signal.aborted) return;
     // 回溯检查失败不应阻断用户的发送流程，仅提示并继续
     const message = error instanceof Error ? error.message : String(error);
     console.error('[CosmosMemory] 发送前回溯检查失败', error);
@@ -348,11 +382,14 @@ async function handleGenerationAfterCommands(
 
   setGenerationActive(true, type);
 
+  const { settings, getRunSignal } = useSettingsStore();
+  const signal = getRunSignal();
   try {
-    const { settings } = useSettingsStore();
     await applySummaryCompressionForNextGeneration(settings.compression.enabled);
-    applyRuntimeMemoryPromptInjection(settings);
+    if (signal.aborted) return;
+    applyRuntimeMemoryPromptInjection(settings, signal);
   } catch (error) {
+    if (signal.aborted) return;
     // 记忆注入是优化项，失败时不应中断本次生成，仅提示并继续
     const message = error instanceof Error ? error.message : String(error);
     console.error('[CosmosMemory] 生成前应用记忆注入失败', error);
@@ -364,6 +401,7 @@ async function handleGenerationAfterCommands(
     // 被压缩隐藏的楼层恰好可被召回原文，与摘要形成互补
     await applyVectorRecallForNextGeneration({ excluded_message_id });
   } catch (error) {
+    if (signal.aborted) return;
     // 向量召回同为优化项，失败仅记录日志，绝不阻断生成
     console.error('[CosmosMemory] 生成前向量召回失败', error);
   }
@@ -390,38 +428,80 @@ export function registerSummaryEvents() {
   console.info(
     '[CosmosMemory] 注册 MESSAGE_RECEIVED / MESSAGE_EDITED / MESSAGE_DELETED / MESSAGE_SENT / GENERATION_AFTER_COMMANDS / CHAT_CHANGED 剧情总结监听',
   );
-  eventSource.on(event_types.MESSAGE_RECEIVED, scheduleMessageReceived);
-  eventSource.on(event_types.MESSAGE_EDITED, handleMessageEdited);
-  eventSource.on(event_types.MESSAGE_DELETED, handleMessageDeleted);
-  eventSource.on(event_types.MESSAGE_SENT, handleMessageSent);
+  const { settings } = useSettingsStore();
+  const whenEnabled =
+    <Args extends unknown[], Result>(handler: (...args: Args) => Result) =>
+    (...args: Args): Result | undefined =>
+      settings.enabled ? handler(...args) : undefined;
+
+  eventSource.on(event_types.MESSAGE_RECEIVED, whenEnabled(scheduleMessageReceived));
+  eventSource.on(event_types.MESSAGE_EDITED, whenEnabled(handleMessageEdited));
+  eventSource.on(event_types.MESSAGE_DELETED, whenEnabled(handleMessageDeleted));
+  eventSource.on(event_types.MESSAGE_SENT, whenEnabled(handleMessageSent));
   if (event_types.MESSAGE_SWIPED) {
-    eventSource.on(event_types.MESSAGE_SWIPED, handleMessageSwiped);
+    eventSource.on(event_types.MESSAGE_SWIPED, whenEnabled(handleMessageSwiped));
   }
-  eventSource.on(event_types.GENERATION_AFTER_COMMANDS, handleGenerationAfterCommands);
+  eventSource.on(event_types.GENERATION_AFTER_COMMANDS, whenEnabled(handleGenerationAfterCommands));
   if (event_types.GENERATION_STARTED) {
-    eventSource.on(event_types.GENERATION_STARTED, handleGenerationStarted);
+    eventSource.on(event_types.GENERATION_STARTED, whenEnabled(handleGenerationStarted));
   }
   if (event_types.GENERATION_ENDED) {
-    eventSource.on(event_types.GENERATION_ENDED, handleGenerationEnded);
+    eventSource.on(event_types.GENERATION_ENDED, whenEnabled(handleGenerationEnded));
   }
   if (event_types.GENERATION_STOPPED) {
-    eventSource.on(event_types.GENERATION_STOPPED, handleGenerationStopped);
+    eventSource.on(event_types.GENERATION_STOPPED, whenEnabled(handleGenerationStopped));
   }
-  eventSource.on(event_types.CHAT_CHANGED, () => cancelPendingReceivedMessages());
-  eventSource.on(event_types.CHAT_CHANGED, cancelSummarizationForChatChange);
-  eventSource.on(event_types.CHAT_CHANGED, resetMemoryEditForChatChange);
-  eventSource.on(event_types.CHAT_CHANGED, handleMemoryTimelineChanged);
-  eventSource.on(event_types.CHAT_CHANGED, stopSummaryRollupTask);
-  eventSource.on(event_types.CHAT_CHANGED, handleChatChangedForVectorSync);
-  eventSource.on(event_types.CHAT_CHANGED, migrateLocationStorageForCurrentChat);
-  eventSource.on(event_types.CHAT_CHANGED, cancelPendingAutoRetry);
-  eventSource.on(event_types.CHAT_CHANGED, resetFilterRetryCount);
-  eventSource.on(event_types.CHAT_CHANGED, cancelPendingSwipeResummarize);
+  eventSource.on(
+    event_types.CHAT_CHANGED,
+    whenEnabled(() => {
+      cancelPluginTasks();
+      handleMemoryTimelineChanged();
+      triggerVectorSyncDebounced();
+      migrateLocationStorageForCurrentChat();
+    }),
+  );
   initStatusBar();
-  migrateLocationStorageForCurrentChat();
-  handleMemoryTimelineChanged();
   setupGlobalErrorInterceptors();
+  if (settings.enabled) {
+    migrateLocationStorageForCurrentChat();
+    handleMemoryTimelineChanged();
+  }
+  watch(
+    () => settings.enabled,
+    enabled => {
+      if (enabled) {
+        migrateLocationStorageForCurrentChat();
+        handleMemoryTimelineChanged();
+        triggerVectorSyncDebounced();
+        return;
+      }
+
+      clearInjectedSummaryPrompts();
+      clearRuntimeMemoryPrompts();
+      clearVectorRecallPrompt();
+      markGenerationStoppedByUser();
+      cancelPluginTasks();
+    },
+    { flush: 'sync' },
+  );
+  watch(
+    () => settings.summary_paused,
+    paused => {
+      if (settings.enabled && paused) cancelPluginTasks();
+    },
+    { flush: 'sync' },
+  );
   is_summary_listener_registered = true;
+}
+
+function cancelPluginTasks() {
+  cancelPendingReceivedMessages();
+  cancelPendingSwipeResummarize();
+  cancelSummarizationForChatChange();
+  resetMemoryEditForChatChange();
+  stopSummaryRollupTask();
+  cancelVectorSyncForChatChange();
+  resetFilterRetryCount();
 }
 
 function handleMemoryTimelineChanged() {
@@ -433,12 +513,6 @@ function handleMemoryTimelineChanged() {
     console.error('[CosmosMemory] 同步楼层修改记录失败', error);
     toastr.error(error instanceof Error ? error.message : String(error), t`同步楼层修改记录失败`);
   }
-}
-
-function handleChatChangedForVectorSync() {
-  // 取消上一个聊天的待执行同步并重置告警标志，再为新聊天补一次索引
-  cancelVectorSyncForChatChange();
-  triggerVectorSyncDebounced();
 }
 
 function migrateLocationStorageForCurrentChat() {

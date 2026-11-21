@@ -6,7 +6,7 @@ import { getStoredCurrentInfo, manualSaveCurrentInfo } from '@/core/current-info
 import { getSettingChanges, manualApplySettingChangeOperation } from '@/core/setting-changes';
 import { getMemoryInstructions, saveMemoryInstructions } from '@/core/memory-instructions';
 import { STORAGE_ROOT } from '@/core/entity-store';
-import { isCosmosMemoryMessage } from '@/core/message-flags';
+import { isCosmosMemoryMessage, isExcludedFromMemory } from '@/core/message-flags';
 import { filterBodyContent } from '@/core/body-filter';
 import { triggerUpdateStatusBar } from '@/core/status-bar';
 import { MemoryEditResponse, type MemoryEditResult } from '@/type/memory-edit';
@@ -46,6 +46,7 @@ export function resetMemoryEditForChatChange() {
 }
 
 export async function generateMemoryEdit(request: string, settings: Settings): Promise<boolean> {
+  if (settings.summary_paused) return false;
   if (active_task) throw new Error(t`已有记忆修改请求正在进行。`);
   if (!request.trim()) throw new Error(t`请填写修改要求。`);
   const chat_id = assertChat();
@@ -59,7 +60,13 @@ export async function generateMemoryEdit(request: string, settings: Settings): P
           `${Math.max(0, last_message_id - RECENT_MESSAGE_COUNT + 1)}-${last_message_id}`,
           { hide_state: 'unhidden', include_swipes: false },
         )
-          .filter(message => message.role !== 'system' && !isCosmosMemoryMessage(message) && message.message.trim())
+          .filter(
+            message =>
+              message.role !== 'system' &&
+              !isCosmosMemoryMessage(message) &&
+              !isExcludedFromMemory(message) &&
+              message.message.trim(),
+          )
           .map(message => ({
             message_id: message.message_id,
             role: message.role,

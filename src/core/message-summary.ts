@@ -4,7 +4,7 @@ import {
   OPENING_MESSAGE_ID,
   summarizeReceivedMessage,
 } from '@/core/summary';
-import { isCosmosMemoryMessage } from '@/core/message-flags';
+import { isCosmosMemoryMessage, isExcludedFromMemory } from '@/core/message-flags';
 import { triggerSummaryRollupIfNeeded } from '@/core/summary-rollup';
 import { useSettingsStore } from '@/store/settings';
 import { isOpeningMessageCompressionEnabled } from '@/type/settings';
@@ -21,11 +21,14 @@ export function updateMessageSummary(message_id: number | null): boolean {
   }
 
   try {
-    const summary = getStoredMessageSummaries().find(summary => summary.message_id === message_id);
-    const status = getMessageSummaryStatus(message_id);
+    const message = window.TavernHelper.getChatMessages(message_id, { include_swipes: false })[0];
+    const skipped = Boolean(message && isExcludedFromMemory(message));
+    const summary = skipped
+      ? undefined
+      : getStoredMessageSummaries().find(summary => summary.message_id === message_id);
+    const status = skipped ? undefined : getMessageSummaryStatus(message_id);
     const missing_summary = !summary?.summary.trim();
-    if (!status && missing_summary) {
-      const message = window.TavernHelper.getChatMessages(message_id, { include_swipes: false })[0];
+    if (!skipped && !status && missing_summary) {
       if (
         !message ||
         message.role !== 'assistant' ||
@@ -53,32 +56,36 @@ export function updateMessageSummary(message_id: number | null): boolean {
         .append($('<div class="cosmos-memory-message-summary-content">'));
     }
 
-    const state = status?.state ?? (missing_summary ? 'missing' : 'complete');
+    const state = skipped ? 'skipped' : (status?.state ?? (missing_summary ? 'missing' : 'complete'));
     const state_changed = $details.attr('data-state') !== state;
     $details.attr('data-state', state);
     $details
       .children('summary')
       .text(
-        status?.state === 'summarizing'
-          ? t`正在总结…`
-          : status?.state === 'failed'
-            ? t`总结失败`
-            : missing_summary
-              ? t`尚未生成本楼总结`
-              : t`本楼总结`,
+        state === 'skipped'
+          ? t`本楼已跳过总结`
+          : status?.state === 'summarizing'
+            ? t`正在总结…`
+            : status?.state === 'failed'
+              ? t`总结失败`
+              : missing_summary
+                ? t`尚未生成本楼总结`
+                : t`本楼总结`,
       );
-    const $content = $details.children('.cosmos-memory-message-summary-content');
+    const $content = $details.children('.cosmos-memory-message-summary-content').prop('hidden', skipped);
     $content.empty();
-    if (status?.state === 'summarizing') {
+    if (!skipped && status?.state === 'summarizing') {
       $content.append($('<div role="status">').text(t`正在总结…`));
-    } else if (status?.state === 'failed' || missing_summary) {
+    } else if (!skipped && (status?.state === 'failed' || missing_summary)) {
       if (state_changed) $details.prop('open', true);
       if (status?.state === 'failed' && status.error.trim()) {
         $content.append($('<div role="alert">').text(status.error));
       }
       const $retry = $('<button type="button" class="menu_button cosmos-memory-summary-retry">').text(t`重试总结`);
+      $retry.prop('disabled', settings.summary_paused);
       $retry.on('click', () => {
-        if ($retry.prop('disabled') || getMessageSummaryStatus(message_id) !== status) return;
+        if (settings.summary_paused || $retry.prop('disabled') || getMessageSummaryStatus(message_id) !== status)
+          return;
         $retry.prop('disabled', true);
         void summarizeReceivedMessage(message_id)
           .then(result => {

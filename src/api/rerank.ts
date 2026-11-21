@@ -33,6 +33,7 @@ export async function rerankDocuments(
   documents: string[],
   top_n: number,
   config: RerankConfig,
+  signal?: AbortSignal,
 ): Promise<RerankResult[]> {
   if (documents.length === 0) {
     return [];
@@ -41,6 +42,7 @@ export async function rerankDocuments(
   const base_url = normalizeApiUrl(config.api_url);
   const response = await fetch(`${base_url}/rerank`, {
     method: 'POST',
+    signal,
     headers: buildApiHeaders(config.api_key),
     body: JSON.stringify({
       model: config.model,

@@ -86,6 +86,7 @@ function refreshInstructions() {
 const is_disabled = computed(
   () =>
     is_editing_memory.value ||
+    settings.value.summary_paused ||
     !request.value.trim() ||
     (!settings.value.ai.use_tavern_api &&
       (!settings.value.ai.custom_api_url.trim() || !settings.value.ai.selected_model.trim())),

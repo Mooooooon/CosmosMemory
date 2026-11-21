@@ -1,4 +1,5 @@
 import { getStoredCurrentScene } from '@/core/current-scene';
+import { isExcludedFromMemory } from '@/core/message-flags';
 import { getStoredMessageSummaries } from '@/core/summary';
 import { useSettingsStore } from '@/store/settings';
 
@@ -22,7 +23,11 @@ export function updateMessageScene(message_id: number | null): boolean {
   }
 
   try {
-    const summary = getStoredMessageSummaries().find(s => s.message_id === message_id);
+    const message = window.TavernHelper.getChatMessages(message_id, { include_swipes: false })[0];
+    const summary =
+      message && isExcludedFromMemory(message)
+        ? undefined
+        : getStoredMessageSummaries().find(s => s.message_id === message_id);
     const scene_text = (summary?.current_scene || getStoredCurrentScene() || '').trim();
     if (!scene_text) {
       $existing.remove();

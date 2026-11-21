@@ -12,6 +12,27 @@ import * as yaml from 'yaml';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
+test('楼层跳过标记随分支保存，直接总结与恢复后的回溯检查均跳过该回复', async () => {
+  const h = harness(() => JSON.stringify({ summary: '主线总结' }));
+  h.state.last_message_id = 2;
+  h.settings.summary.send_previous_message_original = true;
+  const summary = h.load('@/core/summary');
+  const flags = h.load('@/core/message-flags');
+  flags.excludeReplyFromMemory(1);
+
+  assert.equal(await summary.summarizeReceivedMessage(1), null);
+  const backtrack = await summary.runMemoryBacktrackCheck();
+  assert.deepEqual(Array.from(backtrack.summarized_summaries, entry => entry.message_id), [2]);
+  assert.equal(h.calls.length, 1);
+  assert.equal(JSON.stringify(h.calls[0].ordered_prompts).includes('剧情 1'), false);
+
+  h.state.messages.get(1).swipe_id = 1;
+  assert.equal((await summary.summarizeReceivedMessage(1)).summary, '主线总结');
+  h.state.messages.get(1).swipe_id = 0;
+  assert.equal(await summary.resummarizeMessageForActiveSwipe(1), null);
+  assert.equal(h.calls.length, 2);
+});
+
 test('楼层总结状态：失败保留原因，重试清除错误，并复用进行中的请求', async () => {
   let fail = true;
   const h = harness(() => {
@@ -168,6 +189,7 @@ const lodash = {
 };
 
 function harness(responder) {
+  const signal = new AbortController().signal;
   const state = {
     chat_id: 'chat-a',
     variables: { other_extension: { keep: true } },
@@ -207,7 +229,14 @@ function harness(responder) {
     window: {
       TavernHelper: {
         getVariables: () => structuredClone(state.variables),
-        updateVariablesWith: updater => {
+        updateVariablesWith: (updater, option) => {
+          if (option?.type === 'message') {
+            const message = state.messages.get(option.message_id);
+            message.swipes_data ??= [];
+            const data = message.swipes_data[message.swipe_id] ?? message.data;
+            message.swipes_data[message.swipe_id] = updater(structuredClone(data));
+            return;
+          }
           if (++state.writes === state.fail_write) throw new Error('storage failed');
           state.variables = structuredClone(updater(structuredClone(state.variables)));
         },
@@ -219,7 +248,7 @@ function harness(responder) {
             .map(message =>
               options.include_swipes
                 ? structuredClone(message)
-                : { ...message, message: message.swipes[message.swipe_id] },
+                : { ...message, data: message.swipes_data?.[message.swipe_id] ?? message.data, message: message.swipes[message.swipe_id] },
             );
         },
         generateRaw: async config => {
@@ -239,7 +268,7 @@ function harness(responder) {
       return { getStringHash: value => [...value].reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) | 0, 0) };
     if (id === '@/core/status-bar') return { triggerUpdateStatusBar: () => state.refreshes++ };
     if (id === '@/core/filter') return { evaluateMessageFilter: async () => ({ filtered: false }) };
-    if (id === '@/store/settings') return { useSettingsStore: () => ({ settings: state.settings }) };
+    if (id === '@/store/settings') return { useSettingsStore: () => ({ settings: state.settings, getMemoryGenerationSignal: () => signal }) };
     assert.ok(id.startsWith('@/'), `Unexpected import: ${id}`);
     const filename = resolve(root, 'src', `${id.slice(2)}.ts`);
     if (modules.has(filename)) return modules.get(filename);

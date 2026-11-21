@@ -396,19 +396,45 @@ function buildReasoningRequestOverride(settings: AiSettings): ReasoningRequestOv
  * TavernHelper 暂未在 generateRaw 参数中暴露思考级别，因此在其请求体就绪事件中只覆盖
  * 当前 CosmosMemory 自定义端点请求。用 source + model 双重匹配，避免影响其他并发生成。
  */
-export async function generateRawWithSettings(settings: AiSettings, config: Omit<GenerateRawOptions, 'custom_api'>) {
+export async function generateRawWithSettings(
+  settings: AiSettings,
+  config: Omit<GenerateRawOptions, 'custom_api'>,
+  signal?: AbortSignal,
+) {
+  signal?.throwIfAborted();
   const custom_api = buildCustomApi(settings);
+  if (!signal) return generateRawWithReasoning(settings, { ...config, custom_api });
+
+  const request_id = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const generation_id = config.generation_id ?? `cosmos-memory-manual-${request_id}`;
+  const stop = () => window.TavernHelper.stopGenerationById(generation_id);
+  signal.addEventListener('abort', stop, { once: true });
+  try {
+    const result = await generateRawWithReasoning(settings, { ...config, custom_api, generation_id }, signal);
+    signal.throwIfAborted();
+    return result;
+  } finally {
+    signal.removeEventListener('abort', stop);
+  }
+}
+
+async function generateRawWithReasoning(settings: AiSettings, config: GenerateRawOptions, signal?: AbortSignal) {
   const reasoning_override = buildReasoningRequestOverride(settings);
 
-  if (!custom_api || !reasoning_override) {
-    return window.TavernHelper.generateRaw({ ...config, custom_api });
+  if (!config.custom_api || !reasoning_override) {
+    return window.TavernHelper.generateRaw(config);
   }
 
   const expected_source = resolveCustomApiSource(settings);
   const expected_model = settings.selected_model.trim();
   let override_applied = false;
   const apply_reasoning_override = (request: ChatCompletionRequestData) => {
-    if (override_applied || request.chat_completion_source !== expected_source || request.model !== expected_model) {
+    if (
+      signal?.aborted ||
+      override_applied ||
+      request.chat_completion_source !== expected_source ||
+      request.model !== expected_model
+    ) {
       return;
     }
 
@@ -423,7 +449,7 @@ export async function generateRawWithSettings(settings: AiSettings, config: Omit
 
   eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, apply_reasoning_override);
   try {
-    return await window.TavernHelper.generateRaw({ ...config, custom_api });
+    return await window.TavernHelper.generateRaw(config);
   } finally {
     eventSource.removeListener(event_types.CHAT_COMPLETION_SETTINGS_READY, apply_reasoning_override);
   }
@@ -493,11 +519,15 @@ export async function fetchCustomModelNames(settings: AiSettings): Promise<strin
   return [...new Set(models)].filter(Boolean).sort((left, right) => left.localeCompare(right));
 }
 
-export async function sendPing(settings: AiSettings): Promise<string> {
-  const result = await generateRawWithSettings(settings, {
-    should_silence: true,
-    ordered_prompts: [{ role: 'user', content: TEST_MESSAGE }],
-  });
+export async function sendPing(settings: AiSettings, signal?: AbortSignal): Promise<string> {
+  const result = await generateRawWithSettings(
+    settings,
+    {
+      should_silence: true,
+      ordered_prompts: [{ role: 'user', content: TEST_MESSAGE }],
+    },
+    signal,
+  );
 
   const content = typeof result === 'string' ? result : result.content;
   if (!content.trim()) {
@@ -1168,21 +1198,26 @@ export async function summarizeMessage(
 async function extractCharactersWithStructuredOutput(
   settings: AiSettings,
   content: string,
+  signal?: AbortSignal,
 ): Promise<StoredCharacter[]> {
-  const result = await generateRawWithSettings(settings, {
-    should_silence: true,
-    ordered_prompts: [
-      {
-        role: 'system',
-        content: FULL_CHARACTER_EXTRACTION_SYSTEM_PROMPT,
-      },
-      {
-        role: 'user',
-        content: `${FULL_CHARACTER_JSON_INSTRUCTION}\n\n${content}`,
-      },
-    ],
-    json_schema: buildFullCharacterExtractionSchema(),
-  });
+  const result = await generateRawWithSettings(
+    settings,
+    {
+      should_silence: true,
+      ordered_prompts: [
+        {
+          role: 'system',
+          content: FULL_CHARACTER_EXTRACTION_SYSTEM_PROMPT,
+        },
+        {
+          role: 'user',
+          content: `${FULL_CHARACTER_JSON_INSTRUCTION}\n\n${content}`,
+        },
+      ],
+      json_schema: buildFullCharacterExtractionSchema(),
+    },
+    signal,
+  );
 
   if (typeof result !== 'string') {
     throw new Error(t`人物信息重新生成返回了非文本结果。`);
@@ -1191,20 +1226,28 @@ async function extractCharactersWithStructuredOutput(
   return parseFullCharacterExtractionJson(result);
 }
 
-async function extractCharactersWithJsonPrompt(settings: AiSettings, content: string): Promise<StoredCharacter[]> {
-  const result = await generateRawWithSettings(settings, {
-    should_silence: true,
-    ordered_prompts: [
-      {
-        role: 'system',
-        content: FULL_CHARACTER_EXTRACTION_SYSTEM_PROMPT,
-      },
-      {
-        role: 'user',
-        content: `${FULL_CHARACTER_JSON_INSTRUCTION}\n\n${content}`,
-      },
-    ],
-  });
+async function extractCharactersWithJsonPrompt(
+  settings: AiSettings,
+  content: string,
+  signal?: AbortSignal,
+): Promise<StoredCharacter[]> {
+  const result = await generateRawWithSettings(
+    settings,
+    {
+      should_silence: true,
+      ordered_prompts: [
+        {
+          role: 'system',
+          content: FULL_CHARACTER_EXTRACTION_SYSTEM_PROMPT,
+        },
+        {
+          role: 'user',
+          content: `${FULL_CHARACTER_JSON_INSTRUCTION}\n\n${content}`,
+        },
+      ],
+    },
+    signal,
+  );
 
   if (typeof result !== 'string') {
     throw new Error(t`人物信息重新生成返回了非文本结果。`);
@@ -1216,12 +1259,16 @@ async function extractCharactersWithJsonPrompt(settings: AiSettings, content: st
 export async function extractCharactersFromChatContent(
   settings: AiSettings,
   content: string,
+  signal?: AbortSignal,
 ): Promise<StoredCharacter[]> {
   buildCustomApi(settings);
-  return retryAiRequest(settings, retry_index =>
-    retry_index === 0
-      ? extractCharactersWithStructuredOutput(settings, content)
-      : extractCharactersWithJsonPrompt(settings, content),
+  return retryAiRequest(
+    settings,
+    retry_index =>
+      retry_index === 0
+        ? extractCharactersWithStructuredOutput(settings, content, signal)
+        : extractCharactersWithJsonPrompt(settings, content, signal),
+    () => signal?.aborted ?? false,
   );
 }
 

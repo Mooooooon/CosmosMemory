@@ -11,6 +11,7 @@ import { z } from 'zod';
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 function setupFilterContext(options = {}) {
+  const signal = new AbortController().signal;
   const {
     filterSettings = {
       enabled: true,
@@ -81,8 +82,10 @@ function setupFilterContext(options = {}) {
       return {
         useSettingsStore: () => ({
           settings: {
+            enabled: true,
             filter: filterSettings,
           },
+          getMemoryGenerationSignal: () => signal,
         }),
       };
     }

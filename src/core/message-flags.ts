@@ -6,6 +6,19 @@
 import { STORAGE_ROOT } from '@/core/entity-store';
 
 export const HIDDEN_BY_COMPRESSION_PATH = `${STORAGE_ROOT}.hidden_by_compression`;
+const EXCLUDED_FROM_MEMORY_PATH = `${STORAGE_ROOT}.excluded_from_memory`;
+
+export function isExcludedFromMemory(message: Partial<Pick<ChatMessage, 'data'>>): boolean {
+  return _.get(message.data, EXCLUDED_FROM_MEMORY_PATH) === true;
+}
+
+/** 保存到当前回复分支的楼层变量，切回同楼的其他回复时不会沿用标记。 */
+export function excludeReplyFromMemory(message_id: number) {
+  window.TavernHelper.updateVariablesWith(variables => _.set(variables, EXCLUDED_FROM_MEMORY_PATH, true), {
+    type: 'message',
+    message_id,
+  });
+}
 
 /** 是否为插件自建楼层（如插件写入的总结楼层），此类楼层不参与总结与向量化 */
 export function isCosmosMemoryMessage(message: ChatMessage): boolean {

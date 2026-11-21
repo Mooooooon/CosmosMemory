@@ -281,21 +281,21 @@
           class="menu_button"
           type="button"
           :value="is_syncing ? t`同步中...` : t`立即同步`"
-          :disabled="is_busy"
+          :disabled="settings.summary_paused || is_busy"
           @click="handle_sync_now"
         />
         <input
           class="menu_button"
           type="button"
           :value="is_rebuilding ? t`重建中...` : t`全量重建索引`"
-          :disabled="is_busy"
+          :disabled="settings.summary_paused || is_busy"
           @click="handle_rebuild_index"
         />
         <input
           class="menu_button"
           type="button"
           :value="is_purging ? t`清空中...` : t`清空索引`"
-          :disabled="is_busy"
+          :disabled="settings.summary_paused || is_busy"
           @click="handle_purge_index"
         />
       </div>
@@ -379,21 +379,25 @@ onMounted(() => {
 });
 
 async function refresh_status() {
+  const signal = useSettingsStore().getRunSignal();
   try {
     const status = await getVectorIndexStatus();
     stored_count.value = status?.stored_count ?? null;
   } catch (error) {
+    if (signal.aborted) return;
     console.warn('[CosmosMemory] 读取向量索引状态失败', error);
     stored_count.value = null;
   }
 }
 
 async function handle_fetch_embedding_models() {
+  const signal = useSettingsStore().getRunSignal();
   is_fetching_models.value = true;
   test_result.value = null;
 
   try {
     const models = await fetchEmbeddingModelNames(settings.value.vector_recall.api_key.trim(), effective_api_url.value);
+    if (signal.aborted) return;
     settings.value.vector_recall.available_models = models;
 
     if (!settings.value.vector_recall.model && models.length > 0) {
@@ -402,6 +406,7 @@ async function handle_fetch_embedding_models() {
 
     toastr.success(t`Embedding 模型列表获取成功。`);
   } catch (error) {
+    if (signal.aborted) return;
     const message = error instanceof Error ? error.message : String(error);
     toastr.error(message);
     test_result.value = { type: 'error', message };
@@ -411,10 +416,12 @@ async function handle_fetch_embedding_models() {
 }
 
 async function handle_fetch_rerank_models() {
+  const signal = useSettingsStore().getRunSignal();
   is_fetching_rerank_models.value = true;
 
   try {
     const models = await fetchRerankModelNames(effective_rerank_api_key.value, effective_rerank_api_url.value);
+    if (signal.aborted) return;
     settings.value.vector_recall.rerank_available_models = models;
 
     if (!settings.value.vector_recall.rerank_model && models.length > 0) {
@@ -423,6 +430,7 @@ async function handle_fetch_rerank_models() {
 
     toastr.success(t`Rerank 模型列表获取成功。`);
   } catch (error) {
+    if (signal.aborted) return;
     const message = error instanceof Error ? error.message : String(error);
     toastr.error(message);
   } finally {
@@ -431,15 +439,19 @@ async function handle_fetch_rerank_models() {
 }
 
 async function handle_test_embedding() {
+  const signal = useSettingsStore().getRunSignal();
   is_testing.value = true;
   test_result.value = null;
 
   try {
-    const { dimension } = await pingEmbeddingService({
-      api_url: effective_api_url.value,
-      api_key: settings.value.vector_recall.api_key.trim(),
-      model: settings.value.vector_recall.model.trim(),
-    });
+    const { dimension } = await pingEmbeddingService(
+      {
+        api_url: effective_api_url.value,
+        api_key: settings.value.vector_recall.api_key.trim(),
+        model: settings.value.vector_recall.model.trim(),
+      },
+      signal,
+    );
     test_result.value = {
       type: 'success',
       message: t`连接成功，模型 {model}，向量维度 {dimension}。`
@@ -448,6 +460,7 @@ async function handle_test_embedding() {
     };
     toastr.success(t`Embedding 连接测试成功。`);
   } catch (error) {
+    if (signal.aborted) return;
     const message = error instanceof Error ? error.message : String(error);
     toastr.error(message);
     test_result.value = { type: 'error', message };
@@ -457,10 +470,12 @@ async function handle_test_embedding() {
 }
 
 async function handle_sync_now() {
+  const signal = useSettingsStore().getMemoryGenerationSignal();
   is_syncing.value = true;
 
   try {
     const result = await syncChatVectors();
+    if (signal.aborted) return;
     if (!result) {
       toastr.warning(t`同步未执行：请确认已启用向量召回并配置 API 端点与模型，且当前有打开的聊天。`, 'Cosmos Memory');
       return;
@@ -474,6 +489,7 @@ async function handle_sync_now() {
     );
     await refresh_status();
   } catch (error) {
+    if (signal.aborted) return;
     const message = error instanceof Error ? error.message : String(error);
     toastr.error(message, t`Cosmos Memory 向量同步失败`);
   } finally {
@@ -487,12 +503,15 @@ async function handle_rebuild_index() {
   }
 
   is_rebuilding.value = true;
+  const signal = useSettingsStore().getMemoryGenerationSignal();
 
   try {
     const result = await rebuildVectorIndex();
+    if (signal.aborted) return;
     toastr.success(t`索引重建完成，共写入 {count} 条。`.replace('{count}', String(result.inserted)), 'Cosmos Memory');
     await refresh_status();
   } catch (error) {
+    if (signal.aborted) return;
     const message = error instanceof Error ? error.message : String(error);
     toastr.error(message, t`Cosmos Memory 索引重建失败`);
   } finally {
@@ -506,12 +525,15 @@ async function handle_purge_index() {
   }
 
   is_purging.value = true;
+  const signal = useSettingsStore().getRunSignal();
 
   try {
     await purgeVectorIndex();
+    if (signal.aborted) return;
     toastr.success(t`向量索引已清空。`, 'Cosmos Memory');
     await refresh_status();
   } catch (error) {
+    if (signal.aborted) return;
     const message = error instanceof Error ? error.message : String(error);
     toastr.error(message, t`Cosmos Memory 清空索引失败`);
   } finally {

@@ -33,7 +33,7 @@ import {
 import { STORAGE_ROOT } from '@/core/entity-store';
 import { evaluateMessageFilter } from '@/core/filter';
 import { filterBodyContent } from '@/core/body-filter';
-import { isCosmosMemoryMessage } from '@/core/message-flags';
+import { isCosmosMemoryMessage, isExcludedFromMemory } from '@/core/message-flags';
 import { useSettingsStore } from '@/store/settings';
 import { isOpeningMessageCompressionEnabled } from '@/type/settings';
 import { getCurrentChatId } from '@sillytavern/script';
@@ -220,7 +220,7 @@ function getPreviousAssistantOriginalMessages(
   const assistant_messages = window.TavernHelper.getChatMessages(`0-${message_id - 1}`, {
     role: 'assistant',
     include_swipes: false,
-  });
+  }).filter(message => !isExcludedFromMemory(message));
   const opening_message = include_opening_message
     ? assistant_messages.find(message => message.message_id === OPENING_MESSAGE_ID)
     : undefined;
@@ -259,13 +259,15 @@ function getPreviousSummaryContext(
     return [];
   }
 
-  return getStoredMessageSummaries()
-    .filter(summary => summary.message_id < message_id && !excluded_message_ids.has(summary.message_id))
-    .slice(-count)
-    .map(summary => ({
-      message_id: summary.message_id,
-      summary: summary.summary,
-    }));
+  const context: SummaryContextEntry[] = [];
+  for (const summary of getStoredMessageSummaries().reverse()) {
+    if (summary.message_id >= message_id || excluded_message_ids.has(summary.message_id)) continue;
+    const message = window.TavernHelper.getChatMessages(summary.message_id, { include_swipes: false })[0];
+    if (message && isExcludedFromMemory(message)) continue;
+    context.push({ message_id: summary.message_id, summary: summary.summary });
+    if (context.length === count) break;
+  }
+  return context.reverse();
 }
 
 function saveMessageSummary(summary: MessageSummary) {
@@ -341,6 +343,8 @@ function deleteSwipeSummaryCacheEntry(message_id: number, swipe_id: number) {
  * 一致则写回 canonical 并返回该摘要；无缓存或内容不符返回 null（交由调用方重新生成）。
  */
 function restoreCachedSummaryForActiveSwipe(message_id: number): MessageSummary | null {
+  const message = getAssistantMessage(message_id);
+  if (message && isExcludedFromMemory(message)) return null;
   const active_swipe_id = getActiveSwipeId(message_id);
   const cached = getCachedSwipeSummary(message_id, active_swipe_id);
   if (!cached) {
@@ -349,7 +353,6 @@ function restoreCachedSummaryForActiveSwipe(message_id: number): MessageSummary 
 
   // 缓存若带内容哈希，则校验其与当前分支原文一致；旧缓存无哈希时按 swipe_id 命中即复用
   if (typeof cached.content_hash === 'number') {
-    const message = getAssistantMessage(message_id);
     const source = message ? getRegexedAiContent(message) : '';
     if (!source || getStringHash(source) !== cached.content_hash) {
       console.info('[CosmosMemory] 分支缓存内容哈希不匹配，视为未命中', { message_id, active_swipe_id });
@@ -378,7 +381,7 @@ function getCurrentLastMessageId(): number {
   }).reduce((max_message_id, message) => Math.max(max_message_id, message.message_id), -1);
 }
 
-async function getMissingAssistantMessageIds(max_message_id: number): Promise<number[]> {
+async function getMissingAssistantMessageIds(max_message_id: number, signal: AbortSignal): Promise<number[]> {
   const stored_summary_ids = getStoredSummaryIds();
   const { settings } = useSettingsStore();
   const allow_opening = isOpeningMessageCompressionEnabled(settings);
@@ -387,11 +390,13 @@ async function getMissingAssistantMessageIds(max_message_id: number): Promise<nu
       (allow_opening || message.message_id !== OPENING_MESSAGE_ID) &&
       message.role === 'assistant' &&
       !isCosmosMemoryMessage(message) &&
+      !isExcludedFromMemory(message) &&
       !stored_summary_ids.has(message.message_id),
   );
 
   const missing_ids: number[] = [];
   for (const message of candidates) {
+    if (signal.aborted) break;
     const source = getRegexedAiContent(message);
     const filter_result = await evaluateMessageFilter(source, settings.filter);
     if (!filter_result.filtered) {
@@ -448,6 +453,7 @@ function getActiveMemorySummaries(summaries: MessageSummary[], max_message_id: n
     if (summary.message_id > max_message_id) return false;
     const message = window.TavernHelper.getChatMessages(summary.message_id, { include_swipes: true })[0];
     if (!message || (message.swipe_id ?? 0) !== (summary.swipe_id ?? 0)) return false;
+    if (isExcludedFromMemory({ data: message.swipes_data?.[message.swipe_id ?? 0] })) return false;
     if (summary.content_hash !== undefined) {
       const current = window.TavernHelper.getChatMessages(summary.message_id, { include_swipes: false })[0];
       if (!current || getStringHash(getRegexedAiContent(current)) !== summary.content_hash) return false;
@@ -621,6 +627,7 @@ async function summarizeReceivedMessageCore(
 
   const { settings } = useSettingsStore();
   const filter_result = await evaluateMessageFilter(source, settings.filter);
+  if (should_cancel()) return null;
   if (filter_result.filtered) {
     console.info('[CosmosMemory] 楼层内容被过滤规则拦截，跳过AI总结等功能', {
       message_id,
@@ -718,12 +725,16 @@ async function summarizeReceivedMessageCore(
 }
 
 export function summarizeReceivedMessage(message_id: number): Promise<MessageSummary | null> {
-  const { settings } = useSettingsStore();
+  const { settings, getMemoryGenerationSignal } = useSettingsStore();
+  const signal = getMemoryGenerationSignal();
+  if (signal.aborted) return Promise.resolve(null);
   const allow_opening = isOpeningMessageCompressionEnabled(settings);
   if (message_id === OPENING_MESSAGE_ID && !allow_opening) {
     console.info('[CosmosMemory] 开场白楼层不参与总结', { message_id });
     return Promise.resolve(null);
   }
+  const message = window.TavernHelper.getChatMessages(message_id, { include_swipes: false })[0];
+  if (!message || isExcludedFromMemory(message)) return Promise.resolve(null);
 
   const existing_task = summarizing_messages.get(message_id);
   if (existing_task) {
@@ -736,13 +747,14 @@ export function summarizeReceivedMessage(message_id: number): Promise<MessageSum
   const status: MessageSummaryStatus = {
     chat_id: safeGetCurrentChatId(),
     swipe_id: getActiveSwipeId(message_id),
-    content: window.TavernHelper.getChatMessages(message_id, { include_swipes: false })[0]?.message ?? '',
+    content: message.message,
     state: 'summarizing',
   };
   const is_current_task = (): boolean => summarizing_messages.get(message_id)?.promise === promise;
   // 任务生命周期独立于展示状态：关闭「编辑后重新总结」时，正文变化不应取消请求。
   // 即使没有收到对应事件，聊天切换、分支切换或删楼也不能让旧结果落库。
   const should_cancel = (): boolean =>
+    signal.aborted ||
     !is_current_task() ||
     safeGetCurrentChatId() !== status.chat_id ||
     getActiveSwipeId(message_id) !== status.swipe_id ||
@@ -847,6 +859,9 @@ function deleteMessageSummary(message_id: number) {
  * 同时失效当前激活分支的缓存项（该分支内容已变），其余分支缓存保留以便切回复用。
  */
 export async function invalidateAndResummarizeMessage(message_id: number): Promise<MessageSummary | null> {
+  if (useSettingsStore().getMemoryGenerationSignal().aborted) return null;
+  const message = getAssistantMessage(message_id);
+  if (!message || isExcludedFromMemory(message)) return null;
   if (!getStoredSummaryIds().has(message_id) && !summarizing_messages.has(message_id)) {
     return null;
   }
@@ -871,14 +886,15 @@ export async function invalidateAndResummarizeMessage(message_id: number): Promi
  * - 正在生成新分支的空白楼层（内容为空）不处理，交由 MESSAGE_RECEIVED 路径总结。
  */
 export async function resummarizeMessageForActiveSwipe(message_id: number): Promise<MessageSummary | null> {
-  const { settings } = useSettingsStore();
+  const { settings, getMemoryGenerationSignal } = useSettingsStore();
+  if (getMemoryGenerationSignal().aborted) return null;
   const allow_opening = isOpeningMessageCompressionEnabled(settings);
   if (message_id === OPENING_MESSAGE_ID && !allow_opening) {
     return null;
   }
 
   const message = getAssistantMessage(message_id);
-  if (!message) {
+  if (!message || isExcludedFromMemory(message)) {
     return null;
   }
 
@@ -980,6 +996,7 @@ function getSwipeCacheMessageIds(): number[] {
 async function backfillMissingSummaries(
   message_ids: number[],
 ): Promise<{ summaries: MessageSummary[]; aborted: boolean }> {
+  const signal = useSettingsStore().getMemoryGenerationSignal();
   const abort_signal = { aborted: false };
   backfill_abort_signal = abort_signal;
 
@@ -988,7 +1005,7 @@ async function backfillMissingSummaries(
   const summaries: MessageSummary[] = [];
   let cursor = 0;
   const worker = async () => {
-    while (cursor < message_ids.length && !abort_signal.aborted) {
+    while (cursor < message_ids.length && !abort_signal.aborted && !signal.aborted) {
       const message_id = message_ids[cursor];
       cursor += 1;
       console.info('[CosmosMemory] 补全楼层总结', { message_id });
@@ -1014,21 +1031,25 @@ async function backfillMissingSummaries(
   }
 
   // 并发补全时实体变更可能乱序应用，最后按楼层顺序全量重放一次保证一致性
-  if (summaries.length > 0) {
+  if (summaries.length > 0 && !signal.aborted) {
     rebuildMemoryFromSummaries(getStoredMessageSummaries());
   }
 
+  const aborted = abort_signal.aborted || signal.aborted;
   console.info('[CosmosMemory] 缺失总结补全结束', {
     requested_count: message_ids.length,
     summarized_count: summaries.length,
-    aborted: abort_signal.aborted,
+    aborted,
   });
 
-  return { summaries, aborted: abort_signal.aborted };
+  return { summaries, aborted };
 }
 
 export async function summarizeMissingAssistantMessages(): Promise<MessageSummary[]> {
-  const message_ids = await getMissingAssistantMessageIds(getCurrentLastMessageId());
+  const signal = useSettingsStore().getMemoryGenerationSignal();
+  if (signal.aborted) return [];
+  const message_ids = await getMissingAssistantMessageIds(getCurrentLastMessageId(), signal);
+  if (signal.aborted) return [];
   if (message_ids.length === 0) {
     console.info('[CosmosMemory] 发送前检查完成，没有缺失总结的 assistant 楼层');
     return [];
@@ -1046,6 +1067,10 @@ export async function summarizeMissingAssistantMessages(): Promise<MessageSummar
 export async function runMemoryBacktrackCheck(
   options: MemoryBacktrackCheckOptions = {},
 ): Promise<MemoryBacktrackCheckResult> {
+  const signal = useSettingsStore().getMemoryGenerationSignal();
+  if (signal.aborted) {
+    return { max_message_id: -1, removed_summaries: [], summarized_summaries: [], rebuilt: false, aborted: true };
+  }
   const max_message_id = options.max_message_id ?? getCurrentLastMessageId();
   if (max_message_id < 0) {
     console.info('[CosmosMemory] 回溯检查完成，当前聊天没有可检查楼层');
@@ -1096,15 +1121,15 @@ export async function runMemoryBacktrackCheck(
   const rebuilt = true;
   rebuildMemoryFromSummaries(getStoredMessageSummaries(), max_message_id);
 
-  const missing_message_ids = await getMissingAssistantMessageIds(max_message_id);
-  if (missing_message_ids.length === 0) {
+  const missing_message_ids = await getMissingAssistantMessageIds(max_message_id, signal);
+  if (signal.aborted || missing_message_ids.length === 0) {
     console.info('[CosmosMemory] 回溯检查完成，没有缺失总结的 assistant 楼层');
     return {
       max_message_id,
       removed_summaries,
       summarized_summaries: [],
       rebuilt,
-      aborted: false,
+      aborted: signal.aborted,
     };
   }
 

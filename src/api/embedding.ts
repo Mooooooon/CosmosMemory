@@ -22,7 +22,11 @@ type EmbeddingResponseEntry = {
  * 批量计算向量，返回 text → vector 字典。
  * 字典键与传入文本逐字节一致，供 ST /api/vector 的 webllm 源按原文取用。
  */
-export async function fetchEmbeddings(texts: string[], config: EmbeddingConfig): Promise<Record<string, number[]>> {
+export async function fetchEmbeddings(
+  texts: string[],
+  config: EmbeddingConfig,
+  signal?: AbortSignal,
+): Promise<Record<string, number[]>> {
   const unique_texts = [...new Set(texts)].filter(text => text.length > 0);
   const result: Record<string, number[]> = {};
   const base_url = normalizeApiUrl(config.api_url);
@@ -30,6 +34,7 @@ export async function fetchEmbeddings(texts: string[], config: EmbeddingConfig):
   for (const chunk of _.chunk(unique_texts, EMBEDDING_BATCH_SIZE)) {
     const response = await fetch(`${base_url}/embeddings`, {
       method: 'POST',
+      signal,
       headers: buildApiHeaders(config.api_key),
       body: JSON.stringify({
         model: config.model,
@@ -68,8 +73,11 @@ export async function fetchEmbeddingModelNames(api_key: string, api_url?: string
 }
 
 /** 连通性测试：对固定短文本计算一次向量，返回维度供 UI 展示 */
-export async function pingEmbeddingService(config: EmbeddingConfig): Promise<{ dimension: number }> {
+export async function pingEmbeddingService(
+  config: EmbeddingConfig,
+  signal?: AbortSignal,
+): Promise<{ dimension: number }> {
   const test_text = 'ping';
-  const embeddings = await fetchEmbeddings([test_text], config);
+  const embeddings = await fetchEmbeddings([test_text], config, signal);
   return { dimension: embeddings[test_text]!.length };
 }

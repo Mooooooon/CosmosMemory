@@ -157,7 +157,7 @@ export function getValidSummaryRollups(): SummaryRollupSegment[] {
     canonical_batches.some(batch => doesSegmentMatchBatch(segment, batch)),
   );
 
-  if (valid_segments.length !== segments.length) {
+  if (!settings.summary_paused && valid_segments.length !== segments.length) {
     const valid_segment_set = new Set(valid_segments);
     console.info('[CosmosMemory] 部分前情分段的来源摘要已变更，作废受影响分段', {
       invalid_source_message_ids: segments
@@ -319,6 +319,8 @@ async function rollupCore(generation_id: string, regenerate: boolean): Promise<S
 }
 
 function runRollupTask(regenerate: boolean): Promise<SummaryRollupRunResult> {
+  const signal = useSettingsStore().getMemoryGenerationSignal();
+  if (signal.aborted) return Promise.reject(signal.reason);
   if (running_task) {
     console.info('[CosmosMemory] 复用正在进行的二次总结任务');
     return running_task.promise;
@@ -361,7 +363,7 @@ export function regenerateSummaryRollups(): Promise<SummaryRollupRunResult> {
 /** 待合并摘要达到一个完整分段时自动执行；失败仅告警，不打断主流程 */
 export function triggerSummaryRollupIfNeeded() {
   const { settings } = useSettingsStore();
-  if (!settings.summary_rollup.enabled || running_task) {
+  if (!settings.enabled || settings.summary_paused || !settings.summary_rollup.enabled || running_task) {
     return;
   }
 

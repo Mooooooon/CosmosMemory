@@ -230,6 +230,7 @@
           class="menu_button"
           type="button"
           :value="is_checking_memory ? t`停止检查` : t`手动检查记忆`"
+          :disabled="settings.summary_paused"
           @click="handle_memory_check_button"
         />
       </div>
@@ -300,12 +301,14 @@ function normalize_filter_max_retries() {
 }
 
 async function handle_include_opening_toggle() {
+  const signal = useSettingsStore().getMemoryGenerationSignal();
   const is_enabled = settings.value.summary.include_opening_message_original;
   settings.value.compression.include_opening_message = is_enabled;
 
   if (is_enabled) {
     try {
       await runMemoryBacktrackCheck();
+      if (signal.aborted) return;
       await applySummaryCompressionForNextGeneration(settings.value.compression.enabled);
     } catch (error) {
       console.error('[CosmosMemory] 开启开场白压缩失败', error);

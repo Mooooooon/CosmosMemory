@@ -23,9 +23,10 @@ export type VectorQueryHit = {
   index: number;
 };
 
-async function postVectorApi(endpoint: string, body: Record<string, unknown>): Promise<Response> {
+async function postVectorApi(endpoint: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
   const response = await fetch(`/api/vector/${endpoint}`, {
     method: 'POST',
+    signal,
     headers: getRequestHeaders(),
     body: JSON.stringify(body),
   });
@@ -66,28 +67,37 @@ export async function queryVectorCollection(
   embedding: number[],
   top_k: number,
   threshold: number,
+  signal?: AbortSignal,
 ): Promise<VectorQueryHit[]> {
-  const response = await postVectorApi('query', {
-    collectionId: collection_id,
-    searchText: search_text,
-    topK: top_k,
-    threshold,
-    source: VECTOR_SOURCE,
-    model,
-    embeddings: { [search_text]: embedding },
-  });
+  const response = await postVectorApi(
+    'query',
+    {
+      collectionId: collection_id,
+      searchText: search_text,
+      topK: top_k,
+      threshold,
+      source: VECTOR_SOURCE,
+      model,
+      embeddings: { [search_text]: embedding },
+    },
+    signal,
+  );
 
   const data = (await response.json()) as { metadata?: VectorQueryHit[] };
   return (data.metadata ?? []).filter(hit => typeof hit.index === 'number' && typeof hit.text === 'string');
 }
 
 /** 列出集合内已存的全部 hash，用于增量同步 diff */
-export async function listVectorHashes(collection_id: string, model: string): Promise<number[]> {
-  const response = await postVectorApi('list', {
-    collectionId: collection_id,
-    source: VECTOR_SOURCE,
-    model,
-  });
+export async function listVectorHashes(collection_id: string, model: string, signal?: AbortSignal): Promise<number[]> {
+  const response = await postVectorApi(
+    'list',
+    {
+      collectionId: collection_id,
+      source: VECTOR_SOURCE,
+      model,
+    },
+    signal,
+  );
 
   const data = (await response.json()) as number[];
   return Array.isArray(data) ? data.map(Number) : [];

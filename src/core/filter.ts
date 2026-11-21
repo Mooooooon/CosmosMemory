@@ -95,7 +95,7 @@ export function extractErrorSummary(error_text: string): string {
 
 export function handleGenerationError(error_text: string, title?: string): boolean {
   const { settings } = useSettingsStore();
-  if (!settings.filter.enabled || !settings.filter.auto_retry) {
+  if (!settings.enabled || settings.summary_paused || !settings.filter.enabled || !settings.filter.auto_retry) {
     return false;
   }
 
@@ -253,11 +253,14 @@ export function cancelPendingAutoRetry(): void {
  * 最后降级尝试直接调用 SillyTavern 导出的 Generate('regenerate')。
  */
 export async function triggerRegenerate(): Promise<void> {
+  const signal = useSettingsStore().getMemoryGenerationSignal();
+  if (signal.aborted) return;
   if (window.TavernHelper && typeof window.TavernHelper.triggerSlash === 'function') {
     try {
       await window.TavernHelper.triggerSlash('/regenerate');
       return;
     } catch (error) {
+      if (signal.aborted) return;
       console.warn('[CosmosMemory] 通过 TavernHelper.triggerSlash 触发 /regenerate 失败，尝试界面按钮回退', error);
     }
   }
@@ -270,6 +273,7 @@ export async function triggerRegenerate(): Promise<void> {
 
   try {
     const { Generate } = await import('@sillytavern/script');
+    if (signal.aborted) return;
     if (typeof Generate === 'function') {
       await Generate('regenerate');
       return;
@@ -287,7 +291,7 @@ export async function triggerRegenerate(): Promise<void> {
  */
 export function triggerFilterAutoRetry(message_id: number, reason?: string): AutoRetryResult {
   const { settings } = useSettingsStore();
-  if (!settings.filter.enabled || !settings.filter.auto_retry) {
+  if (!settings.enabled || settings.summary_paused || !settings.filter.enabled || !settings.filter.auto_retry) {
     return { retried: false };
   }
 

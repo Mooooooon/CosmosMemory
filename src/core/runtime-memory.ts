@@ -9,13 +9,7 @@ import {
 } from '@/core/setting-changes';
 import type { Settings } from '@/type/settings';
 
-const RUNTIME_MEMORY_PROMPT_IDS = [
-  SETTING_CHANGE_PROMPT_ID,
-  CURRENT_INFO_PROMPT_ID,
-  LOCATION_PROMPT_ID,
-  ITEM_PROMPT_ID,
-  CHARACTER_PROMPT_ID,
-];
+let uninject_runtime_memory: (() => void) | undefined;
 
 type RuntimeMemoryPromptInfo = {
   id: string;
@@ -59,8 +53,14 @@ function buildRuntimeMemoryPromptInfos(settings: Settings): RuntimeMemoryPromptI
   ];
 }
 
-export function applyRuntimeMemoryPromptInjection(settings: Settings): string[] {
-  window.TavernHelper.uninjectPrompts(RUNTIME_MEMORY_PROMPT_IDS);
+export function clearRuntimeMemoryPrompts() {
+  uninject_runtime_memory?.();
+  uninject_runtime_memory = undefined;
+}
+
+export function applyRuntimeMemoryPromptInjection(settings: Settings, signal: AbortSignal): string[] {
+  if (signal.aborted) return [];
+  clearRuntimeMemoryPrompts();
 
   const prompt_infos = buildRuntimeMemoryPromptInfos(settings);
   const prompts = prompt_infos
@@ -71,6 +71,7 @@ export function applyRuntimeMemoryPromptInjection(settings: Settings): string[] 
       depth: info.depth,
       role: 'system' as const,
       content: info.content,
+      filter: () => !signal.aborted,
     }));
 
   if (prompts.length === 0) {
@@ -84,7 +85,7 @@ export function applyRuntimeMemoryPromptInjection(settings: Settings): string[] 
     return [];
   }
 
-  window.TavernHelper.injectPrompts(prompts, { once: true });
+  uninject_runtime_memory = window.TavernHelper.injectPrompts(prompts, { once: true }).uninject;
   console.info('[CosmosMemory] 生成前已注入运行时记忆', {
     injected_prompt_ids: prompts.map(prompt => prompt.id),
     skipped_prompt_ids: prompt_infos.filter(info => !info.enabled || !info.content).map(info => info.id),

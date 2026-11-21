@@ -1,4 +1,9 @@
-import { HIDDEN_BY_COMPRESSION_PATH, isCosmosMemoryMessage, isHiddenByCompression } from '@/core/message-flags';
+import {
+  HIDDEN_BY_COMPRESSION_PATH,
+  isCosmosMemoryMessage,
+  isExcludedFromMemory,
+  isHiddenByCompression,
+} from '@/core/message-flags';
 import { getValidSummaryRollups, type SummaryRollupSegment } from '@/core/summary-rollup';
 import { getStoredMessageSummaries, OPENING_MESSAGE_ID, type MessageSummary } from '@/core/summary';
 import { useSettingsStore } from '@/store/settings';
@@ -6,7 +11,7 @@ import { isOpeningMessageCompressionEnabled } from '@/type/settings';
 
 const SUMMARY_PROMPT_ID = 'cosmos_memory_summary';
 
-let injected_summary_prompt_ids: string[] = [];
+let uninject_summary_prompt: (() => void) | undefined;
 
 type CompressionResult = {
   hidden_message_ids: number[];
@@ -36,13 +41,9 @@ function getRetainedOriginalAssistantCount(): number {
   return Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 5;
 }
 
-function clearInjectedSummaryPrompts() {
-  if (injected_summary_prompt_ids.length === 0) {
-    return;
-  }
-
-  window.TavernHelper.uninjectPrompts(injected_summary_prompt_ids);
-  injected_summary_prompt_ids = [];
+export function clearInjectedSummaryPrompts() {
+  uninject_summary_prompt?.();
+  uninject_summary_prompt = undefined;
 }
 
 /**
@@ -69,7 +70,11 @@ function buildCombinedSummaryPromptContent(summaries: MessageSummary[], rollups:
   ].join('\n');
 }
 
-function injectSummariesForHiddenMessages(messages: ChatMessage[], summaries: Map<number, MessageSummary>): number[] {
+function injectSummariesForHiddenMessages(
+  messages: ChatMessage[],
+  summaries: Map<number, MessageSummary>,
+  signal: AbortSignal,
+): number[] {
   clearInjectedSummaryPrompts();
 
   // messages 按楼层升序传入，过滤后仍保持时间顺序
@@ -90,8 +95,7 @@ function injectSummariesForHiddenMessages(messages: ChatMessage[], summaries: Ma
   const last_message_id = window.TavernHelper.getLastMessageId();
   const depth = Math.max(0, last_message_id - ordered_summaries[0].message_id);
 
-  injected_summary_prompt_ids = [SUMMARY_PROMPT_ID];
-  window.TavernHelper.injectPrompts(
+  uninject_summary_prompt = window.TavernHelper.injectPrompts(
     [
       {
         id: SUMMARY_PROMPT_ID,
@@ -99,30 +103,42 @@ function injectSummariesForHiddenMessages(messages: ChatMessage[], summaries: Ma
         depth,
         role: 'system' as const,
         content: buildCombinedSummaryPromptContent(ordered_summaries, rollups),
+        filter: () => !signal.aborted,
       },
     ],
     { once: true },
-  );
+  ).uninject;
   return ordered_summaries.map(summary => summary.message_id);
 }
 
 export async function applySummaryCompressionForNextGeneration(enabled: boolean = true): Promise<CompressionResult> {
-  const { settings } = useSettingsStore();
+  const { settings, getRunSignal } = useSettingsStore();
+  const signal = getRunSignal();
+  if (signal.aborted) {
+    return {
+      hidden_message_ids: [],
+      restored_message_ids: [],
+      injected_summary_ids: [],
+      skipped_without_summary_ids: [],
+    };
+  }
   const assistant_messages = getOriginalAssistantMessages();
   const retained_count = getRetainedOriginalAssistantCount();
   const allow_opening = isOpeningMessageCompressionEnabled(settings);
 
   // 压缩候选楼层：如果不包括开场白，开场白楼层不参与压缩
+  const memory_messages = assistant_messages.filter(message => !isExcludedFromMemory(message));
   const candidates_for_compression = allow_opening
-    ? assistant_messages
-    : assistant_messages.filter(message => message.message_id !== OPENING_MESSAGE_ID);
+    ? memory_messages
+    : memory_messages.filter(message => message.message_id !== OPENING_MESSAGE_ID);
 
   // 压缩关闭时不隐藏任何楼层，但恢复逻辑照常执行，会把之前压缩隐藏的楼层恢复原文
-  const compressible_messages = !enabled
-    ? []
-    : retained_count === 0
-      ? candidates_for_compression
-      : candidates_for_compression.slice(0, -retained_count);
+  const compressible_messages =
+    !enabled || settings.summary_paused
+      ? []
+      : retained_count === 0
+        ? candidates_for_compression
+        : candidates_for_compression.slice(0, -retained_count);
   const summaries = getSummaryByMessageId();
   const skipped_without_summary_ids = compressible_messages
     .filter(message => !summaries.has(message.message_id))
@@ -139,7 +155,8 @@ export async function applySummaryCompressionForNextGeneration(enabled: boolean 
   const hidden_message_ids: number[] = [];
   const restored_message_ids: number[] = [];
 
-  for (const message of assistant_messages) {
+  // 临时关闭期间只注入已有摘要，跳过隐藏和恢复楼层。
+  for (const message of settings.summary_paused ? [] : assistant_messages) {
     const should_hide = messages_to_hide_ids.has(message.message_id);
     if (should_hide && !message.is_hidden) {
       const data = cloneMessageData(message);
@@ -164,7 +181,7 @@ export async function applySummaryCompressionForNextGeneration(enabled: boolean 
   // 注入对象 = 生成时处于隐藏状态且有摘要的全部楼层（含用户手动隐藏的楼层），
   // 排除刚刚被恢复为未隐藏的楼层，避免其在内存对象上残留旧的 is_hidden 状态导致误注入
   const restored_ids_set = new Set(restored_message_ids);
-  const messages_to_inject = assistant_messages.filter(message => {
+  const messages_to_inject = memory_messages.filter(message => {
     if (!summaries.has(message.message_id)) {
       return false;
     }
@@ -175,7 +192,9 @@ export async function applySummaryCompressionForNextGeneration(enabled: boolean 
 
     return message.is_hidden || messages_to_hide_ids.has(message.message_id);
   });
-  const injected_summary_ids = injectSummariesForHiddenMessages(messages_to_inject, summaries);
+  const injected_summary_ids = signal.aborted
+    ? []
+    : injectSummariesForHiddenMessages(messages_to_inject, summaries, signal);
 
   console.info('[CosmosMemory] 已应用生成前摘要压缩', {
     enabled,

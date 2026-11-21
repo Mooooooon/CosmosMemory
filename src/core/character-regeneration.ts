@@ -1,6 +1,6 @@
 import { extractCharactersFromChatContent } from '@/api/ai';
 import { replaceStoredCharacters, type StoredCharacter } from '@/core/characters';
-import { isCosmosMemoryMessage } from '@/core/message-flags';
+import { isCosmosMemoryMessage, isExcludedFromMemory } from '@/core/message-flags';
 import { getRegexedAiContent } from '@/core/summary';
 import type { AiSettings } from '@/type/settings';
 import { getFloorBinding } from '@/core/floor-history';
@@ -11,7 +11,7 @@ function getAssistantChatContent(): string {
     role: 'assistant',
     include_swipes: false,
   })
-    .filter(message => !isCosmosMemoryMessage(message))
+    .filter(message => !isCosmosMemoryMessage(message) && !isExcludedFromMemory(message))
     .map(message => {
       const content = getRegexedAiContent(message);
       if (!content) {
@@ -25,7 +25,11 @@ function getAssistantChatContent(): string {
   return messages.join('\n\n---\n\n');
 }
 
-export async function regenerateCharactersFromChat(settings: AiSettings): Promise<StoredCharacter[]> {
+export async function regenerateCharactersFromChat(
+  settings: AiSettings,
+  signal: AbortSignal,
+): Promise<StoredCharacter[]> {
+  signal.throwIfAborted();
   const chat_id = getCurrentChatId();
   const binding = getFloorBinding();
   const content = getAssistantChatContent();
@@ -33,7 +37,8 @@ export async function regenerateCharactersFromChat(settings: AiSettings): Promis
     throw new Error(t`当前聊天没有可用于生成人物信息的 AI 回复。`);
   }
 
-  const characters = await extractCharactersFromChatContent(settings, content);
+  const characters = await extractCharactersFromChatContent(settings, content, signal);
+  signal.throwIfAborted();
   if (getCurrentChatId() !== chat_id || !_.isEqual(binding, getFloorBinding())) {
     throw new Error(t`绑定楼层或分支已变化，请重新执行修改。`);
   }

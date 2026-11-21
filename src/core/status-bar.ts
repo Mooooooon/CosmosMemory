@@ -277,11 +277,13 @@ function renderTabContent($container: JQuery<HTMLElement>) {
  * @returns 是否成功获取 DOM 并挂载状态栏
  */
 export function updateStatusBar(): boolean {
+  const { settings } = useSettingsStore();
+  if (!settings.enabled) return true;
+
   if (!window.TavernHelper) {
     return false;
   }
 
-  const { settings } = useSettingsStore();
   const messageId = getLatestAiMessageId();
   // 总结栏与当前画面独立于状态栏开关，按 总结 -> 画面 -> 状态栏 层级挂载。
   const summary_updated = updateMessageSummary(messageId);
@@ -368,6 +370,7 @@ let retryCount = 0;
  * 触发状态栏更新（防抖/异步）
  */
 export function triggerUpdateStatusBar() {
+  if (!useSettingsStore().settings.enabled) return;
   if (updateTimeout) {
     clearTimeout(updateTimeout);
   }
@@ -406,9 +409,26 @@ export function initStatusBar() {
   console.info('[CosmosMemory] 初始化状态栏监听器');
   const { settings } = useSettingsStore();
   watch(
+    () => settings.enabled,
+    enabled => {
+      if (enabled) {
+        triggerUpdateStatusBar();
+        return;
+      }
+      clearTimeout(updateTimeout);
+      updateTimeout = null;
+      retryCount = 0;
+      updateMessageSummary(null);
+      updateMessageScene(null);
+      $('#chat .cosmos-memory-status-bar', window.parent.document).remove();
+    },
+    { flush: 'sync' },
+  );
+  watch(
     [
       message_summaries_revision,
       () => settings.summary.show_in_message,
+      () => settings.summary_paused,
       () => settings.current_scene.enabled,
       () => settings.current_scene.default_expanded,
     ],

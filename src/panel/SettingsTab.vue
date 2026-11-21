@@ -276,11 +276,13 @@ const is_test_disabled = computed(() => {
 });
 
 async function handle_fetch_models() {
+  const signal = useSettingsStore().getRunSignal();
   is_fetching_models.value = true;
   test_result.value = null;
 
   try {
     const models = await fetchCustomModelNames(settings.value.ai);
+    if (signal.aborted) return;
     settings.value.ai.available_models = models;
 
     if (!settings.value.ai.selected_model && models.length > 0) {
@@ -289,6 +291,7 @@ async function handle_fetch_models() {
 
     toastr.success(t`模型列表获取成功。`);
   } catch (error) {
+    if (signal.aborted) return;
     const message = error instanceof Error ? error.message : String(error);
     toastr.error(message);
     test_result.value = { type: 'error', message };
@@ -298,15 +301,17 @@ async function handle_fetch_models() {
 }
 
 async function handle_send_test_message() {
+  const signal = useSettingsStore().getRunSignal();
   is_testing.value = true;
   test_result.value = null;
 
   try {
-    const response = await sendPing(settings.value.ai);
+    const response = await sendPing(settings.value.ai, signal);
     const message = response.trim() || t`AI 返回了空内容。`;
     test_result.value = { type: 'success', message };
     toastr.success(t`测试消息发送成功。`);
   } catch (error) {
+    if (signal.aborted) return;
     const message = error instanceof Error ? error.message : String(error);
     toastr.error(message);
     test_result.value = { type: 'error', message };

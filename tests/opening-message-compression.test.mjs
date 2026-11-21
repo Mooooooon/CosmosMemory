@@ -21,7 +21,14 @@ function loadSource(path, globals = {}, imports = {}) {
   return exports;
 }
 
-const { CompressionSettings, isOpeningMessageCompressionEnabled } = loadSource('type/settings');
+const { CompressionSettings, Settings, isOpeningMessageCompressionEnabled } = loadSource('type/settings');
+
+test('总开关默认开启，并可读取保存的关闭状态', () => {
+  assert.equal(Settings.parse({}).enabled, true);
+  assert.equal(Settings.parse({ enabled: false }).enabled, false);
+  assert.equal(Settings.parse({}).summary_paused, false);
+  assert.equal(Settings.parse({ summary_paused: true }).summary_paused, true);
+});
 
 test('CompressionSettings Schema：支持 include_opening_message 默认值与校验', () => {
   const default_settings = CompressionSettings.parse({});
@@ -67,6 +74,7 @@ test('isOpeningMessageCompressionEnabled：正确检测 compression 与 summary 
 
 test('实际压缩调用：开场白隐藏、恢复后不重复注入，并保留手动隐藏楼层的摘要', async () => {
   const settings = {
+    summary_paused: false,
     compression: { retained_original_assistant_messages: 0, include_opening_message: true },
     summary: { include_opening_message_original: false },
   };
@@ -74,7 +82,9 @@ test('实际压缩调用：开场白隐藏、恢复后不重复注入，并保�
   const summaries = messages.map(({ message_id }) => ({ message_id, summary: `summary-${message_id}` }));
   const injections = [];
   const removed = [];
-  const { applySummaryCompressionForNextGeneration } = loadSource('core/compression', {
+  const controller = new AbortController();
+  let refresh = async () => {};
+  const { applySummaryCompressionForNextGeneration, clearInjectedSummaryPrompts } = loadSource('core/compression', {
     _: {
       cloneDeep: value => structuredClone(value),
       set: (value, key, data) => { value[key] = data; },
@@ -86,19 +96,23 @@ test('实际压缩调用：开场白隐藏、恢复后不重复注入，并保�
       getLastMessageId: () => 4,
       setChatMessages: async updates => {
         for (const update of updates) Object.assign(messages.find(m => m.message_id === update.message_id), update);
+        await refresh();
       },
-      injectPrompts: prompts => injections.push(prompts),
-      uninjectPrompts: ids => removed.push(...ids),
+      injectPrompts: prompts => {
+        injections.push(prompts);
+        return { uninject: () => removed.push(...prompts.map(prompt => prompt.id)) };
+      },
     } },
   }, {
     '@/core/message-flags': {
       HIDDEN_BY_COMPRESSION_PATH: 'compressed',
       isCosmosMemoryMessage: () => false,
+      isExcludedFromMemory: message => message.data.excluded === true,
       isHiddenByCompression: message => message.data.compressed === true,
     },
     '@/core/summary-rollup': { getValidSummaryRollups: () => [] },
     '@/core/summary': { OPENING_MESSAGE_ID: 0, getStoredMessageSummaries: () => summaries },
-    '@/store/settings': { useSettingsStore: () => ({ settings }) },
+    '@/store/settings': { useSettingsStore: () => ({ settings, getRunSignal: () => controller.signal }) },
     '@/type/settings': { isOpeningMessageCompressionEnabled },
   });
 
@@ -106,6 +120,13 @@ test('实际压缩调用：开场白隐藏、恢复后不重复注入，并保�
   const enabled = await applySummaryCompressionForNextGeneration();
   assert.deepEqual(ids(enabled.hidden_message_ids), [0, 2]);
   assert.deepEqual(ids(enabled.injected_summary_ids), [0, 2, 4]);
+
+  settings.summary_paused = true;
+  const paused = await applySummaryCompressionForNextGeneration(false);
+  assert.deepEqual(ids(paused.restored_message_ids), []);
+  assert.deepEqual(ids(paused.injected_summary_ids), [0, 2, 4]);
+  assert.equal(messages[0].is_hidden, true);
+  settings.summary_paused = false;
 
   settings.compression.include_opening_message = false;
   const disabled = await applySummaryCompressionForNextGeneration();
@@ -118,7 +139,20 @@ test('实际压缩调用：开场白隐藏、恢复后不重复注入，并保�
   assert.deepEqual(ids(restored.restored_message_ids), [2]);
   assert.deepEqual(ids(restored.injected_summary_ids), [4]);
   assert.equal(messages[2].is_hidden, true);
-  assert.deepEqual(removed, ['cosmos_memory_summary', 'cosmos_memory_summary']);
+  assert.deepEqual(removed, Array(3).fill('cosmos_memory_summary'));
+
+  let finishRefresh;
+  refresh = () => new Promise(resolve => { finishRefresh = resolve; });
+  const inflight = applySummaryCompressionForNextGeneration();
+  assert.equal(messages[1].is_hidden, true);
+  controller.abort();
+  clearInjectedSummaryPrompts();
+  finishRefresh();
+  assert.deepEqual(ids((await inflight).injected_summary_ids), []);
+  assert.deepEqual(ids((await applySummaryCompressionForNextGeneration(false)).restored_message_ids), []);
+  assert.equal(messages[1].is_hidden, true);
+  assert.equal(injections.length, 4);
+  assert.equal(removed.length, 4);
 });
 
 test('压缩楼层过滤：当包括开场白未开启时，开场白不参与压缩隐藏', () => {

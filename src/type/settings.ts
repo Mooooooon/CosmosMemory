@@ -192,6 +192,8 @@ export const FilterSettings = z
 export type Settings = z.infer<typeof Settings>;
 export const Settings = z
   .object({
+    enabled: z.boolean().default(true),
+    summary_paused: z.boolean().default(false),
     ai: AiSettings,
     compression: CompressionSettings,
     summary: SummarySettings,

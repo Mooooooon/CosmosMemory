@@ -16,7 +16,7 @@ import {
   type VectorQueryHit,
 } from '@/api/vector-storage';
 import { STORAGE_ROOT } from '@/core/entity-store';
-import { isCosmosMemoryMessage } from '@/core/message-flags';
+import { isCosmosMemoryMessage, isExcludedFromMemory } from '@/core/message-flags';
 import { getRegexedAiContent, getRegexedMessageContent, OPENING_MESSAGE_ID } from '@/core/summary';
 import { useSettingsStore } from '@/store/settings';
 import {
@@ -28,6 +28,7 @@ import { getCurrentChatId } from '@sillytavern/script';
 import { getStringHash } from '@sillytavern/scripts/utils';
 
 export const VECTOR_RECALL_PROMPT_ID = 'cosmos_memory_vector_recall';
+let uninject_vector_recall: (() => void) | undefined;
 /** 上次召回详情在聊天变量中的存储路径（随聊天走，供状态栏透明化展示） */
 const LAST_RECALL_STORAGE_PATH = `${STORAGE_ROOT}.last_recall`;
 
@@ -76,7 +77,7 @@ function getOriginalAssistantMessages(): ChatMessage[] {
   return window.TavernHelper.getChatMessages('0-{{lastMessageId}}', {
     role: 'assistant',
     include_swipes: false,
-  }).filter(message => !isCosmosMemoryMessage(message));
+  }).filter(message => !isCosmosMemoryMessage(message) && !isExcludedFromMemory(message));
 }
 
 /**
@@ -130,6 +131,8 @@ function warnSyncFailureOnce(error: unknown) {
  * 编辑楼层 = 旧 hash 删 + 新 hash 插；删除楼层 = 直接删，无需感知具体事件类型。
  */
 export async function syncChatVectors(): Promise<SyncResult | null> {
+  const signal = useSettingsStore().getMemoryGenerationSignal();
+  if (signal.aborted) return null;
   const settings = getVectorRecallSettings();
   const config = getEmbeddingConfig(settings);
   const collection_id = getVectorCollectionId();
@@ -148,7 +151,8 @@ export async function syncChatVectors(): Promise<SyncResult | null> {
 
   try {
     const items = collectVectorizableItems(settings);
-    const stored_hashes = new Set(await listVectorHashes(collection_id, config.model));
+    const stored_hashes = new Set(await listVectorHashes(collection_id, config.model, signal));
+    if (signal.aborted) return null;
     const item_hashes = new Set(items.map(item => item.hash));
     const to_insert = _.uniqBy(
       items.filter(item => !stored_hashes.has(item.hash)),
@@ -160,7 +164,9 @@ export async function syncChatVectors(): Promise<SyncResult | null> {
       const embeddings = await fetchEmbeddings(
         to_insert.map(item => item.text),
         config,
+        signal,
       );
+      if (signal.aborted) return null;
       // embedding 请求期间可能切换了聊天，丢弃结果避免写错集合
       if (getCurrentChatId() !== chat_id_at_start) {
         console.info('[CosmosMemory] 向量同步期间聊天已切换，丢弃本次结果');
@@ -170,6 +176,7 @@ export async function syncChatVectors(): Promise<SyncResult | null> {
       await insertVectorItems(collection_id, config.model, to_insert, embeddings);
     }
 
+    if (signal.aborted) return null;
     if (to_delete.length > 0) {
       await deleteVectorItems(collection_id, config.model, to_delete);
     }
@@ -185,7 +192,7 @@ export async function syncChatVectors(): Promise<SyncResult | null> {
     return { inserted: to_insert.length, deleted: to_delete.length };
   } catch (error) {
     // 同步是后台任务，失败不能打断总结/生成流程
-    warnSyncFailureOnce(error);
+    if (!signal.aborted) warnSyncFailureOnce(error);
     return null;
   } finally {
     is_syncing = false;
@@ -201,6 +208,7 @@ const debounced_sync = _.debounce(() => {
 }, SYNC_DEBOUNCE_MS);
 
 export function triggerVectorSyncDebounced() {
+  if (useSettingsStore().getMemoryGenerationSignal().aborted) return;
   const settings = getVectorRecallSettings();
   if (!getEmbeddingConfig(settings)) {
     return;
@@ -217,6 +225,8 @@ export function cancelVectorSyncForChatChange() {
 
 /** 全量重建：清空集合后重新同步，进度回调供面板展示 */
 export async function rebuildVectorIndex(): Promise<SyncResult> {
+  const signal = useSettingsStore().getMemoryGenerationSignal();
+  signal.throwIfAborted();
   const settings = getVectorRecallSettings();
   const config = getEmbeddingConfig(settings);
   const collection_id = getVectorCollectionId();
@@ -225,6 +235,7 @@ export async function rebuildVectorIndex(): Promise<SyncResult> {
   }
 
   await purgeVectorCollection(collection_id);
+  signal.throwIfAborted();
   const result = await syncChatVectors();
   if (!result) {
     throw new Error(t`向量索引重建未完成，请检查控制台日志。`);
@@ -244,6 +255,8 @@ export async function purgeVectorIndex(): Promise<void> {
 
 /** 已入库条数：实时查询索引，不做本地持久化 */
 export async function getVectorIndexStatus(): Promise<{ stored_count: number } | null> {
+  const signal = useSettingsStore().getRunSignal();
+  if (signal.aborted) return null;
   const settings = getVectorRecallSettings();
   const model = settings.model.trim();
   const collection_id = getVectorCollectionId();
@@ -251,7 +264,7 @@ export async function getVectorIndexStatus(): Promise<{ stored_count: number } |
     return null;
   }
 
-  const hashes = await listVectorHashes(collection_id, model);
+  const hashes = await listVectorHashes(collection_id, model, signal);
   return { stored_count: hashes.length };
 }
 
@@ -265,7 +278,7 @@ function buildQuerySearchText(settings: VectorRecallSettings, excluded_message_i
   // 只取尾部一段楼层做候选，避免超长聊天全量读取
   const range_start = Math.max(0, last_id - 20);
   const recent_messages = window.TavernHelper.getChatMessages(`${range_start}-${last_id}`, { include_swipes: false })
-    .filter(message => !message.is_hidden && !isCosmosMemoryMessage(message))
+    .filter(message => !message.is_hidden && !isCosmosMemoryMessage(message) && !isExcludedFromMemory(message))
     .filter(message => excluded_message_id === undefined || message.message_id < excluded_message_id)
     .slice(-settings.query_recent_message_count);
 
@@ -369,12 +382,14 @@ async function rerankHits(
   candidates: VectorQueryHit[],
   settings: VectorRecallSettings,
   config: RerankConfig,
+  signal: AbortSignal,
 ): Promise<Array<{ hit: VectorQueryHit; score: number }>> {
   const results = await rerankDocuments(
     search_text,
     candidates.map(candidate => candidate.text),
     settings.top_k,
     config,
+    signal,
   );
 
   return results
@@ -388,11 +403,20 @@ async function rerankHits(
  * 此时楼层的 is_hidden 已是本次生成的最终状态。
  * 返回召回的楼层 id 列表；任何失败都静默降级，绝不阻断生成。
  */
+export function clearVectorRecallPrompt() {
+  uninject_vector_recall?.();
+  uninject_vector_recall = undefined;
+}
+
 export async function applyVectorRecallForNextGeneration(
   options: { excluded_message_id?: number } = {},
 ): Promise<number[]> {
+  const { getRunSignal, getMemoryGenerationSignal } = useSettingsStore();
+  const signal = getRunSignal();
+  const memory_generation_signal = getMemoryGenerationSignal();
+  if (signal.aborted) return [];
   // once:true 注入理论上生成后自动清除，此处先卸载做双保险
-  window.TavernHelper.uninjectPrompts([VECTOR_RECALL_PROMPT_ID]);
+  clearVectorRecallPrompt();
 
   const settings = getVectorRecallSettings();
   const config = getEmbeddingConfig(settings);
@@ -406,7 +430,8 @@ export async function applyVectorRecallForNextGeneration(
     return [];
   }
 
-  const embeddings = await fetchEmbeddings([search_text], config);
+  const embeddings = await fetchEmbeddings([search_text], config, signal);
+  if (signal.aborted) return [];
   const query_embedding = embeddings[search_text];
   if (!query_embedding) {
     return [];
@@ -419,7 +444,9 @@ export async function applyVectorRecallForNextGeneration(
     query_embedding,
     settings.top_k * QUERY_TOP_K_MULTIPLIER,
     settings.score_threshold,
+    signal,
   );
+  if (signal.aborted) return [];
 
   const protected_threshold = getProtectedFloorThreshold(settings);
   const message_by_id = new Map(getOriginalAssistantMessages().map(message => [message.message_id, message]));
@@ -444,9 +471,10 @@ export async function applyVectorRecallForNextGeneration(
   let rerank_used = false;
   if (rerank_config && candidates.length > 0) {
     try {
-      scored_hits = await rerankHits(search_text, candidates, settings, rerank_config);
+      scored_hits = await rerankHits(search_text, candidates, settings, rerank_config, signal);
       rerank_used = true;
     } catch (error) {
+      if (signal.aborted) return [];
       console.error('[CosmosMemory] Rerank 失败，降级为向量相似度排序', error);
       scored_hits = candidates.slice(0, settings.top_k).map(hit => ({ hit }));
     }
@@ -454,25 +482,28 @@ export async function applyVectorRecallForNextGeneration(
     scored_hits = candidates.slice(0, settings.top_k).map(hit => ({ hit }));
   }
 
+  if (signal.aborted) return [];
   // 注入按楼层时间线升序，保持剧情阅读顺序
   const ordered_hits = [...scored_hits].sort((left, right) => left.hit.index - right.hit.index);
 
-  saveLastRecallInfo({
-    recalled_at: new Date().toISOString(),
-    query_preview: search_text.slice(-FRAGMENT_PREVIEW_CHARS),
-    rerank_used,
-    fragments: ordered_hits.map(entry => ({
-      message_id: entry.hit.index,
-      text_preview: entry.hit.text.slice(0, FRAGMENT_PREVIEW_CHARS),
-      relevance_score: entry.score,
-    })),
-  });
+  if (!memory_generation_signal.aborted) {
+    saveLastRecallInfo({
+      recalled_at: new Date().toISOString(),
+      query_preview: search_text.slice(-FRAGMENT_PREVIEW_CHARS),
+      rerank_used,
+      fragments: ordered_hits.map(entry => ({
+        message_id: entry.hit.index,
+        text_preview: entry.hit.text.slice(0, FRAGMENT_PREVIEW_CHARS),
+        relevance_score: entry.score,
+      })),
+    });
+  }
 
   if (ordered_hits.length === 0) {
     return [];
   }
 
-  window.TavernHelper.injectPrompts(
+  uninject_vector_recall = window.TavernHelper.injectPrompts(
     [
       {
         id: VECTOR_RECALL_PROMPT_ID,
@@ -480,10 +511,11 @@ export async function applyVectorRecallForNextGeneration(
         depth: settings.injection_depth,
         role: 'system' as const,
         content: buildRecallPromptContent(ordered_hits.map(entry => entry.hit)),
+        filter: () => !signal.aborted,
       },
     ],
     { once: true },
-  );
+  ).uninject;
 
   const recalled_ids = ordered_hits.map(entry => entry.hit.index);
   console.info('[CosmosMemory] 已注入向量召回内容', {

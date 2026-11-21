@@ -6,34 +6,54 @@
         <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
       </div>
       <div class="inline-drawer-content">
-        <!-- 导航菜单栏 (Tabs Header) -->
-        <div class="cosmos-settings-tabs">
-          <button
-            v-for="tab in tabs"
-            :key="tab.id"
-            class="cosmos-settings-tab"
-            :class="{ active: active_tab === tab.id }"
-            @click="active_tab = tab.id"
-          >
-            <i :class="tab.icon"></i>
-            <span>{{ tab.name }}</span>
-          </button>
+        <div class="cosmos-memory-row flex-container">
+          <input id="cosmos_memory_enabled" v-model="settings.enabled" type="checkbox" />
+          <label for="cosmos_memory_enabled">{{ t`启用 Cosmos Memory` }}</label>
         </div>
 
-        <!-- 1. 基础设置 (Settings Tab) -->
-        <SettingsTab v-show="active_tab === 'settings'" />
+        <template v-if="settings.enabled">
+          <div class="cosmos-memory-row flex-container">
+            <input
+              id="cosmos_memory_summary_paused"
+              v-model="settings.summary_paused"
+              type="checkbox"
+              aria-describedby="cosmos_memory_summary_paused_hint"
+            />
+            <label for="cosmos_memory_summary_paused">{{ t`临时关闭总结（只注入）` }}</label>
+          </div>
+          <div id="cosmos_memory_summary_paused_hint" class="cosmos-memory-hint">
+            {{ t`继续注入已有记忆。期间收到的 AI 回复在恢复后也会跳过总结和向量入库。` }}
+          </div>
 
-        <!-- 2. 剧情总结 (Summary Tab) -->
-        <SummaryTab v-show="active_tab === 'summary'" />
+          <!-- 导航菜单栏 (Tabs Header) -->
+          <div class="cosmos-settings-tabs">
+            <button
+              v-for="tab in tabs"
+              :key="tab.id"
+              class="cosmos-settings-tab"
+              :class="{ active: active_tab === tab.id }"
+              @click="active_tab = tab.id"
+            >
+              <i :class="tab.icon"></i>
+              <span>{{ tab.name }}</span>
+            </button>
+          </div>
 
-        <!-- 3. 记忆压缩 (Compression Tab) -->
-        <CompressionTab v-show="active_tab === 'compression'" />
+          <!-- 1. 基础设置 (Settings Tab) -->
+          <SettingsTab v-show="active_tab === 'settings'" />
 
-        <!-- 4. 剧情要素 (Entities Tab) -->
-        <EntitiesTab v-show="active_tab === 'entities'" />
+          <!-- 2. 剧情总结 (Summary Tab) -->
+          <SummaryTab v-show="active_tab === 'summary'" />
 
-        <!-- 5. 向量召回 (Vector Recall Tab) -->
-        <VectorRecallTab v-show="active_tab === 'vector_recall'" />
+          <!-- 3. 记忆压缩 (Compression Tab) -->
+          <CompressionTab v-show="active_tab === 'compression'" />
+
+          <!-- 4. 剧情要素 (Entities Tab) -->
+          <EntitiesTab v-show="active_tab === 'entities'" />
+
+          <!-- 5. 向量召回 (Vector Recall Tab) -->
+          <VectorRecallTab v-show="active_tab === 'vector_recall'" />
+        </template>
 
         <hr class="sysHR" />
       </div>
@@ -47,7 +67,9 @@ import EntitiesTab from '@/panel/EntitiesTab.vue';
 import SettingsTab from '@/panel/SettingsTab.vue';
 import SummaryTab from '@/panel/SummaryTab.vue';
 import VectorRecallTab from '@/panel/VectorRecallTab.vue';
+import { useSettingsStore } from '@/store/settings';
 
+const { settings } = storeToRefs(useSettingsStore());
 const active_tab = ref('settings');
 
 const tabs = computed(() => [

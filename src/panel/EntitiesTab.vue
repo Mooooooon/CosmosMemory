@@ -200,7 +200,7 @@ const is_ai_request_disabled = computed(() => {
 });
 
 const is_regenerate_characters_disabled = computed(() => {
-  return is_regenerating_characters.value || is_ai_request_disabled.value;
+  return settings.value.summary_paused || is_regenerating_characters.value || is_ai_request_disabled.value;
 });
 
 function handle_show_current_info() {
@@ -228,12 +228,14 @@ function handle_show_locations() {
 }
 
 async function handle_regenerate_characters() {
+  const signal = useSettingsStore().getMemoryGenerationSignal();
   is_regenerating_characters.value = true;
 
   try {
-    await regenerateCharactersFromChat(settings.value.ai);
+    await regenerateCharactersFromChat(settings.value.ai, signal);
     toastr.success(t`人物信息重新生成成功。`);
   } catch (error) {
+    if (signal.aborted) return;
     const message = error instanceof Error ? error.message : String(error);
     toastr.error(message, 'Cosmos Memory');
   } finally {

@@ -19,6 +19,32 @@ function loadSettings(): Settings {
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref(loadSettings());
+  let run_controller = new AbortController();
+  let memory_generation_controller = new AbortController();
+
+  watch(
+    () => settings.value.enabled,
+    enabled => {
+      if (enabled) {
+        run_controller = new AbortController();
+      } else {
+        run_controller.abort();
+      }
+    },
+    { immediate: true, flush: 'sync' },
+  );
+
+  watch(
+    () => settings.value.enabled && !settings.value.summary_paused,
+    can_generate => {
+      if (can_generate) {
+        memory_generation_controller = new AbortController();
+      } else {
+        memory_generation_controller.abort();
+      }
+    },
+    { immediate: true, flush: 'sync' },
+  );
 
   watch(
     settings,
@@ -30,5 +56,7 @@ export const useSettingsStore = defineStore('settings', () => {
   );
   return {
     settings,
+    getRunSignal: () => run_controller.signal,
+    getMemoryGenerationSignal: () => memory_generation_controller.signal,
   };
 });
