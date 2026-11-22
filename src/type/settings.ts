@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 export const DEFAULT_CUSTOM_API_URL = 'https://api.deepseek.com/v1';
 export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 export const DEFAULT_AI_RETRY_COUNT = 3;
@@ -225,3 +226,13 @@ export function isOpeningMessageCompressionEnabled(settings?: {
   }
   return Boolean(settings.compression?.include_opening_message || settings.summary?.include_opening_message_original);
 }
+=======
+export type Settings = z.infer<typeof Settings>;
+export const Settings = z
+  .object({
+    button_selected: z.boolean().default(false),
+  })
+  .prefault({});
+
+export const setting_field = 'tavern_extension_example';
+>>>>>>> abb9f678dad403a4a6c4a4c6bb91c940791a412d
