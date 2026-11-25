@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "启用 Cosmos Memory": "Enable Cosmos Memory",
   "临时关闭总结（只注入）": "Pause summarization (inject only)",
   "继续注入已有记忆。期间收到的 AI 回复在恢复后也会跳过总结和向量入库。": "Keep injecting existing memory. AI replies received during the pause remain excluded from summaries and vector indexing after you resume.",
@@ -400,4 +401,9 @@
   "总结失败": "Summary failed",
   "重试总结": "Retry summary",
   "尚未生成本楼总结": "No summary has been generated for this message yet"
+=======
+  "插件示例": "Plugin Example",
+  "示例按钮": "Example Button",
+  "示例开关": "Example Switch"
+>>>>>>> e5e18449f3beb7ed6d2edf9e174ac313403dba10
 }

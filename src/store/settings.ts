@@ -3,6 +3,7 @@ import { validateInplace } from '@/util/zod';
 import { saveSettingsDebounced } from '@sillytavern/script';
 import { extension_settings } from '@sillytavern/scripts/extensions';
 
+<<<<<<< HEAD
 function loadSettings(): Settings {
   try {
     return validateInplace(Settings, _.get(extension_settings, setting_field));
@@ -45,6 +46,10 @@ export const useSettingsStore = defineStore('settings', () => {
     },
     { immediate: true, flush: 'sync' },
   );
+=======
+export const useSettingsStore = defineStore('settings', () => {
+  const settings = ref(validateInplace(Settings, _.get(extension_settings, setting_field)));
+>>>>>>> e5e18449f3beb7ed6d2edf9e174ac313403dba10
 
   watch(
     settings,
@@ -56,7 +61,10 @@ export const useSettingsStore = defineStore('settings', () => {
   );
   return {
     settings,
+<<<<<<< HEAD
     getRunSignal: () => run_controller.signal,
     getMemoryGenerationSignal: () => memory_generation_controller.signal,
+=======
+>>>>>>> e5e18449f3beb7ed6d2edf9e174ac313403dba10
   };
 });
