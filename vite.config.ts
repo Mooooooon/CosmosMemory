@@ -1,15 +1,28 @@
 import vue from '@vitejs/plugin-vue';
 import path from 'node:path';
+<<<<<<< HEAD
 import { readFileSync } from 'node:fs';
 import unpluginAutoImport from 'unplugin-auto-import/vite';
+=======
+import unpluginAutoImport from 'unplugin-auto-import/vite';
+import { VueUseComponentsResolver, VueUseDirectiveResolver } from 'unplugin-vue-components/resolvers';
+>>>>>>> db6542a4a9b520a2709f92e2f339bf1134a9efc2
 import unpluginVueComponents from 'unplugin-vue-components/vite';
 import { defineConfig } from 'vite';
 import pluginExternal from 'vite-plugin-external';
 
 const externals = {
   jquery: '$',
+<<<<<<< HEAD
   lodash: '_',
   toastr: 'toastr',
+=======
+  hljs: 'hljs',
+  lodash: '_',
+  showdown: 'showdown',
+  toastr: 'toastr',
+  '@popperjs/core': 'Popper',
+>>>>>>> db6542a4a9b520a2709f92e2f339bf1134a9efc2
 } as const;
 
 const relative_sillytavern_path = path.relative(
@@ -18,11 +31,14 @@ const relative_sillytavern_path = path.relative(
 );
 
 export default defineConfig(({ mode }) => ({
+<<<<<<< HEAD
   define: {
     __COSMOS_MEMORY_VERSION__: JSON.stringify(
       JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version,
     ),
   },
+=======
+>>>>>>> db6542a4a9b520a2709f92e2f339bf1134a9efc2
   plugins: [
     vue({
       features: {
@@ -37,8 +53,15 @@ export default defineConfig(({ mode }) => ({
       imports: [
         'vue',
         'pinia',
+<<<<<<< HEAD
         { from: '@sillytavern/scripts/i18n', imports: ['t'] },
         { from: 'klona', imports: ['klona'] },
+=======
+        '@vueuse/core',
+        { from: '@sillytavern/scripts/i18n', imports: ['t'] },
+        { from: 'klona', imports: ['klona'] },
+        { from: 'vue-final-modal', imports: ['useModal'] },
+>>>>>>> db6542a4a9b520a2709f92e2f339bf1134a9efc2
         { from: 'zod', imports: ['z'] },
       ],
       dirs: [{ glob: './src/panel/composable', types: true }],
@@ -47,6 +70,10 @@ export default defineConfig(({ mode }) => ({
       dts: true,
       syncMode: 'overwrite',
       // globs: ['src/panel/component/*.vue'],
+<<<<<<< HEAD
+=======
+      resolvers: [VueUseComponentsResolver(), VueUseDirectiveResolver()],
+>>>>>>> db6542a4a9b520a2709f92e2f339bf1134a9efc2
     }),
     {
       name: 'sillytavern_resolver',
